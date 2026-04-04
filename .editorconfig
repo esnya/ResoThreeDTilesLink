@@ -21,6 +21,8 @@ dotnet_diagnostic.IDE0290.severity = none
 dotnet_diagnostic.CA1305.severity = warning
 dotnet_diagnostic.CA1310.severity = warning
 dotnet_diagnostic.CA1860.severity = warning
+# TODO(staticcheck): 公開APIのXMLコメント方針を整理後、CS1591抑制を解除する。
+dotnet_diagnostic.CS1591.severity = none
 
 # TODO(staticcheck): LoggerMessage化は影響が広いため別PRで段階移行する。
 dotnet_diagnostic.CA1848.severity = none
@@ -38,3 +40,7 @@ dotnet_diagnostic.CA1849.severity = none
 dotnet_diagnostic.CA1819.severity = none
 # TODO(staticcheck): 大文字小文字正規化の規則は外部仕様確認後に統一する。
 dotnet_diagnostic.CA1308.severity = none
+
+[tests/**/*.cs]
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.IDE0005.severity = none
