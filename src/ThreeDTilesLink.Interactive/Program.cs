@@ -53,7 +53,8 @@ static async Task<int> RunAsync(string[] args)
                 parsed.ProbeName,
                 $"{parsed.ProbePath}.Latitude",
                 $"{parsed.ProbePath}.Longitude",
-                $"{parsed.ProbePath}.Range");
+                $"{parsed.ProbePath}.Range",
+                $"{parsed.ProbePath}.Search");
 
             var options = new ProbeDrivenStreamerOptions(
                 parsed.ResoniteHost,
@@ -72,10 +73,11 @@ static async Task<int> RunAsync(string[] args)
 
             var service = new ProbeDrivenStreamingService(
                 runtime.StreamingService,
+                runtime.GeocodingClient,
                 loggerFactory.CreateLogger<ProbeDrivenStreamingService>());
 
             Console.WriteLine(
-                $"Interactive mode started. Probe={parsed.ProbePath} (lat/lon/range). Poll={parsed.PollIntervalMs}ms Debounce={parsed.DebounceMs}ms Throttle={parsed.ThrottleMs}ms. Press Ctrl+C to stop.");
+                $"Interactive mode started. Probe={parsed.ProbePath} (lat/lon/range/search). Poll={parsed.PollIntervalMs}ms Debounce={parsed.DebounceMs}ms Throttle={parsed.ThrottleMs}ms. Press Ctrl+C to stop.");
             await service.RunAsync(options, appCts.Token).ConfigureAwait(false);
             return 0;
         }

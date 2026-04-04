@@ -7,11 +7,12 @@
 - このプロジェクトは Google Photorealistic 3D Tiles を Resonite Link へ非永続に流し込む用途を前提にする
 - 永続保存、アセット化、設計資料の保守は目的にしない
 - 認証は `GOOGLE_MAPS_API_KEY` があれば API キーを優先し、なければ ADC を使う
+- Interactive の自由検索 (`World/... .Search`) は Google Geocoding API を使うため `GOOGLE_MAPS_API_KEY` が必要
 - CLI は `.env` を上位ディレクトリ探索付きで自動ロードし、既存の環境変数は上書きしない
 
 ## 環境変数
 
-- `GOOGLE_MAPS_API_KEY`: Google Map Tiles API を API キーで使うときに設定する
+- `GOOGLE_MAPS_API_KEY`: Google Map Tiles API と Interactive の Geocoding 検索を API キーで使うときに設定する
 - `GOOGLE_APPLICATION_CREDENTIALS`: ADC の明示パス指定に使う
 - `THREEDTILESLINK_DUMP_MESH_JSON`: メッシュ送信内容の JSON ダンプが必要なときに使う
 

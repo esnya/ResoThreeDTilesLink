@@ -8,5 +8,7 @@ namespace ThreeDTilesLink.Core.Models
         string LongitudeComponentId,
         string LongitudeValueMemberName,
         string RangeComponentId,
-        string RangeValueMemberName);
+        string RangeValueMemberName,
+        string SearchComponentId,
+        string SearchValueMemberName);
 }

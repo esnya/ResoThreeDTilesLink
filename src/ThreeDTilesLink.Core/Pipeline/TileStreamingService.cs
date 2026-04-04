@@ -906,6 +906,17 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }).ConfigureAwait(false);
         }
 
+        private async Task<string> AddDynamicStringValueVariableAsync(string slotId, string variablePath)
+        {
+            return await AddComponentAsync(
+                slotId,
+                DynamicValueVariableStringComponentType,
+                new Dictionary<string, Member>(StringComparer.Ordinal)
+                {
+                    ["VariableName"] = new Field_string { Value = variablePath }
+                }).ConfigureAwait(false);
+        }
+
         private async Task<float> ReadNumericMemberAsFloatAsync(string componentId, string memberName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -938,6 +949,25 @@ namespace ThreeDTilesLink.Core.Pipeline
                 ? stringMember.Value
                 : throw new InvalidOperationException(
                     $"Unsupported string member type: componentId={componentId} member={memberName} type={member.GetType().Name}");
+        }
+
+        private async Task UpdateNumericMemberAsync(string componentId, string memberName, float value)
+        {
+            EnsureDirectConnection();
+
+            Response response = await _linkInterface!.UpdateComponent(
+                new UpdateComponent
+                {
+                    Data = new Component
+                    {
+                        ID = componentId,
+                        Members = new Dictionary<string, Member>(StringComparer.Ordinal)
+                        {
+                            [memberName] = new Field_float { Value = value }
+                        }
+                    }
+                }).ConfigureAwait(false);
+            _ = EnsureSuccess(response);
         }
 
         private async Task<Member> ReadComponentMemberAsync(string componentId, string memberName)

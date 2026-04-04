@@ -1,14 +1,17 @@
 using Microsoft.Extensions.Logging;
 using System.Globalization;
+using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Pipeline
 {
     public sealed class ProbeDrivenStreamingService(
         TileStreamingService tileStreamingService,
+        GoogleGeocodingClient geocodingClient,
         ILogger<ProbeDrivenStreamingService> logger)
     {
         private readonly TileStreamingService _tileStreamingService = tileStreamingService;
+        private readonly GoogleGeocodingClient _geocodingClient = geocodingClient;
         private readonly ILogger<ProbeDrivenStreamingService> _logger = logger;
 
         public async Task RunAsync(ProbeDrivenStreamerOptions options, CancellationToken cancellationToken)
@@ -24,6 +27,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             ProbeValues? lastProbeValues = null;
             ProbeValues? pendingProbeValues = null;
             DateTimeOffset? pendingChangedAt = null;
+            string? lastObservedSearch = null;
+            string? lastResolvedSearch = null;
+            string? pendingSearch = null;
+            DateTimeOffset? pendingSearchChangedAt = null;
             DateTimeOffset lastRunStartedAt = DateTimeOffset.MinValue;
             bool connected = false;
 
@@ -35,12 +42,13 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 probeBinding = await _tileStreamingService.CreateProbeAsync(options.Probe, cancellationToken).ConfigureAwait(false);
                 _logger.LogInformation(
-                    "Probe DV attached: slotId={SlotId} ownsSlot={OwnsSlot} lat={LatPath} lon={LonPath} range={RangePath}",
+                    "Probe DV attached: slotId={SlotId} ownsSlot={OwnsSlot} lat={LatPath} lon={LonPath} range={RangePath} search={SearchPath}",
                     probeBinding.SlotId,
                     probeBinding.OwnsSlot,
                     options.Probe.LatitudeVariablePath,
                     options.Probe.LongitudeVariablePath,
-                    options.Probe.RangeVariablePath);
+                    options.Probe.RangeVariablePath,
+                    options.Probe.SearchVariablePath);
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
@@ -50,6 +58,35 @@ namespace ThreeDTilesLink.Core.Pipeline
                         activeRunSlotId,
                         completedRunSlotId,
                         cancellationToken).ConfigureAwait(false);
+
+                    string? currentSearch = await TryReadProbeSearchAsync(probeBinding, cancellationToken).ConfigureAwait(false);
+                    if (!string.Equals(lastObservedSearch, currentSearch, StringComparison.Ordinal))
+                    {
+                        lastObservedSearch = currentSearch;
+                        if (currentSearch is null)
+                        {
+                            pendingSearch = null;
+                            pendingSearchChangedAt = null;
+                            lastResolvedSearch = null;
+                        }
+                        else
+                        {
+                            pendingSearch = currentSearch;
+                            pendingSearchChangedAt = DateTimeOffset.UtcNow;
+                            _logger.LogInformation("Search query changed: {Query}", currentSearch);
+                        }
+                    }
+
+                    if (pendingSearch is not null &&
+                        pendingSearchChangedAt is not null &&
+                        DateTimeOffset.UtcNow - pendingSearchChangedAt.Value >= options.Debounce &&
+                        !string.Equals(lastResolvedSearch, pendingSearch, StringComparison.Ordinal))
+                    {
+                        await ResolveSearchAsync(options, probeBinding, pendingSearch, cancellationToken).ConfigureAwait(false);
+                        lastResolvedSearch = pendingSearch;
+                        pendingSearch = null;
+                        pendingSearchChangedAt = null;
+                    }
 
                     ProbeValues? currentProbe = await TryReadProbeValuesAsync(probeBinding, cancellationToken).ConfigureAwait(false);
                     if (currentProbe is not null && HasMeaningfulChange(lastProbeValues, currentProbe))
@@ -134,6 +171,46 @@ namespace ThreeDTilesLink.Core.Pipeline
                         _logger.LogWarning(ex, "Failed to disconnect Resonite Link cleanly.");
                     }
                 }
+            }
+        }
+
+        private async Task ResolveSearchAsync(
+            ProbeDrivenStreamerOptions options,
+            ProbeBinding probeBinding,
+            string searchText,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(options.ApiKey))
+            {
+                _logger.LogWarning("Search query ignored because GOOGLE_MAPS_API_KEY is not set: query={Query}", searchText);
+                return;
+            }
+
+            try
+            {
+                LocationSearchResult? result = await _geocodingClient.SearchAsync(options.ApiKey, searchText, cancellationToken).ConfigureAwait(false);
+                if (result is null)
+                {
+                    _logger.LogWarning("Search query returned no result: query={Query}", searchText);
+                    return;
+                }
+
+                await _tileStreamingService.UpdateProbeCoordinatesAsync(
+                    probeBinding,
+                    result.Latitude,
+                    result.Longitude,
+                    cancellationToken).ConfigureAwait(false);
+
+                _logger.LogInformation(
+                    "Search resolved: query={Query} name={Name} lat={Lat:F7} lon={Lon:F7}",
+                    searchText,
+                    result.FormattedAddress,
+                    result.Latitude,
+                    result.Longitude);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to resolve search query: {Query}", searchText);
             }
         }
 
@@ -253,6 +330,19 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
+        private async Task<string?> TryReadProbeSearchAsync(ProbeBinding probeBinding, CancellationToken cancellationToken)
+        {
+            try
+            {
+                return NormalizeSearchText(await _tileStreamingService.ReadProbeSearchAsync(probeBinding, cancellationToken).ConfigureAwait(false));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to read probe search query.");
+                return null;
+            }
+        }
+
         private async Task<ProbeValues?> TryReadProbeValuesAsync(ProbeBinding probeBinding, CancellationToken cancellationToken)
         {
             try
@@ -303,6 +393,16 @@ namespace ThreeDTilesLink.Core.Pipeline
                 System.Math.Abs(previous.Latitude - current.Latitude) > 1e-5f ||
                 System.Math.Abs(previous.Longitude - current.Longitude) > 1e-5f ||
                 System.Math.Abs(previous.RangeM - current.RangeM) > 0.1f;
+        }
+
+        private static string? NormalizeSearchText(string? input)
+        {
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return null;
+            }
+
+            return input.Trim();
         }
 
         private static void ValidateIntervals(ProbeDrivenStreamerOptions options)

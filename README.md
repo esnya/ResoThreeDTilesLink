@@ -66,9 +66,12 @@ At connection time, the app creates a probe slot and watches `DynamicValueVariab
 - `World/ThreeDTilesLink.Latitude`
 - `World/ThreeDTilesLink.Longitude`
 - `World/ThreeDTilesLink.Range`
+- `World/ThreeDTilesLink.Search`
 
 Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and old run slots are removed.
+If `Search` is updated to a non-empty string, the app resolves it with the Google Geocoding API and writes the resulting coordinates back into `Latitude` / `Longitude`.
 If probe `Range` is `0` or less, no streaming run is started.
+Interactive search requires `GOOGLE_MAPS_API_KEY`; ADC-only authentication is not enough for free-text geocoding.
 
 ```bash
 dotnet run --project src/ThreeDTilesLink.Interactive -- \
