@@ -18,6 +18,14 @@ public sealed class ResoniteLinkClientAdapter : IResoniteLinkClient, IAsyncDispo
     private const string MeshColliderComponentType = "[FrooxEngine]FrooxEngine.MeshCollider";
     private const string MaterialComponentType = "[FrooxEngine]FrooxEngine.PBS_Metallic";
     private const string MeshRendererComponentType = "[FrooxEngine]FrooxEngine.MeshRenderer";
+    private const string LicenseComponentType = "[FrooxEngine]FrooxEngine.License";
+    private const string DynamicVariableSpaceComponentType = "[FrooxEngine]FrooxEngine.DynamicVariableSpace";
+    // Policy: component type names are fixed from live ResoniteLink verification (no fallback guessing).
+    private const string DynamicFieldStringComponentType = "[FrooxEngine]FrooxEngine.DynamicField<string>";
+    private const string StringFieldType = "[FrooxEngine]FrooxEngine.IField<string>";
+    private const string GoogleTilesDynamicSpaceName = "Google3DTiles";
+    private const string LicenseDynamicVariablePath = GoogleTilesDynamicSpaceName + "/License";
+    private const string DefaultGoogleMapsCreditText = "Google Maps";
 
     private const string MeshAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Mesh>";
     private const string MaterialAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Material>";
@@ -47,6 +55,8 @@ public sealed class ResoniteLinkClientAdapter : IResoniteLinkClient, IAsyncDispo
     private Exception? _failureException;
     private bool _connected;
     private string? _sessionRootSlotId;
+    private string? _sessionLicenseComponentId;
+    private string? _sessionLicenseCreditText;
     private string? _materialTextureFieldName;
     private bool _materialTextureFieldResolved;
     private Dictionary<string, MemberDefinition>? _materialMemberDefinitions;
@@ -82,6 +92,46 @@ public sealed class ResoniteLinkClientAdapter : IResoniteLinkClient, IAsyncDispo
             $"3DTilesLink Session {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}",
             Slot.ROOT_SLOT_ID,
             cancellationToken);
+
+        await AttachSessionMetadataAsync(_sessionRootSlotId, cancellationToken);
+    }
+
+    public async Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
+    {
+        if (!_connected)
+        {
+            throw new InvalidOperationException("ResoniteLink is not connected.");
+        }
+
+        if (string.IsNullOrWhiteSpace(_sessionLicenseComponentId) ||
+            string.IsNullOrWhiteSpace(creditString))
+        {
+            return;
+        }
+
+        var normalized = creditString.Trim();
+        if (string.Equals(normalized, _sessionLicenseCreditText, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await SendMessageAsync<Response>(
+            new UpdateComponent
+            {
+                Data = new Component
+                {
+                    ID = _sessionLicenseComponentId,
+                    Members = new Dictionary<string, Member>
+                    {
+                        ["RequireCredit"] = new Field_bool { Value = true },
+                        ["CreditString"] = new Field_string { Value = normalized },
+                        ["CanExport"] = new Field_bool { Value = false }
+                    }
+                }
+            },
+            cancellationToken);
+
+        _sessionLicenseCreditText = normalized;
     }
 
     public async Task<string?> SendTileMeshAsync(TileMeshPayload payload, CancellationToken cancellationToken)
@@ -398,6 +448,84 @@ public sealed class ResoniteLinkClientAdapter : IResoniteLinkClient, IAsyncDispo
         }
     }
 
+    private async Task AttachSessionMetadataAsync(string sessionRootSlotId, CancellationToken cancellationToken)
+    {
+        var creditFieldId = $"t3dtile_field_{Guid.NewGuid():N}";
+        var licenseMembers = new Dictionary<string, Member>
+        {
+            ["RequireCredit"] = new Field_bool { Value = true },
+            ["CreditString"] = new Field_string
+            {
+                ID = creditFieldId,
+                Value = DefaultGoogleMapsCreditText
+            },
+            ["CanExport"] = new Field_bool { Value = false }
+        };
+
+        var licenseComponentId = await TryAddComponentAsync(
+            sessionRootSlotId,
+            LicenseComponentType,
+            licenseMembers,
+            cancellationToken);
+
+        if (licenseComponentId is null)
+        {
+            return;
+        }
+
+        _sessionLicenseComponentId = licenseComponentId;
+        _sessionLicenseCreditText = DefaultGoogleMapsCreditText;
+
+        var variableSpaceMembers = new Dictionary<string, Member>
+        {
+            ["SpaceName"] = new Field_string { Value = GoogleTilesDynamicSpaceName },
+            ["OnlyDirectBinding"] = new Field_bool { Value = true }
+        };
+
+        await TryAddComponentAsync(
+            sessionRootSlotId,
+            DynamicVariableSpaceComponentType,
+            variableSpaceMembers,
+            cancellationToken);
+
+        var dynamicFieldMembers = new Dictionary<string, Member>
+        {
+            ["VariableName"] = new Field_string { Value = LicenseDynamicVariablePath },
+            ["TargetField"] = new Reference { TargetID = creditFieldId, TargetType = StringFieldType },
+            ["OverrideOnLink"] = new Field_bool { Value = true }
+        };
+
+        await TryAddComponentAsync(
+            sessionRootSlotId,
+            DynamicFieldStringComponentType,
+            dynamicFieldMembers,
+            cancellationToken);
+    }
+
+    private async Task<string?> TryAddComponentAsync(
+        string slotId,
+        string componentType,
+        Dictionary<string, Member> members,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await AddComponentAsync(
+                slotId,
+                componentType,
+                members,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private async Task<Dictionary<string, MemberDefinition>> ResolveMaterialMemberDefinitionsAsync(CancellationToken cancellationToken)
     {
         if (_materialMemberDefinitions is not null)
@@ -629,6 +757,8 @@ public sealed class ResoniteLinkClientAdapter : IResoniteLinkClient, IAsyncDispo
             _failureException = null;
             _connected = false;
             _sessionRootSlotId = null;
+            _sessionLicenseComponentId = null;
+            _sessionLicenseCreditText = null;
             _materialTextureFieldName = null;
             _materialTextureFieldResolved = false;
             _materialMemberDefinitions = null;

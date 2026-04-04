@@ -14,7 +14,9 @@ public sealed class TilesetParser
             throw new InvalidOperationException("tileset root is missing.");
         }
 
-        return new Tileset(ParseTile(rootTile, sourceUri, "0"));
+        return new Tileset(
+            ParseTile(rootTile, sourceUri, "0"),
+            ParseCopyrights(root));
     }
 
     private static Tile ParseTile(JsonElement tileElement, Uri sourceUri, string id)
@@ -177,5 +179,86 @@ public sealed class TilesetParser
         };
 
         return builder.Uri;
+    }
+
+    private static IReadOnlyList<string> ParseCopyrights(JsonElement root)
+    {
+        var output = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        CollectCopyright(root, output, seen);
+        return output;
+    }
+
+    private static void CollectCopyright(
+        JsonElement element,
+        List<string> output,
+        HashSet<string> seen)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (property.NameEquals("copyright"))
+                    {
+                        AddCopyrightValue(property.Value, output, seen);
+                        continue;
+                    }
+
+                    CollectCopyright(property.Value, output, seen);
+                }
+
+                break;
+
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    CollectCopyright(item, output, seen);
+                }
+
+                break;
+        }
+    }
+
+    private static void AddCopyrightValue(
+        JsonElement value,
+        List<string> output,
+        HashSet<string> seen)
+    {
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            AddCopyrightString(value.GetString(), output, seen);
+            return;
+        }
+
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String)
+            {
+                AddCopyrightString(item.GetString(), output, seen);
+            }
+        }
+    }
+
+    private static void AddCopyrightString(
+        string? raw,
+        List<string> output,
+        HashSet<string> seen)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return;
+        }
+
+        var normalized = raw.Trim();
+        if (seen.Add(normalized))
+        {
+            output.Add(normalized);
+        }
     }
 }

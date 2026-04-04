@@ -49,6 +49,10 @@ public sealed class TileStreamingService
 
         _logger.LogInformation("Fetching root tileset from Google Map Tiles API.");
         var tileset = await _fetcher.FetchRootTilesetAsync(auth, cancellationToken);
+        var attributionOrder = new List<string>();
+        var knownAttributions = new HashSet<string>(StringComparer.Ordinal);
+        var activeAttributionCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        RegisterAttributionOrder(tileset.Copyrights ?? []);
 
         var streamedMeshes = 0;
         var failedTiles = 0;
@@ -61,12 +65,138 @@ public sealed class TileStreamingService
         var queuedGlbTileIds = new HashSet<string>(StringComparer.Ordinal);
         var pendingTilesets = new PriorityQueue<PendingTileset, double>();
         pendingTilesets.Enqueue(new PendingTileset(tileset, Matrix4x4d.Identity, string.Empty, 0, null), 0d);
-        var pendingFineGlbTiles = new PriorityQueue<TileSelectionResult, double>();
-        var pendingCoarseGlbTiles = new PriorityQueue<TileSelectionResult, double>();
+        var pendingGlbTiles = new PriorityQueue<TileSelectionResult, double>();
         var nestedTilesetFetches = 0;
         var maxNestedTilesetFetches = SMath.Max(options.MaxTiles * 64, 512);
         // Use unbounded subtree selection to avoid dropping branches in dense urban areas.
         var selectBudgetPerSubtree = 0;
+
+        double GetTraversalPriority(TileSelectionResult tile)
+        {
+            var span = tile.HorizontalSpanM ?? 1_000_000_000d;
+            var depth = tile.Depth;
+            var leafBias = tile.HasChildren ? 0d : -0.1d;
+            // Coarse coverage first: shallower depth first, then larger span first.
+            return (depth * 1_000_000_000_000d) - span + leafBias;
+        }
+
+        static string? NormalizeAttributionOwner(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            return value.Trim();
+        }
+
+        static IReadOnlyList<string> ParseAttributionOwners(IEnumerable<string> values)
+        {
+            var owners = new List<string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var raw in values)
+            {
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    continue;
+                }
+
+                var segments = raw.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                foreach (var segment in segments)
+                {
+                    var normalized = NormalizeAttributionOwner(segment);
+                    if (normalized is null || !seen.Add(normalized))
+                    {
+                        continue;
+                    }
+
+                    owners.Add(normalized);
+                }
+            }
+
+            return owners;
+        }
+
+        void RegisterAttributionOrder(IEnumerable<string> rawValues)
+        {
+            foreach (var normalized in ParseAttributionOwners(rawValues))
+            {
+                if (knownAttributions.Add(normalized))
+                {
+                    attributionOrder.Add(normalized);
+                }
+            }
+        }
+
+        bool TryActivateAttributions(TileLifecycle state)
+        {
+            if (state.AttributionsApplied)
+            {
+                return false;
+            }
+
+            var changed = false;
+            foreach (var normalized in state.AttributionOwners)
+            {
+                if (activeAttributionCounts.TryGetValue(normalized, out var count))
+                {
+                    activeAttributionCounts[normalized] = count + 1;
+                }
+                else
+                {
+                    activeAttributionCounts[normalized] = 1;
+                }
+
+                changed = true;
+            }
+
+            state.AttributionsApplied = true;
+            return changed;
+        }
+
+        bool TryDeactivateAttributions(TileLifecycle state)
+        {
+            if (!state.AttributionsApplied)
+            {
+                return false;
+            }
+
+            var changed = false;
+            foreach (var normalized in state.AttributionOwners)
+            {
+                if (!activeAttributionCounts.TryGetValue(normalized, out var count))
+                {
+                    continue;
+                }
+
+                if (count <= 1)
+                {
+                    activeAttributionCounts.Remove(normalized);
+                }
+                else
+                {
+                    activeAttributionCounts[normalized] = count - 1;
+                }
+
+                changed = true;
+            }
+
+            state.AttributionsApplied = false;
+            return changed;
+        }
+
+        async Task RefreshSessionLicenseCreditAsync()
+        {
+            if (options.DryRun)
+            {
+                return;
+            }
+
+            await _resoniteLinkClient.SetSessionLicenseCreditAsync(
+                BuildLicenseCreditString(attributionOrder, activeAttributionCounts),
+                cancellationToken);
+        }
 
         TileLifecycle GetOrCreateTileState(string tileId, string? parentTileId = null, TileContentKind? contentKind = null)
         {
@@ -102,6 +232,12 @@ public sealed class TileStreamingService
         void RegisterTile(TileSelectionResult tile)
         {
             var tileState = GetOrCreateTileState(tile.TileId, tile.ParentTileId, tile.ContentKind);
+            if (tile.Attributions.Count > 0)
+            {
+                tileState.AttributionOwners = ParseAttributionOwners(tile.Attributions);
+                RegisterAttributionOrder(tile.Attributions);
+            }
+
             if (string.IsNullOrWhiteSpace(tile.ParentTileId))
             {
                 return;
@@ -141,12 +277,13 @@ public sealed class TileStreamingService
                 return;
             }
 
-            state.Removed = true;
             if (options.DryRun)
             {
+                state.Removed = true;
                 return;
             }
 
+            var allRemoved = true;
             foreach (var slotId in state.SlotIds)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -156,9 +293,21 @@ public sealed class TileStreamingService
                 }
                 catch (Exception ex)
                 {
+                    allRemoved = false;
                     failedTiles++;
                     _logger.LogWarning(ex, "Failed to remove parent tile slot {SlotId} for tile {TileId}.", slotId, state.TileId);
                 }
+            }
+
+            if (!allRemoved)
+            {
+                return;
+            }
+
+            state.Removed = true;
+            if (TryDeactivateAttributions(state))
+            {
+                await RefreshSessionLicenseCreditAsync();
             }
         }
 
@@ -205,17 +354,9 @@ public sealed class TileStreamingService
             await PropagateCompletionAsync(tileId);
         }
 
-        async Task<bool> TryStreamNextGlbAsync(bool allowCoarse)
+        async Task<bool> TryStreamNextGlbAsync()
         {
-            TileSelectionResult? glbTile = null;
-            if (pendingFineGlbTiles.Count > 0)
-            {
-                glbTile = pendingFineGlbTiles.Dequeue();
-            }
-            else if (allowCoarse && pendingCoarseGlbTiles.Count > 0)
-            {
-                glbTile = pendingCoarseGlbTiles.Dequeue();
-            }
+            TileSelectionResult? glbTile = pendingGlbTiles.Count > 0 ? pendingGlbTiles.Dequeue() : null;
 
             if (glbTile is null)
             {
@@ -272,19 +413,35 @@ public sealed class TileStreamingService
                 glbState.SlotIds.Add(slotId);
             }
 
+            if (!options.DryRun && streamedSlotIds.Count > 0 && TryActivateAttributions(glbState))
+            {
+                await RefreshSessionLicenseCreditAsync();
+            }
+
             await MarkTileCompletedAsync(glbTile.TileId);
             return true;
+        }
+
+        TileSelectionResult? PeekNextGlbTile()
+        {
+            if (pendingGlbTiles.TryPeek(out var nextTile, out _))
+            {
+                return nextTile;
+            }
+
+            return null;
         }
 
         if (!options.DryRun)
         {
             _logger.LogInformation("Connecting to Resonite Link at {Host}:{Port}", options.LinkHost, options.LinkPort);
             await _resoniteLinkClient.ConnectAsync(options.LinkHost, options.LinkPort, cancellationToken);
+            await RefreshSessionLicenseCreditAsync();
         }
 
         try
         {
-            while ((pendingTilesets.Count > 0 || pendingFineGlbTiles.Count > 0 || pendingCoarseGlbTiles.Count > 0) &&
+            while ((pendingTilesets.Count > 0 || pendingGlbTiles.Count > 0) &&
                    streamedTileCount < options.MaxTiles)
             {
                 if (pendingTilesets.Count > 0 && nestedTilesetFetches < maxNestedTilesetFetches)
@@ -355,6 +512,7 @@ public sealed class TileStreamingService
                                             nestedTileset = await _fetcher.FetchTilesetAsync(tile.ContentUri, auth, cancellationToken);
                                             tilesetCache[tile.ContentUri.AbsoluteUri] = nestedTileset;
                                             nestedTilesetFetches++;
+                                            RegisterAttributionOrder(nestedTileset.Copyrights ?? []);
                                         }
 
                                         var pending = new PendingTileset(
@@ -391,21 +549,7 @@ public sealed class TileStreamingService
                                         continue;
                                     }
 
-                                    var isFineTile = !tile.HorizontalSpanM.HasValue || tile.HorizontalSpanM.Value <= options.DetailTargetM;
-                                    if (isFineTile)
-                                    {
-                                        pendingFineGlbTiles.Enqueue(tile, GetTraversalPriority(tile));
-                                    }
-                                    else
-                                    {
-                                        pendingCoarseGlbTiles.Enqueue(tile, GetTraversalPriority(tile));
-                                    }
-
-                                    // Stream as soon as possible; fine tiles are still prioritized when present.
-                                    if (streamedTileCount < options.MaxTiles)
-                                    {
-                                        await TryStreamNextGlbAsync(allowCoarse: true);
-                                    }
+                                    pendingGlbTiles.Enqueue(tile, GetTraversalPriority(tile));
 
                                     continue;
                                 }
@@ -443,16 +587,24 @@ public sealed class TileStreamingService
                     break;
                 }
 
-                if (pendingFineGlbTiles.Count > 0 || pendingCoarseGlbTiles.Count > 0)
+                if (pendingGlbTiles.Count > 0)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    await TryStreamNextGlbAsync(allowCoarse: true);
+                    var nextGlbTile = PeekNextGlbTile();
+                    if (nextGlbTile is not null &&
+                        pendingTilesets.TryPeek(out var nextTileset, out _) &&
+                        nestedTilesetFetches < maxNestedTilesetFetches &&
+                        nextTileset.DepthOffset < nextGlbTile.Depth)
+                    {
+                        continue;
+                    }
+
+                    await TryStreamNextGlbAsync();
                 }
 
                 if (pendingTilesets.Count > 0 &&
                     nestedTilesetFetches >= maxNestedTilesetFetches &&
-                    pendingFineGlbTiles.Count == 0 &&
-                    pendingCoarseGlbTiles.Count == 0)
+                    pendingGlbTiles.Count == 0)
                 {
                     _logger.LogWarning(
                         "Stopped traversal because nested tileset fetch budget was reached ({MaxFetches}) and no streamable GLB tiles are queued.",
@@ -470,13 +622,12 @@ public sealed class TileStreamingService
         }
 
         if (streamedTileCount >= options.MaxTiles &&
-            (pendingFineGlbTiles.Count > 0 || pendingCoarseGlbTiles.Count > 0 || pendingTilesets.Count > 0))
+            (pendingGlbTiles.Count > 0 || pendingTilesets.Count > 0))
         {
             _logger.LogWarning(
-                "Stopped at max tile budget ({MaxTiles}) with pending work (fine={PendingFine}, coarse={PendingCoarse}, tilesets={PendingTilesets}). Increase --max-tiles to reduce holes.",
+                "Stopped at max tile budget ({MaxTiles}) with pending work (glb={PendingGlb}, tilesets={PendingTilesets}). Increase --max-tiles to reduce holes.",
                 options.MaxTiles,
-                pendingFineGlbTiles.Count,
-                pendingCoarseGlbTiles.Count,
+                pendingGlbTiles.Count,
                 pendingTilesets.Count);
         }
 
@@ -654,12 +805,35 @@ public sealed class TileStreamingService
         return normalized.Length() <= 1e-9d ? fallback : normalized;
     }
 
-    private static double GetTraversalPriority(TileSelectionResult tile)
+    private static string BuildLicenseCreditString(
+        IReadOnlyList<string> attributionOrder,
+        IReadOnlyDictionary<string, int> activeAttributionCounts)
     {
-        var span = tile.HorizontalSpanM ?? 1_000_000_000d;
-        var depthBias = tile.Depth * 1_000_000_000_000d;
-        var leafBias = tile.HasChildren ? 0d : -0.1d;
-        return depthBias + span + leafBias;
+        var active = new List<(string Owner, int Count, int Order)>(attributionOrder.Count);
+        var orderIndex = new Dictionary<string, int>(attributionOrder.Count, StringComparer.Ordinal);
+        for (var i = 0; i < attributionOrder.Count; i++)
+        {
+            orderIndex[attributionOrder[i]] = i;
+        }
+
+        foreach (var value in attributionOrder)
+        {
+            if (activeAttributionCounts.TryGetValue(value, out var count) && count > 0)
+            {
+                active.Add((value, count, orderIndex[value]));
+            }
+        }
+
+        if (active.Count == 0)
+        {
+            return "Google Maps";
+        }
+
+        var ordered = active
+            .OrderByDescending(static x => x.Count)
+            .ThenBy(static x => x.Order)
+            .Select(static x => x.Owner);
+        return string.Join("; ", ordered);
     }
 
     private async Task<GoogleTilesAuth> BuildAuthAsync(StreamerOptions options, CancellationToken cancellationToken)
@@ -694,6 +868,8 @@ public sealed class TileStreamingService
         public bool BranchCompleted { get; set; }
         public bool ChildrenDiscoveryDone { get; set; } = true;
         public bool Removed { get; set; }
+        public IReadOnlyList<string> AttributionOwners { get; set; } = Array.Empty<string>();
+        public bool AttributionsApplied { get; set; }
         public HashSet<string> DirectChildren { get; } = new(StringComparer.Ordinal);
         public HashSet<string> PendingChildBranches { get; } = new(StringComparer.Ordinal);
         public HashSet<string> SlotIds { get; } = new(StringComparer.Ordinal);

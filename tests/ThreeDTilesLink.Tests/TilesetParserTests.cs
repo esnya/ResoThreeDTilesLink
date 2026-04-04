@@ -66,4 +66,34 @@ public sealed class TilesetParserTests
         tileset.Root.Children[36].Id.Should().Be("0A");
         tileset.Root.Children.Select(c => c.Id).Should().OnlyContain(id => !id.Contains('/'));
     }
+
+    [Fact]
+    public void Parse_CollectsCopyrightStrings()
+    {
+        var parser = new TilesetParser();
+        var source = new Uri("https://tile.googleapis.com/v1/3dtiles/root.json?session=s");
+        var json = """
+                   {
+                     "asset": {
+                       "version": "1.0",
+                       "copyright": "Google, Maxar Technologies"
+                     },
+                     "root": {
+                       "content": { "uri": "0.glb" },
+                       "children": [
+                         {
+                           "content": { "uri": "1.glb" },
+                           "copyright": "Google, Airbus"
+                         }
+                       ]
+                     }
+                   }
+                   """;
+
+        var tileset = parser.Parse(json, source);
+
+        tileset.Copyrights.Should().BeEquivalentTo(
+            "Google, Maxar Technologies",
+            "Google, Airbus");
+    }
 }

@@ -10,4 +10,5 @@ public sealed record TileSelectionResult(
     string? ParentTileId,
     TileContentKind ContentKind,
     bool HasChildren,
-    double? HorizontalSpanM);
+    double? HorizontalSpanM,
+    IReadOnlyList<string> Attributions);

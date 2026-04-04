@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Tiles;
 
-public sealed record Tileset(Tile Root);
+public sealed record Tileset(Tile Root, IReadOnlyList<string>? Copyrights = null);
 
 public sealed class Tile
 {

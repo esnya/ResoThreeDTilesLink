@@ -50,7 +50,16 @@ public sealed class TileSelector : ITileSelector
                 var tileId = ComposeId(idPrefix, tile.Id);
                 var hasChildren = tile.Children.Count > 0;
                 var kind = DetectContentKind(tile.ContentUri);
-                selected.Add(new TileSelectionResult(tileId, tile.ContentUri, world, depth, parentContentId, kind, hasChildren, horizontalSpanM));
+                selected.Add(new TileSelectionResult(
+                    tileId,
+                    tile.ContentUri,
+                    world,
+                    depth,
+                    parentContentId,
+                    kind,
+                    hasChildren,
+                    horizontalSpanM,
+                    tileset.Copyrights ?? []));
                 parentContentId = tileId;
                 if (selected.Count >= selectionLimit)
                 {

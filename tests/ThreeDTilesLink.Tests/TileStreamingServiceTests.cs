@@ -400,6 +400,145 @@ public sealed class TileStreamingServiceTests
         client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task Run_SetsLicenseCredit_FromTilesetAttribution()
+    {
+        var tileset = new Tileset(
+            new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") }
+                ]
+            },
+            ["Google, Maxar Technologies"]);
+
+        var client = new FakeResoniteClient();
+        var service = new TileStreamingService(
+            new FakeFetcher(tileset),
+            new TileSelector(new PassThroughTransformer()),
+            new FakeExtractor(),
+            new PassThroughTransformer(),
+            client,
+            new FakeGoogleAccessTokenProvider(),
+            NullLogger<TileStreamingService>.Instance);
+
+        await service.RunAsync(
+            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 8, 8, 40d, false, "k"),
+            CancellationToken.None);
+
+        client.LicenseCredits.Should().ContainInOrder(
+            "Google Maps",
+            "Google; Maxar Technologies");
+    }
+
+    [Fact]
+    public async Task Run_UpdatesLicenseCredit_WhenNestedTilesetAddsAttribution()
+    {
+        var rootTileset = new Tileset(new Tile
+        {
+            Id = "root",
+            Children =
+            [
+                new Tile { Id = "0", ContentUri = new Uri("https://example.com/nested.json") }
+            ]
+        });
+
+        var nestedTileset = new Tileset(
+            new Tile
+            {
+                Id = "nestedRoot",
+                Children =
+                [
+                    new Tile { Id = "leaf", ContentUri = new Uri("https://example.com/leaf.glb") }
+                ]
+            },
+            ["Google, Airbus"]);
+
+        var client = new FakeResoniteClient();
+        var service = new TileStreamingService(
+            new FakeFetcher(rootTileset, new Dictionary<string, Tileset>
+            {
+                ["https://example.com/nested.json"] = nestedTileset
+            }),
+            new TileSelector(new PassThroughTransformer()),
+            new FakeExtractor(),
+            new PassThroughTransformer(),
+            client,
+            new FakeGoogleAccessTokenProvider(),
+            NullLogger<TileStreamingService>.Instance);
+
+        await service.RunAsync(
+            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
+            CancellationToken.None);
+
+        client.LicenseCredits.Should().ContainInOrder(
+            "Google Maps",
+            "Google; Airbus");
+    }
+
+    [Fact]
+    public async Task Run_RemovingParentTile_AlsoRemovesParentAttribution()
+    {
+        var rootTileset = new Tileset(
+            new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "j",
+                                ContentUri = new Uri("https://example.com/nested.json")
+                            }
+                        ]
+                    }
+                ]
+            },
+            ["Google, RootProvider"]);
+
+        var nestedTileset = new Tileset(
+            new Tile
+            {
+                Id = "nestedRoot",
+                Children =
+                [
+                    new Tile { Id = "leaf", ContentUri = new Uri("https://example.com/leaf.glb") }
+                ]
+            },
+            ["Google, NestedProvider"]);
+
+        var client = new FakeResoniteClient();
+        var service = new TileStreamingService(
+            new FakeFetcher(rootTileset, new Dictionary<string, Tileset>
+            {
+                ["https://example.com/nested.json"] = nestedTileset
+            }),
+            new TileSelector(new PassThroughTransformer()),
+            new FakeExtractor(),
+            new PassThroughTransformer(),
+            client,
+            new FakeGoogleAccessTokenProvider(),
+            NullLogger<TileStreamingService>.Instance);
+
+        await service.RunAsync(
+            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
+            CancellationToken.None);
+
+        client.LicenseCredits.Should().ContainInOrder(
+            "Google Maps",
+            "Google; RootProvider",
+            "Google; RootProvider; NestedProvider",
+            "Google; NestedProvider");
+    }
+
     private sealed class PassThroughTransformer : ICoordinateTransformer
     {
         public Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double heightM) => new(latitudeDeg, longitudeDeg, heightM);
@@ -473,12 +612,19 @@ public sealed class TileStreamingServiceTests
         public int DisconnectCount { get; private set; }
         public int SendCount { get; private set; }
         public int RemoveCount { get; private set; }
+        public List<string> LicenseCredits { get; } = new();
         public List<TileMeshPayload> Payloads { get; } = new();
         public List<string> RemovedSlotIds { get; } = new();
 
         public Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
             ConnectCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
+        {
+            LicenseCredits.Add(creditString);
             return Task.CompletedTask;
         }
 
