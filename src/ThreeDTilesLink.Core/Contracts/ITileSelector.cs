@@ -16,6 +16,7 @@ namespace ThreeDTilesLink.Core.Contracts
             Matrix4x4d rootParentWorld,
             string idPrefix,
             int depthOffset,
-            string? parentContentTileId);
+            string? parentContentTileId,
+            string? parentContentStableId);
     }
 }

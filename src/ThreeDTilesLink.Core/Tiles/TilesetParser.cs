@@ -51,8 +51,12 @@ namespace ThreeDTilesLink.Core.Tiles
                 return (char)('0' + index);
             }
 
-            // Keep IDs compact: 10=>A ... 35=>Z, then loop A..Z.
-            return (char)('A' + ((index - 10) % 26));
+            if (index <= 35)
+            {
+                return (char)('A' + (index - 10));
+            }
+
+            throw new InvalidOperationException("Tile has more than 36 children; compact one-character id segment cannot represent it.");
         }
 
         private static BoundingVolume? ParseBoundingVolume(JsonElement tileElement)

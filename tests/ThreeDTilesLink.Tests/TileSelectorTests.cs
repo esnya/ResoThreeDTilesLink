@@ -58,7 +58,7 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            IReadOnlyList<TileSelectionResult> selected = selector.Select(tileset, reference, new QuerySquare(120d), maxDepth: 8, detailTargetM: 40d, maxTiles: 32, Matrix4x4d.Identity, string.Empty, 0, null);
+            IReadOnlyList<TileSelectionResult> selected = selector.Select(tileset, reference, new QuerySquare(120d), maxDepth: 8, detailTargetM: 40d, maxTiles: 32, Matrix4x4d.Identity, string.Empty, 0, null, null);
 
             _ = selected.Select(x => x.TileId).Should().Contain(["region-in", "box-in"]);
             _ = selected.Select(x => x.TileId).Should().NotContain("sphere-out");
@@ -105,6 +105,7 @@ namespace ThreeDTilesLink.Tests
                 Matrix4x4d.Identity,
                 string.Empty,
                 0,
+                null,
                 null);
 
             _ = selected.Select(x => x.TileId).Should().Contain(["p", "c", "j"]);
@@ -192,10 +193,79 @@ namespace ThreeDTilesLink.Tests
                 Matrix4x4d.Identity,
                 string.Empty,
                 0,
+                null,
                 null);
 
             _ = selected.Select(x => x.TileId).Should().Contain(["g0", "g1", "j0", "j1"]);
             _ = selected.Select(x => x.TileId).Should().NotContain("g2");
+        }
+
+        [Fact]
+        public void Select_ComposeId_KeepsCompactReadableIds()
+        {
+            var selector = new TileSelector(new GeographicCoordinateTransformer());
+            var reference = new GeoReference(0d, 0d, 0d);
+            var square = new QuerySquare(500d);
+
+            var tilesetA = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "3",
+                        ContentUri = new Uri("https://example.com/a.glb")
+                    }
+                ]
+            });
+
+            var tilesetB = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "23",
+                        ContentUri = new Uri("https://example.com/b.glb")
+                    }
+                ]
+            });
+
+            IReadOnlyList<TileSelectionResult> selectedA = selector.Select(
+                tilesetA,
+                reference,
+                square,
+                maxDepth: 8,
+                detailTargetM: 40d,
+                maxTiles: 32,
+                Matrix4x4d.Identity,
+                idPrefix: "12",
+                depthOffset: 0,
+                parentContentTileId: "12",
+                parentContentStableId: "stable12");
+
+            IReadOnlyList<TileSelectionResult> selectedB = selector.Select(
+                tilesetB,
+                reference,
+                square,
+                maxDepth: 8,
+                detailTargetM: 40d,
+                maxTiles: 32,
+                Matrix4x4d.Identity,
+                idPrefix: "1",
+                depthOffset: 0,
+                parentContentTileId: "1",
+                parentContentStableId: "stable1");
+
+            string idA = selectedA.Should().ContainSingle().Subject.TileId;
+            string idB = selectedB.Should().ContainSingle().Subject.TileId;
+            _ = idA.Should().Be("123");
+            _ = idB.Should().Be("123");
+            string stableA = selectedA.Single().StableId!;
+            string stableB = selectedB.Single().StableId!;
+            _ = stableA.Should().NotBe(stableB);
         }
     }
 }

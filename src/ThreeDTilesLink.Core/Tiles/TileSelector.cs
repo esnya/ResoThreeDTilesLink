@@ -19,19 +19,20 @@ namespace ThreeDTilesLink.Core.Tiles
             Matrix4x4d rootParentWorld,
             string idPrefix,
             int depthOffset,
-            string? parentContentTileId)
+            string? parentContentTileId,
+            string? parentContentStableId)
         {
             ArgumentNullException.ThrowIfNull(tileset);
             ArgumentNullException.ThrowIfNull(reference);
             ArgumentNullException.ThrowIfNull(square);
             int selectionLimit = maxTiles <= 0 ? int.MaxValue : maxTiles;
             var selected = new List<TileSelectionResult>(capacity: SMath.Max(1, SMath.Min(selectionLimit, 4096)));
-            var queue = new Queue<(Tile Tile, Matrix4x4d ParentWorld, int Depth, string? ParentContentTileId)>();
-            queue.Enqueue((tileset.Root, rootParentWorld, depthOffset, parentContentTileId));
+            var queue = new Queue<(Tile Tile, Matrix4x4d ParentWorld, int Depth, string? ParentContentTileId, string? ParentContentStableId)>();
+            queue.Enqueue((tileset.Root, rootParentWorld, depthOffset, parentContentTileId, parentContentStableId));
 
             while (queue.Count > 0 && selected.Count < selectionLimit)
             {
-                (Tile? tile, Matrix4x4d parentWorld, int depth, string? parentContentId) = queue.Dequeue();
+                (Tile? tile, Matrix4x4d parentWorld, int depth, string? parentContentId, string? parentContentStableKey) = queue.Dequeue();
                 Matrix4x4d local = tile.Transform is { Count: 16 }
                     ? Matrix4x4d.FromCesiumColumnMajor(tile.Transform)
                     : Matrix4x4d.Identity;
@@ -45,6 +46,7 @@ namespace ThreeDTilesLink.Core.Tiles
                 if (tile.ContentUri is not null)
                 {
                     string tileId = ComposeId(idPrefix, tile.Id);
+                    string stableId = ComposeStableId(idPrefix, tile.Id);
                     bool hasChildren = tile.Children.Count > 0;
                     TileContentKind kind = DetectContentKind(tile.ContentUri);
                     selected.Add(new TileSelectionResult(
@@ -56,8 +58,11 @@ namespace ThreeDTilesLink.Core.Tiles
                         kind,
                         hasChildren,
                         horizontalSpanM,
-                        []));
+                        [],
+                        stableId,
+                        parentContentStableKey));
                     parentContentId = tileId;
+                    parentContentStableKey = stableId;
                     if (selected.Count >= selectionLimit)
                     {
                         break;
@@ -72,7 +77,7 @@ namespace ThreeDTilesLink.Core.Tiles
                 // Breadth-first traversal: shallower tiles are discovered before deeper tiles.
                 for (int i = 0; i < tile.Children.Count; i++)
                 {
-                    queue.Enqueue((tile.Children[i], world, depth + 1, parentContentId));
+                    queue.Enqueue((tile.Children[i], world, depth + 1, parentContentId, parentContentStableKey));
                 }
             }
 
@@ -104,9 +109,22 @@ namespace ThreeDTilesLink.Core.Tiles
 
         private static string ComposeId(string prefix, string id)
         {
+            string segment = id.Trim();
+            if (string.IsNullOrWhiteSpace(segment))
+            {
+                segment = "tile";
+            }
+
             return string.IsNullOrWhiteSpace(prefix)
-                ? id.Replace("/", string.Empty, StringComparison.Ordinal)
-                : $"{prefix}{id}".Replace("/", string.Empty, StringComparison.Ordinal);
+                ? segment
+                : $"{prefix}{segment}";
+        }
+
+        private static string ComposeStableId(string prefix, string id)
+        {
+            string normalizedPrefix = prefix ?? string.Empty;
+            string normalizedId = id ?? string.Empty;
+            return $"{normalizedPrefix.Length}:{normalizedPrefix}|{normalizedId.Length}:{normalizedId}";
         }
 
         private bool Intersects(BoundingVolume? volume, Matrix4x4d world, GeoReference reference, QuerySquare square, out double? horizontalSpanM)

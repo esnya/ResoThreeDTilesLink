@@ -24,13 +24,13 @@ namespace ThreeDTilesLink.Tests
             });
 
             var fetcher = new FakeFetcher(tileset);
-            var selector = new TileSelector(new PassThroughTransformer());
+            var scheduler = CreateScheduler();
             var extractor = new FakeExtractor();
             var client = new FakeResoniteClient();
 
             var service = new TileStreamingService(
                 fetcher,
-                selector,
+                scheduler,
                 extractor,
                 new PassThroughTransformer(),
                 client,
@@ -64,13 +64,13 @@ namespace ThreeDTilesLink.Tests
             });
 
             var fetcher = new FakeFetcher(tileset);
-            var selector = new TileSelector(new PassThroughTransformer());
+            var scheduler = CreateScheduler();
             var extractor = new FakeExtractor();
             var client = new FakeResoniteClient(failFirstSend: true);
 
             var service = new TileStreamingService(
                 fetcher,
-                selector,
+                scheduler,
                 extractor,
                 new PassThroughTransformer(),
                 client,
@@ -115,13 +115,13 @@ namespace ThreeDTilesLink.Tests
             {
                 ["https://example.com/nested.json"] = nestedTileset
             });
-            var selector = new TileSelector(new PassThroughTransformer());
+            var scheduler = CreateScheduler();
             var extractor = new FakeExtractor();
             var client = new FakeResoniteClient();
 
             var service = new TileStreamingService(
                 fetcher,
-                selector,
+                scheduler,
                 extractor,
                 new PassThroughTransformer(),
                 client,
@@ -151,13 +151,13 @@ namespace ThreeDTilesLink.Tests
             });
 
             var fetcher = new FakeFetcher(tileset);
-            var selector = new TileSelector(new PassThroughTransformer());
+            var scheduler = CreateScheduler();
             var extractor = new FakeExtractor();
             var client = new FakeResoniteClient();
 
             var service = new TileStreamingService(
                 fetcher,
-                selector,
+                scheduler,
                 extractor,
                 new PassThroughTransformer(),
                 client,
@@ -189,13 +189,13 @@ namespace ThreeDTilesLink.Tests
             });
 
             var fetcher = new FakeFetcher(tileset);
-            var selector = new TileSelector(new PassThroughTransformer());
+            var scheduler = CreateScheduler();
             var extractor = new FakeExtractor();
             var client = new FakeResoniteClient();
 
             var service = new TileStreamingService(
                 fetcher,
-                selector,
+                scheduler,
                 extractor,
                 new PassThroughTransformer(),
                 client,
@@ -239,13 +239,13 @@ namespace ThreeDTilesLink.Tests
             {
                 ["https://example.com/nested.json"] = nestedTileset
             });
-            var selector = new TileSelector(new PassThroughTransformer());
+            var scheduler = CreateScheduler();
             var extractor = new FakeExtractor();
             var client = new FakeResoniteClient();
 
             var service = new TileStreamingService(
                 fetcher,
-                selector,
+                scheduler,
                 extractor,
                 new PassThroughTransformer(),
                 client,
@@ -288,7 +288,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteClient();
             var service = new TileStreamingService(
                 new FakeFetcher(tileset),
-                new TileSelector(new PassThroughTransformer()),
+                CreateScheduler(),
                 new FakeExtractor(),
                 new PassThroughTransformer(),
                 client,
@@ -343,7 +343,7 @@ namespace ThreeDTilesLink.Tests
                 {
                     ["https://example.com/nested.json"] = nestedTileset
                 }),
-                new TileSelector(new PassThroughTransformer()),
+                CreateScheduler(),
                 new FakeExtractor(),
                 new PassThroughTransformer(),
                 client,
@@ -385,7 +385,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteClient(failOnNameContains: "tile_c_m");
             var service = new TileStreamingService(
                 new FakeFetcher(tileset),
-                new TileSelector(new PassThroughTransformer()),
+                CreateScheduler(),
                 new FakeExtractor(),
                 new PassThroughTransformer(),
                 client,
@@ -420,7 +420,7 @@ namespace ThreeDTilesLink.Tests
                     {
                         ["https://example.com/a.glb"] = [1]
                     }),
-                new TileSelector(new PassThroughTransformer()),
+                CreateScheduler(),
                 new FakeExtractor(new Dictionary<byte, string>
                 {
                     [1] = "Google; Maxar Technologies"
@@ -473,7 +473,7 @@ namespace ThreeDTilesLink.Tests
                     {
                         ["https://example.com/leaf.glb"] = [2]
                     }),
-                new TileSelector(new PassThroughTransformer()),
+                CreateScheduler(),
                 new FakeExtractor(new Dictionary<byte, string>
                 {
                     [2] = "Google; Airbus"
@@ -539,7 +539,7 @@ namespace ThreeDTilesLink.Tests
                         ["https://example.com/p.glb"] = [1],
                         ["https://example.com/leaf.glb"] = [2]
                     }),
-                new TileSelector(new PassThroughTransformer()),
+                CreateScheduler(),
                 new FakeExtractor(new Dictionary<byte, string>
                 {
                     [1] = "Google; RootProvider",
@@ -581,7 +581,7 @@ namespace ThreeDTilesLink.Tests
                     {
                         ["https://example.com/sample.glb"] = [3]
                     }),
-                new TileSelector(new PassThroughTransformer()),
+                CreateScheduler(),
                 new FakeExtractor(new Dictionary<byte, string>
                 {
                     [3] = "Data SIO, NOAA, U.S. Navy, NGA, GEBCO;Landsat / Copernicus"
@@ -629,7 +629,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteClient();
             var service = new TileStreamingService(
                 new FakeFetcher(tileset),
-                new TileSelector(new PassThroughTransformer()),
+                CreateScheduler(),
                 new FakeExtractor(),
                 new PassThroughTransformer(),
                 client,
@@ -675,7 +675,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteClient();
             var service = new TileStreamingService(
                 new FakeFetcher(tileset),
-                new TileSelector(new PassThroughTransformer()),
+                CreateScheduler(),
                 new FakeExtractor(),
                 new PassThroughTransformer(),
                 client,
@@ -703,6 +703,13 @@ namespace ThreeDTilesLink.Tests
                     0d, 0d, halfExtent
                 ]
             };
+        }
+
+        private static ITileStreamingScheduler CreateScheduler()
+        {
+            return new DefaultTileStreamingScheduler(
+                new TileSelector(new PassThroughTransformer()),
+                NullLogger<DefaultTileStreamingScheduler>.Instance);
         }
 
         private sealed class PassThroughTransformer : ICoordinateTransformer
