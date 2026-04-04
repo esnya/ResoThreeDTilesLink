@@ -839,6 +839,102 @@ namespace ThreeDTilesLink.Tests
             _ = client.MaxConcurrentStreams.Should().Be(1);
         }
 
+        [Fact]
+        public async Task Run_NonDryRun_ContinuesNestedDiscoveryWhileStreaming()
+        {
+            var fineUri = new Uri("https://example.com/fine.glb");
+            var rootTileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "coarse", ContentUri = new Uri("https://example.com/coarse.glb") },
+                    new Tile { Id = "nested", ContentUri = new Uri("https://example.com/nested.json") }
+                ]
+            });
+
+            var nestedTileset = new Tileset(new Tile
+            {
+                Id = "nestedRoot",
+                Children =
+                [
+                    new Tile { Id = "fine", ContentUri = fineUri }
+                ]
+            });
+
+            var coarseStreamStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var fineFetchStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseStream = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            var client = new FakeResoniteSession(
+                streamBlocker: releaseStream,
+                onStreamStarted: payload =>
+                {
+                    if (payload.Name.Contains("tile_coarse_", StringComparison.Ordinal))
+                    {
+                        _ = coarseStreamStarted.TrySetResult(true);
+                    }
+                });
+            var tilesSource = new FakeTilesSource(
+                rootTileset,
+                new Dictionary<string, Tileset>
+                {
+                    ["https://example.com/nested.json"] = nestedTileset
+                },
+                onFetchStarted: uri =>
+                {
+                    if (uri == fineUri)
+                    {
+                        _ = fineFetchStarted.TrySetResult(true);
+                    }
+                });
+
+            TileRunCoordinator coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 2);
+            Task<RunSummary> runTask = coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
+
+            _ = await coarseStreamStarted.Task.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(true);
+            _ = await fineFetchStarted.Task.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(true);
+            _ = releaseStream.TrySetResult(true);
+
+            RunSummary summary = await runTask.ConfigureAwait(true);
+
+            _ = summary.StreamedMeshes.Should().Be(2);
+            _ = client.ProgressUpdates.Should().Contain(update => update.ProgressText.Contains("queued-send=", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task Run_NonDryRun_PreservesSendOrder_WhenLaterRenderablePreparesFirst()
+        {
+            var firstUri = "https://example.com/first.glb";
+            var secondUri = "https://example.com/second.glb";
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "first", ContentUri = new Uri(firstUri) },
+                    new Tile { Id = "second", ContentUri = new Uri(secondUri) }
+                ]
+            });
+
+            var tilesSource = new FakeTilesSource(
+                tileset,
+                contentDelayByUri: new Dictionary<string, TimeSpan>
+                {
+                    [firstUri] = TimeSpan.FromMilliseconds(120),
+                    [secondUri] = TimeSpan.FromMilliseconds(10)
+                });
+            var client = new FakeResoniteSession(streamDelay: TimeSpan.FromMilliseconds(20));
+            TileRunCoordinator coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 2);
+
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(2);
+            _ = client.Payloads.Should().HaveCount(2);
+            _ = client.Payloads[0].Name.Should().Contain("tile_first_");
+            _ = client.Payloads[1].Name.Should().Contain("tile_second_");
+        }
+
         private static TileRunCoordinator CreateCoordinator(
             ITilesSource tilesSource,
             FakeResoniteSession session,
@@ -918,12 +1014,16 @@ namespace ThreeDTilesLink.Tests
             Tileset tileset,
             IReadOnlyDictionary<string, Tileset>? nestedTilesets = null,
             IReadOnlyDictionary<string, byte[]>? tileContentByUri = null,
-            TimeSpan? contentDelay = null) : ITilesSource
+            TimeSpan? contentDelay = null,
+            IReadOnlyDictionary<string, TimeSpan>? contentDelayByUri = null,
+            Action<Uri>? onFetchStarted = null) : ITilesSource
         {
             private readonly Tileset _tileset = tileset;
             private readonly IReadOnlyDictionary<string, Tileset> _nestedTilesets = nestedTilesets ?? new Dictionary<string, Tileset>();
             private readonly IReadOnlyDictionary<string, byte[]> _tileContentByUri = tileContentByUri ?? new Dictionary<string, byte[]>();
             private readonly TimeSpan _contentDelay = contentDelay ?? TimeSpan.Zero;
+            private readonly IReadOnlyDictionary<string, TimeSpan> _contentDelayByUri = contentDelayByUri ?? new Dictionary<string, TimeSpan>();
+            private readonly Action<Uri>? _onFetchStarted = onFetchStarted;
             private int _activeContentFetches;
             private int _maxConcurrentContentFetches;
 
@@ -938,12 +1038,16 @@ namespace ThreeDTilesLink.Tests
             {
                 int current = Interlocked.Increment(ref _activeContentFetches);
                 UpdateMaxConcurrentContentFetches(current);
+                _onFetchStarted?.Invoke(contentUri);
 
                 try
                 {
-                    if (_contentDelay > TimeSpan.Zero)
+                    TimeSpan delay = _contentDelayByUri.TryGetValue(contentUri.AbsoluteUri, out TimeSpan specificDelay)
+                        ? specificDelay
+                        : _contentDelay;
+                    if (delay > TimeSpan.Zero)
                     {
-                        await Task.Delay(_contentDelay, cancellationToken).ConfigureAwait(false);
+                        await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
                     }
 
                     return
@@ -1008,12 +1112,16 @@ namespace ThreeDTilesLink.Tests
             bool failFirstSend = false,
             string? failOnNameContains = null,
             TimeSpan? streamDelay = null,
-            Action<PlacedMeshPayload, int>? onStreamCompleted = null) : IResoniteSession
+            Action<PlacedMeshPayload, int>? onStreamCompleted = null,
+            TaskCompletionSource<bool>? streamBlocker = null,
+            Action<PlacedMeshPayload>? onStreamStarted = null) : IResoniteSession
         {
             private readonly bool _failFirstSend = failFirstSend;
             private readonly string? _failOnNameContains = failOnNameContains;
             private readonly TimeSpan _streamDelay = streamDelay ?? TimeSpan.Zero;
             private readonly Action<PlacedMeshPayload, int>? _onStreamCompleted = onStreamCompleted;
+            private readonly TaskCompletionSource<bool>? _streamBlocker = streamBlocker;
+            private readonly Action<PlacedMeshPayload>? _onStreamStarted = onStreamStarted;
             private int _activeStreams;
             private int _maxConcurrentStreams;
 
@@ -1060,6 +1168,12 @@ namespace ThreeDTilesLink.Tests
 
                 try
                 {
+                    _onStreamStarted?.Invoke(payload);
+                    if (_streamBlocker is not null)
+                    {
+                        _ = await _streamBlocker.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    }
+
                     if (_streamDelay > TimeSpan.Zero)
                     {
                         await Task.Delay(_streamDelay, cancellationToken).ConfigureAwait(false);

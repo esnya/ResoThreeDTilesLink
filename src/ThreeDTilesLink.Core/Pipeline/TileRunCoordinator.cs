@@ -94,34 +94,168 @@ namespace ThreeDTilesLink.Core.Pipeline
                 Tiles.Tileset rootTileset = await _tilesSource.FetchRootTilesetAsync(auth, cancellationToken).ConfigureAwait(false);
                 _traversalPlanner.Initialize(rootTileset, request);
                 interactiveContext?.MarkPlannerInitialized();
-                await SetProgressAsync(request, _traversalPlanner.GetProgress(), cancellationToken).ConfigureAwait(false);
+                long nextProcessSequence = 0;
+                long nextRenderableSequence = 0;
+                int preparedRenderablesInFlight = 0;
+                int preparedStreamBacklogLimit = System.Math.Max(16, _maxConcurrentTileProcessing * 4);
+                Task<PreparedProcessTileCommand>[] activePrepareTasks = [];
+                Task<PlannerResult>? activeResoniteTask = null;
+                var pendingPlannerResults = new Queue<PlannerResult>();
+                var pendingResoniteCommands = new Queue<PlannerCommand>();
+                var completedNonRenderableSequences = new HashSet<long>();
+                var preparedRenderables = new SortedDictionary<long, PreparedRenderableContent>();
 
-                while (_traversalPlanner.TryPlanNextBatch(_maxConcurrentTileProcessing, out IReadOnlyList<PlannerCommand> commandBatch) &&
-                       commandBatch.Count > 0)
+                async Task ReportProgressAsync()
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (commandBatch[0] is ProcessTileContentCommand)
+                    PlannerProgress progress = _traversalPlanner.GetProgress() with
                     {
-                        IReadOnlyList<PlannerResult> batchResults = await ExecuteProcessTileBatchAsync(
-                            commandBatch.Cast<ProcessTileContentCommand>().ToArray(),
-                            request,
-                            auth,
-                            interactiveContext,
-                            cancellationToken).ConfigureAwait(false);
+                        PendingPreparedStreams = preparedRenderablesInFlight
+                    };
 
-                        foreach (PlannerResult batchResult in batchResults)
+                    await SetProgressAsync(request, progress, cancellationToken).ConfigureAwait(false);
+                }
+
+                void AdvanceRenderableSequence()
+                {
+                    while (completedNonRenderableSequences.Remove(nextRenderableSequence))
+                    {
+                        nextRenderableSequence++;
+                    }
+                }
+
+                int GetPrepareCapacity()
+                {
+                    int workerCapacity = _maxConcurrentTileProcessing - activePrepareTasks.Length;
+                    if (workerCapacity <= 0)
+                    {
+                        return 0;
+                    }
+
+                    int backlogCapacity = preparedStreamBacklogLimit - preparedRenderablesInFlight;
+                    if (backlogCapacity <= 0)
+                    {
+                        return 0;
+                    }
+
+                    return System.Math.Min(workerCapacity, backlogCapacity);
+                }
+
+                await ReportProgressAsync().ConfigureAwait(false);
+
+                while (true)
+                {
+                    while (pendingPlannerResults.Count > 0)
+                    {
+                        PlannerResult result = pendingPlannerResults.Dequeue();
+                        _traversalPlanner.ApplyResult(result);
+                        await ReportProgressAsync().ConfigureAwait(false);
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    while (GetPrepareCapacity() > 0 &&
+                           _traversalPlanner.TryPlanNextBatch(GetPrepareCapacity(), out IReadOnlyList<PlannerCommand> commandBatch) &&
+                           commandBatch.Count > 0)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        if (commandBatch[0] is ProcessTileContentCommand)
                         {
-                            _traversalPlanner.ApplyResult(batchResult);
-                            await SetProgressAsync(request, _traversalPlanner.GetProgress(), cancellationToken).ConfigureAwait(false);
+                            var prepareTasks = new Task<PreparedProcessTileCommand>[commandBatch.Count];
+                            for (int i = 0; i < commandBatch.Count; i++)
+                            {
+                                prepareTasks[i] = PrepareProcessTileContentAsync(
+                                    nextProcessSequence++,
+                                    (ProcessTileContentCommand)commandBatch[i],
+                                    request,
+                                    auth,
+                                    interactiveContext,
+                                    cancellationToken);
+                            }
+
+                            activePrepareTasks = [.. activePrepareTasks, .. prepareTasks];
+                            continue;
                         }
 
+                        pendingResoniteCommands.Enqueue(commandBatch[0]);
+                    }
+
+                    if (activeResoniteTask is null)
+                    {
+                        if (pendingResoniteCommands.Count > 0)
+                        {
+                            PlannerCommand command = pendingResoniteCommands.Dequeue();
+                            activeResoniteTask = ExecuteCommandAsync(command, request, auth, interactiveContext, cancellationToken);
+                        }
+                        else if (preparedRenderables.Remove(nextRenderableSequence, out PreparedRenderableContent? renderable))
+                        {
+                            activeResoniteTask = ExecuteStreamPlacedMeshesAsync(
+                                new StreamPlacedMeshesCommand(renderable.Tile, renderable.Meshes, renderable.AssetCopyright),
+                                interactiveContext,
+                                cancellationToken);
+                        }
+                    }
+
+                    if (pendingPlannerResults.Count > 0)
+                    {
                         continue;
                     }
 
-                    PlannerCommand command = commandBatch[0];
-                    PlannerResult singleResult = await ExecuteCommandAsync(command, request, auth, interactiveContext, cancellationToken).ConfigureAwait(false);
-                    _traversalPlanner.ApplyResult(singleResult);
-                    await SetProgressAsync(request, _traversalPlanner.GetProgress(), cancellationToken).ConfigureAwait(false);
+                    bool hasActivePrepare = activePrepareTasks.Length > 0;
+                    bool hasPendingRenderable = preparedRenderables.Count > 0;
+                    bool hasPendingResoniteCommand = pendingResoniteCommands.Count > 0;
+                    if (!hasActivePrepare &&
+                        activeResoniteTask is null &&
+                        !hasPendingRenderable &&
+                        !hasPendingResoniteCommand)
+                    {
+                        break;
+                    }
+
+                    var completionCandidates = new List<Task>(activePrepareTasks.Length + (activeResoniteTask is null ? 0 : 1));
+                    completionCandidates.AddRange(activePrepareTasks);
+                    if (activeResoniteTask is not null)
+                    {
+                        completionCandidates.Add(activeResoniteTask);
+                    }
+
+                    Task completedTask = await Task.WhenAny(completionCandidates).ConfigureAwait(false);
+
+                    if (activeResoniteTask is not null && ReferenceEquals(completedTask, activeResoniteTask))
+                    {
+                        PlannerResult resoniteResult = await activeResoniteTask.ConfigureAwait(false);
+                        pendingPlannerResults.Enqueue(resoniteResult);
+
+                        if (resoniteResult is RenderableContentReadyResult or ContentFailedResult)
+                        {
+                            preparedRenderablesInFlight--;
+                            nextRenderableSequence++;
+                            AdvanceRenderableSequence();
+                        }
+
+                        activeResoniteTask = null;
+                        continue;
+                    }
+
+                    Task<PreparedProcessTileCommand> completedPrepareTask = (Task<PreparedProcessTileCommand>)completedTask;
+                    PreparedProcessTileCommand prepared = await completedPrepareTask.ConfigureAwait(false);
+                    activePrepareTasks = [.. activePrepareTasks.Where(task => !ReferenceEquals(task, completedPrepareTask))];
+
+                    switch (prepared)
+                    {
+                        case PreparedPlannerResult direct:
+                            pendingPlannerResults.Enqueue(direct.Result);
+                            _ = completedNonRenderableSequences.Add(direct.Sequence);
+                            AdvanceRenderableSequence();
+                            break;
+                        case PreparedRenderableContent renderable:
+                            preparedRenderables[renderable.Sequence] = renderable;
+                            preparedRenderablesInFlight++;
+                            await ReportProgressAsync().ConfigureAwait(false);
+                            break;
+                        default:
+                            throw new InvalidOperationException($"Unsupported prepared tile content type: {prepared.GetType().Name}");
+                    }
                 }
 
                 RunSummary summary = _traversalPlanner.GetSummary();
@@ -137,42 +271,6 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        private async Task<IReadOnlyList<PlannerResult>> ExecuteProcessTileBatchAsync(
-            IReadOnlyList<ProcessTileContentCommand> batch,
-            TileRunRequest request,
-            GoogleTilesAuth auth,
-            InteractiveExecutionContext? interactiveContext,
-            CancellationToken cancellationToken)
-        {
-            if (batch.Count == 1)
-            {
-                return
-                [
-                    await ExecuteProcessTileContentAsync(batch[0], request, auth, interactiveContext, cancellationToken).ConfigureAwait(false)
-                ];
-            }
-
-            _logger.LogDebug("Running tile content batch with {BatchSize} workers.", batch.Count);
-
-            Task<PreparedProcessTileCommand>[] preparedTasks = batch
-                .Select(command => PrepareProcessTileContentAsync(command, auth, interactiveContext, cancellationToken))
-                .ToArray();
-
-            var results = new List<PlannerResult>(batch.Count);
-            for (int i = 0; i < preparedTasks.Length; i++)
-            {
-                PreparedProcessTileCommand prepared = await preparedTasks[i].ConfigureAwait(false);
-                PlannerResult result = await FinalizePreparedProcessTileAsync(
-                    prepared,
-                    request,
-                    interactiveContext,
-                    cancellationToken).ConfigureAwait(false);
-                results.Add(result);
-            }
-
-            return results;
-        }
-
         private async Task<PlannerResult> ExecuteCommandAsync(
             PlannerCommand command,
             TileRunRequest request,
@@ -182,7 +280,10 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             return command switch
             {
-                ProcessTileContentCommand process => await ExecuteProcessTileContentAsync(process, request, auth, interactiveContext, cancellationToken).ConfigureAwait(false),
+                ProcessTileContentCommand process => await FinalizePreparedProcessTileAsync(
+                    await PrepareProcessTileContentAsync(0, process, request, auth, interactiveContext, cancellationToken).ConfigureAwait(false),
+                    interactiveContext,
+                    cancellationToken).ConfigureAwait(false),
                 StreamPlacedMeshesCommand stream => await ExecuteStreamPlacedMeshesAsync(stream, interactiveContext, cancellationToken).ConfigureAwait(false),
                 RemoveSlotsCommand remove => await ExecuteRemoveSlotsAsync(remove, interactiveContext, cancellationToken).ConfigureAwait(false),
                 UpdateLicenseCreditCommand update => await ExecuteUpdateLicenseCreditAsync(update, cancellationToken).ConfigureAwait(false),
@@ -190,28 +291,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             };
         }
 
-        private async Task<PlannerResult> ExecuteProcessTileContentAsync(
+        private async Task<PreparedProcessTileCommand> PrepareProcessTileContentAsync(
+            long sequence,
             ProcessTileContentCommand command,
             TileRunRequest request,
-            GoogleTilesAuth auth,
-            InteractiveExecutionContext? interactiveContext,
-            CancellationToken cancellationToken)
-        {
-            PreparedProcessTileCommand prepared = await PrepareProcessTileContentAsync(
-                command,
-                auth,
-                interactiveContext,
-                cancellationToken).ConfigureAwait(false);
-
-            return await FinalizePreparedProcessTileAsync(
-                prepared,
-                request,
-                interactiveContext,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        private async Task<PreparedProcessTileCommand> PrepareProcessTileContentAsync(
-            ProcessTileContentCommand command,
             GoogleTilesAuth auth,
             InteractiveExecutionContext? interactiveContext,
             CancellationToken cancellationToken)
@@ -220,6 +303,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 interactiveContext.TryGetRetainedTile(command.Tile, out RetainedTileState retainedTile))
             {
                 return new PreparedPlannerResult(
+                    sequence,
                     new RenderableContentReadyResult(command.Tile, 0, retainedTile.SlotIds, retainedTile.AssetCopyright));
             }
 
@@ -227,6 +311,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 interactiveContext.HasRetainedVisibleDescendant(command.Tile))
             {
                 return new PreparedPlannerResult(
+                    sequence,
                     new ContentSkippedResult(command.Tile, "Suppressed by retained descendant."));
             }
 
@@ -235,47 +320,43 @@ namespace ThreeDTilesLink.Core.Pipeline
                 ContentProcessResult content = await _contentProcessor.ProcessAsync(command.Tile, auth, cancellationToken).ConfigureAwait(false);
                 return content switch
                 {
-                    NestedTilesetContentProcessResult nested => new PreparedPlannerResult(new NestedTilesetLoadedResult(command.Tile, nested.Tileset)),
-                    RenderableContentProcessResult renderable => new PreparedRenderableContent(command.Tile, renderable),
-                    SkippedContentProcessResult skipped => new PreparedPlannerResult(new ContentSkippedResult(command.Tile, skipped.Reason)),
+                    NestedTilesetContentProcessResult nested => new PreparedPlannerResult(sequence, new NestedTilesetLoadedResult(command.Tile, nested.Tileset)),
+                    RenderableContentProcessResult renderable => PrepareRenderableContent(sequence, command.Tile, renderable, request),
+                    SkippedContentProcessResult skipped => new PreparedPlannerResult(sequence, new ContentSkippedResult(command.Tile, skipped.Reason)),
                     _ => throw new InvalidOperationException($"Unsupported content process result: {content.GetType().Name}")
                 };
             }
             catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
             {
-                return new PreparedPlannerResult(new ContentSkippedResult(command.Tile, Error: ex));
+                return new PreparedPlannerResult(sequence, new ContentSkippedResult(command.Tile, Error: ex));
             }
             catch (Exception ex)
             {
-                return new PreparedPlannerResult(new ContentFailedResult(command.Tile, ex));
+                return new PreparedPlannerResult(sequence, new ContentFailedResult(command.Tile, ex));
             }
         }
 
         private async Task<PlannerResult> FinalizePreparedProcessTileAsync(
             PreparedProcessTileCommand prepared,
-            TileRunRequest request,
             InteractiveExecutionContext? interactiveContext,
             CancellationToken cancellationToken)
         {
             return prepared switch
             {
                 PreparedPlannerResult direct => direct.Result,
-                PreparedRenderableContent renderable => await ExecuteRenderableContentAsync(
-                    renderable.Tile,
-                    renderable.Renderable,
-                    request,
+                PreparedRenderableContent renderable => await ExecuteStreamPlacedMeshesAsync(
+                    new StreamPlacedMeshesCommand(renderable.Tile, renderable.Meshes, renderable.AssetCopyright),
                     interactiveContext,
                     cancellationToken).ConfigureAwait(false),
                 _ => throw new InvalidOperationException($"Unsupported prepared tile content type: {prepared.GetType().Name}")
             };
         }
 
-        private async Task<PlannerResult> ExecuteRenderableContentAsync(
+        private PreparedProcessTileCommand PrepareRenderableContent(
+            long sequence,
             TileSelectionResult tile,
             RenderableContentProcessResult renderable,
-            TileRunRequest request,
-            InteractiveExecutionContext? interactiveContext,
-            CancellationToken cancellationToken)
+            TileRunRequest request)
         {
             IReadOnlyList<PlacedMeshPayload> placedMeshes = _meshPlacementService.Place(
                 tile,
@@ -285,13 +366,12 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             if (request.Output.DryRun)
             {
-                return new RenderableContentReadyResult(tile, placedMeshes.Count, [], renderable.AssetCopyright);
+                return new PreparedPlannerResult(
+                    sequence,
+                    new RenderableContentReadyResult(tile, placedMeshes.Count, [], renderable.AssetCopyright));
             }
 
-            return await ExecuteStreamPlacedMeshesAsync(
-                new StreamPlacedMeshesCommand(tile, placedMeshes, renderable.AssetCopyright),
-                interactiveContext,
-                cancellationToken).ConfigureAwait(false);
+            return new PreparedRenderableContent(sequence, tile, placedMeshes, renderable.AssetCopyright);
         }
 
         private async Task<PlannerResult> ExecuteStreamPlacedMeshesAsync(
@@ -370,15 +450,17 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        private abstract record PreparedProcessTileCommand(TileSelectionResult Tile);
+        private abstract record PreparedProcessTileCommand(long Sequence, TileSelectionResult Tile);
 
-        private sealed record PreparedPlannerResult(PlannerResult Result)
-            : PreparedProcessTileCommand(ResolveTile(Result));
+        private sealed record PreparedPlannerResult(long Sequence, PlannerResult Result)
+            : PreparedProcessTileCommand(Sequence, ResolveTile(Result));
 
         private sealed record PreparedRenderableContent(
+            long Sequence,
             TileSelectionResult Tile,
-            RenderableContentProcessResult Renderable)
-            : PreparedProcessTileCommand(Tile);
+            IReadOnlyList<PlacedMeshPayload> Meshes,
+            string? AssetCopyright)
+            : PreparedProcessTileCommand(Sequence, Tile);
 
         private static TileSelectionResult ResolveTile(PlannerResult result)
         {
@@ -635,7 +717,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                 progress.PendingTilesets +
                 progress.PendingGlbTiles +
                 progress.DeferredGlbTiles +
-                progress.PendingTileCommands;
+                progress.PendingTileCommands +
+                progress.PendingPreparedStreams;
             int totalUnits = completedUnits + pendingUnits;
 
             if (totalUnits <= 0)
@@ -654,7 +737,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         private static string BuildProgressText(PlannerProgress progress)
         {
-            return $"Running: candidate={progress.CandidateTiles} processed={progress.ProcessedTiles} streamed={progress.StreamedMeshes} failed={progress.FailedTiles}";
+            return $"Running: candidate={progress.CandidateTiles} processed={progress.ProcessedTiles} streamed={progress.StreamedMeshes} failed={progress.FailedTiles} queued-send={progress.PendingPreparedStreams}";
         }
 
         private static string ResolveStableId(TileSelectionResult tile)
