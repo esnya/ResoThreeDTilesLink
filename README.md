@@ -10,9 +10,13 @@ This `README.md` is the human-facing entry point. Current operational details an
 ## Prerequisites
 
 - `.NET SDK 10.0+`
-- Authentication for the Google Map Tiles API
-  - Use `GOOGLE_MAPS_API_KEY`
-  - Or use ADC (`gcloud auth application-default login` / `GOOGLE_APPLICATION_CREDENTIALS`)
+- Google APIs required by feature
+  - 3D Tiles fetch (`ThreeDTilesLink.Cli`, `ThreeDTilesLink.Interactive` tile streaming): Google Map Tiles API
+    - Use `GOOGLE_MAPS_API_KEY`
+    - Or use ADC (`gcloud auth application-default login` / `GOOGLE_APPLICATION_CREDENTIALS`)
+  - Free-text location search in Interactive (`World/ThreeDTilesLink.Search`): Google Geocoding API
+    - Use `GOOGLE_MAPS_API_KEY`
+    - ADC is not used for this search path
 - Enable Resonite Link in Resonite and confirm the destination port
 
 At startup, the CLI automatically loads `.env` with parent-directory discovery and does not overwrite existing environment variables.
@@ -30,6 +34,8 @@ dotnet test ThreeDTilesLink.slnx
 ```
 
 ## Usage (CLI)
+
+Required Google API: Google Map Tiles API
 
 ```bash
 dotnet run --project src/ThreeDTilesLink.Cli -- \
@@ -60,6 +66,11 @@ dotnet run --project src/ThreeDTilesLink.Cli -- \
 ```
 
 ## Usage (Interactive / Resident)
+
+Required Google APIs by operation:
+
+- Tile streaming from `Latitude` / `Longitude` / `Range`: Google Map Tiles API
+- Free-text search from `Search`: Google Geocoding API
 
 At connection time, the app creates a probe slot and watches `DynamicValueVariable<T>` values under:
 
