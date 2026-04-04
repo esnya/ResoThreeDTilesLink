@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -10,7 +11,8 @@ namespace ThreeDTilesLink.Core.Resonite
 {
     public sealed class ResoniteSession(
         LinkInterface resoniteLink,
-        ILogger<ResoniteSession> logger) : IResoniteSession, IProbeStore, IAsyncDisposable
+        ILogger<ResoniteSession> logger,
+        Func<LinkInterface>? linkInterfaceFactory = null) : IResoniteSession, IProbeStore, IAsyncDisposable
     {
         private const string SlotWorkerType = "[FrooxEngine]FrooxEngine.Slot";
         private const string StaticMeshComponentType = "[FrooxEngine]FrooxEngine.StaticMesh";
@@ -45,6 +47,9 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string TextureAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.ITexture2D>";
         private const string ColliderTypeEnumType = "[FrooxEngine]FrooxEngine.ColliderType";
         private const int ReadComponentMemberMaxAttempts = 3;
+        private const int LinkRequestMaxAttempts = 2;
+        private static readonly TimeSpan DefaultLinkRequestTimeout = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan MeshImportRequestTimeout = TimeSpan.FromMinutes(2);
         private static readonly TimeSpan ReadComponentMemberRetryDelay = TimeSpan.FromMilliseconds(25);
 
         private static readonly string[] PreferredTextureFieldNames = ["AlbedoTexture", "BaseColorTexture", "MainTexture", "Texture"];
@@ -61,7 +66,8 @@ namespace ThreeDTilesLink.Core.Resonite
             "FrooxEngine.UserLoginStatus"
         ];
 
-        private readonly LinkInterface _linkInterface = resoniteLink ?? throw new ArgumentNullException(nameof(resoniteLink));
+        private LinkInterface _linkInterface = resoniteLink ?? throw new ArgumentNullException(nameof(resoniteLink));
+        private readonly Func<LinkInterface> _linkInterfaceFactory = linkInterfaceFactory ?? (() => new LinkInterface());
         private readonly ILogger<ResoniteSession> _logger = logger;
         private readonly bool _dumpMeshJson = string.Equals(Environment.GetEnvironmentVariable("THREEDTILESLINK_DUMP_MESH_JSON")?.Trim(), "1", StringComparison.Ordinal) ||
                                               string.Equals(Environment.GetEnvironmentVariable("THREEDTILESLINK_DUMP_MESH_JSON")?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
@@ -70,9 +76,11 @@ namespace ThreeDTilesLink.Core.Resonite
         private readonly string _textureTempDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "textures");
         private readonly Dictionary<string, string> _assetsSlotByParentSlotId = new(StringComparer.Ordinal);
         private readonly Dictionary<string, SlotProgressBinding> _progressBindingsByParentSlotId = new(StringComparer.Ordinal);
+        private readonly SemaphoreSlim _connectionGate = new(1, 1);
         private readonly SemaphoreSlim _streamPlacementGate = new(1, 1);
 
         private bool _directClientInitialized;
+        private Uri? _connectionUri;
         private string? _sessionRootSlotId;
         private string? _sessionLicenseComponentId;
         private string? _sessionLicenseCreditText;
@@ -88,27 +96,70 @@ namespace ThreeDTilesLink.Core.Resonite
 
         public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
-            if (_linkInterface.IsConnected)
+            Uri endpoint = new($"ws://{host}:{port}/");
+            bool reusedExistingSessionState;
+
+            await _connectionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                return;
+                if (_linkInterface.IsConnected)
+                {
+                    if (!MatchesEndpoint(endpoint))
+                    {
+                        throw new InvalidOperationException("ResoniteLink is already connected to a different endpoint.");
+                    }
+
+                    return;
+                }
+
+                bool reuseSessionState = MatchesEndpoint(endpoint) && !string.IsNullOrWhiteSpace(_sessionRootSlotId);
+                if (!reuseSessionState)
+                {
+                    ResetSessionState();
+                }
+
+                _connectionUri = endpoint;
+                _logger.LogDebug("Opening Resonite Link session to {Host}:{Port}.", host, port);
+                await ConnectTransportAsync(endpoint, cancellationToken).ConfigureAwait(false);
+                reusedExistingSessionState = !string.IsNullOrWhiteSpace(_sessionRootSlotId);
+            }
+            finally
+            {
+                _ = _connectionGate.Release();
             }
 
-            _logger.LogDebug("Opening Resonite Link session to {Host}:{Port}.", host, port);
-            _directClientInitialized = true;
-            await _linkInterface.Connect(new Uri($"ws://{host}:{port}/"), cancellationToken).ConfigureAwait(false);
+            if (reusedExistingSessionState)
+            {
+                _logger.LogInformation(
+                    "Reconnected to Resonite Link at {Host}:{Port}; reusing session root {SlotId}.",
+                    host,
+                    port,
+                    _sessionRootSlotId);
+                return;
+            }
 
             try
             {
                 _sessionRootSlotId = await CreateSlotAsync(
                     $"3DTilesLink Session {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}",
-                    Slot.ROOT_SLOT_ID).ConfigureAwait(false);
+                    Slot.ROOT_SLOT_ID,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 await AttachSessionMetadataAsync(_sessionRootSlotId, cancellationToken).ConfigureAwait(false);
                 await ResolveAvatarProtectionContextAsync().ConfigureAwait(false);
             }
             catch
             {
-                DisposeDirectLink();
+                await _connectionGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    DisposeDirectLink(clearSessionState: true);
+                }
+                finally
+                {
+                    _ = _connectionGate.Release();
+                }
+
                 throw;
             }
         }
@@ -121,30 +172,28 @@ namespace ThreeDTilesLink.Core.Resonite
         public async Task<string> CreateSessionChildSlotAsync(string name, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            EnsureDirectConnection();
             if (string.IsNullOrWhiteSpace(_sessionRootSlotId))
             {
                 throw new InvalidOperationException("Session root slot is not initialized.");
             }
 
-            return await CreateSlotAsync(name, _sessionRootSlotId).ConfigureAwait(false);
+            return await CreateSlotAsync(name, _sessionRootSlotId, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
         public async Task<ProbeBinding> CreateProbeAsync(ProbeConfiguration configuration, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(configuration);
             cancellationToken.ThrowIfCancellationRequested();
-            EnsureDirectConnection();
 
             if (string.IsNullOrWhiteSpace(_sessionRootSlotId))
             {
                 throw new InvalidOperationException("Session root slot is not initialized.");
             }
 
-            string latComponentId = await AddDynamicValueVariableAsync(_sessionRootSlotId, configuration.LatitudeVariablePath).ConfigureAwait(false);
-            string lonComponentId = await AddDynamicValueVariableAsync(_sessionRootSlotId, configuration.LongitudeVariablePath).ConfigureAwait(false);
-            string rangeComponentId = await AddDynamicValueVariableAsync(_sessionRootSlotId, configuration.RangeVariablePath).ConfigureAwait(false);
-            string searchComponentId = await AddDynamicStringValueVariableAsync(_sessionRootSlotId, configuration.SearchVariablePath).ConfigureAwait(false);
+            string latComponentId = await AddDynamicValueVariableAsync(_sessionRootSlotId, configuration.LatitudeVariablePath, cancellationToken).ConfigureAwait(false);
+            string lonComponentId = await AddDynamicValueVariableAsync(_sessionRootSlotId, configuration.LongitudeVariablePath, cancellationToken).ConfigureAwait(false);
+            string rangeComponentId = await AddDynamicValueVariableAsync(_sessionRootSlotId, configuration.RangeVariablePath, cancellationToken).ConfigureAwait(false);
+            string searchComponentId = await AddDynamicStringValueVariableAsync(_sessionRootSlotId, configuration.SearchVariablePath, cancellationToken).ConfigureAwait(false);
 
             return new ProbeBinding(
                 _sessionRootSlotId,
@@ -162,7 +211,6 @@ namespace ThreeDTilesLink.Core.Resonite
         public async Task<ProbeValues?> ReadProbeValuesAsync(ProbeBinding binding, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(binding);
-            EnsureDirectConnection();
 
             float lat = await ReadNumericMemberAsFloatAsync(binding.LatitudeComponentId, binding.LatitudeValueMemberName, cancellationToken).ConfigureAwait(false);
             float lon = await ReadNumericMemberAsFloatAsync(binding.LongitudeComponentId, binding.LongitudeValueMemberName, cancellationToken).ConfigureAwait(false);
@@ -179,7 +227,6 @@ namespace ThreeDTilesLink.Core.Resonite
         public async Task<string?> ReadProbeSearchAsync(ProbeBinding binding, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(binding);
-            EnsureDirectConnection();
 
             return await ReadStringMemberAsync(binding.SearchComponentId, binding.SearchValueMemberName, cancellationToken).ConfigureAwait(false);
         }
@@ -187,7 +234,6 @@ namespace ThreeDTilesLink.Core.Resonite
         public async Task UpdateProbeCoordinatesAsync(ProbeBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(binding);
-            EnsureDirectConnection();
 
             float lat = checked((float)latitude);
             float lon = checked((float)longitude);
@@ -196,14 +242,13 @@ namespace ThreeDTilesLink.Core.Resonite
                 throw new InvalidOperationException("Probe coordinates must be finite values.");
             }
 
-            await UpdateNumericMemberAsync(binding.LatitudeComponentId, binding.LatitudeValueMemberName, lat).ConfigureAwait(false);
-            await UpdateNumericMemberAsync(binding.LongitudeComponentId, binding.LongitudeValueMemberName, lon).ConfigureAwait(false);
+            await UpdateNumericMemberAsync(binding.LatitudeComponentId, binding.LatitudeValueMemberName, lat, cancellationToken).ConfigureAwait(false);
+            await UpdateNumericMemberAsync(binding.LongitudeComponentId, binding.LongitudeValueMemberName, lon, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
         }
 
         public async Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
         {
-            EnsureDirectConnection();
             if (string.IsNullOrWhiteSpace(_sessionLicenseComponentId) || string.IsNullOrWhiteSpace(creditString))
             {
                 return;
@@ -215,20 +260,22 @@ namespace ThreeDTilesLink.Core.Resonite
                 return;
             }
 
-            Response response = await _linkInterface.UpdateComponent(
-                new UpdateComponent
-                {
-                    Data = new Component
+            Response response = await ExecuteLinkRequestAsync(
+                link => link.UpdateComponent(
+                    new UpdateComponent
                     {
-                        ID = _sessionLicenseComponentId,
-                        Members = new Dictionary<string, Member>
+                        Data = new Component
                         {
-                            ["RequireCredit"] = new Field_bool { Value = true },
-                            ["CreditString"] = new Field_string { Value = normalized },
-                            ["CanExport"] = new Field_bool { Value = false }
+                            ID = _sessionLicenseComponentId,
+                            Members = new Dictionary<string, Member>
+                            {
+                                ["RequireCredit"] = new Field_bool { Value = true },
+                                ["CreditString"] = new Field_string { Value = normalized },
+                                ["CanExport"] = new Field_bool { Value = false }
+                            }
                         }
-                    }
-                }).ConfigureAwait(false);
+                    }),
+                cancellationToken).ConfigureAwait(false);
             _ = EnsureSuccess(response);
             _sessionLicenseCreditText = normalized;
         }
@@ -237,20 +284,18 @@ namespace ThreeDTilesLink.Core.Resonite
         {
             ArgumentNullException.ThrowIfNull(progressText);
             cancellationToken.ThrowIfCancellationRequested();
-            EnsureDirectConnection();
 
             float normalizedProgress = System.Math.Clamp(progress01, 0f, 1f);
             string effectiveParentSlotId = ResolveEffectiveParentSlotId(parentSlotId);
             string normalizedText = progressText.Trim();
             SlotProgressBinding binding = await EnsureProgressBindingAsync(effectiveParentSlotId).ConfigureAwait(false);
-            await UpdateNumericMemberAsync(binding.ProgressValueComponentId, DynamicValueVariableValueMemberName, normalizedProgress).ConfigureAwait(false);
-            await UpdateStringMemberAsync(binding.ProgressTextComponentId, DynamicValueVariableValueMemberName, normalizedText).ConfigureAwait(false);
+            await UpdateNumericMemberAsync(binding.ProgressValueComponentId, DynamicValueVariableValueMemberName, normalizedProgress, cancellationToken).ConfigureAwait(false);
+            await UpdateStringMemberAsync(binding.ProgressTextComponentId, DynamicValueVariableValueMemberName, normalizedText, cancellationToken).ConfigureAwait(false);
         }
 
         public async Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(payload);
-            EnsureDirectConnection();
             if (payload.Vertices.Count == 0 || payload.Indices.Count == 0)
             {
                 return null;
@@ -308,7 +353,10 @@ namespace ThreeDTilesLink.Core.Resonite
                     await File.WriteAllBytesAsync(path, dumpBytes, cancellationToken).ConfigureAwait(false);
                 }
 
-                AssetData meshAsset = EnsureSuccess(await _linkInterface.ImportMesh(importMesh).ConfigureAwait(false));
+                AssetData meshAsset = EnsureSuccess(await ExecuteLinkRequestAsync(
+                    link => link.ImportMesh(importMesh),
+                    cancellationToken,
+                    MeshImportRequestTimeout).ConfigureAwait(false));
 
                 string? parentSlotId = string.IsNullOrWhiteSpace(payload.ParentSlotId)
                     ? _sessionRootSlotId
@@ -318,14 +366,15 @@ namespace ThreeDTilesLink.Core.Resonite
                     throw new InvalidOperationException("Session root slot is not initialized.");
                 }
 
-                string assetSlotId = await CreateAssetSlotAsync(parentSlotId, payload.Name).ConfigureAwait(false);
+                string assetSlotId = await CreateAssetSlotAsync(parentSlotId, payload.Name, cancellationToken).ConfigureAwait(false);
 
                 string tileSlotId = await CreateSlotAsync(
                     payload.Name,
                     parentSlotId,
                     payload.SlotPosition,
                     payload.SlotRotation,
-                    payload.SlotScale).ConfigureAwait(false);
+                    payload.SlotScale,
+                    cancellationToken).ConfigureAwait(false);
 
                 string staticMeshId = await AddComponentAsync(
                     assetSlotId,
@@ -333,7 +382,8 @@ namespace ThreeDTilesLink.Core.Resonite
                     new Dictionary<string, Member>
                     {
                         ["URL"] = new Field_Uri { Value = meshAsset.AssetURL }
-                    }).ConfigureAwait(false);
+                    },
+                    cancellationToken).ConfigureAwait(false);
 
                 _ = await AddComponentAsync(
                     tileSlotId,
@@ -347,7 +397,8 @@ namespace ThreeDTilesLink.Core.Resonite
                             EnumType = ColliderTypeEnumType,
                             Value = "Static"
                         }
-                    }).ConfigureAwait(false);
+                    },
+                    cancellationToken).ConfigureAwait(false);
 
                 var materialMembers = new Dictionary<string, Member>();
                 Dictionary<string, MemberDefinition> materialMembersDefinition = await ResolveMaterialMemberDefinitionsAsync().ConfigureAwait(false);
@@ -370,7 +421,8 @@ namespace ThreeDTilesLink.Core.Resonite
                         new Dictionary<string, Member>
                         {
                             ["URL"] = new Field_Uri { Value = textureAsset.AssetURL }
-                        }).ConfigureAwait(false);
+                        },
+                        cancellationToken).ConfigureAwait(false);
 
                     materialMembers[textureMemberName] = new Reference
                     {
@@ -379,7 +431,7 @@ namespace ThreeDTilesLink.Core.Resonite
                     };
                 }
 
-                string materialId = await AddComponentAsync(assetSlotId, MaterialComponentType, materialMembers).ConfigureAwait(false);
+                string materialId = await AddComponentAsync(assetSlotId, MaterialComponentType, materialMembers, cancellationToken).ConfigureAwait(false);
 
                 _ = await AddComponentAsync(
                     tileSlotId,
@@ -391,7 +443,8 @@ namespace ThreeDTilesLink.Core.Resonite
                         {
                             Elements = [new Reference { TargetType = MaterialAssetProviderType, TargetID = materialId }]
                         }
-                    }).ConfigureAwait(false);
+                    },
+                    cancellationToken).ConfigureAwait(false);
 
                 await AttachAvatarProtectionAsync(tileSlotId).ConfigureAwait(false);
                 return tileSlotId;
@@ -404,7 +457,6 @@ namespace ThreeDTilesLink.Core.Resonite
 
         public async Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken)
         {
-            EnsureDirectConnection();
             if (string.IsNullOrWhiteSpace(slotId))
             {
                 return;
@@ -412,35 +464,50 @@ namespace ThreeDTilesLink.Core.Resonite
 
             _ = _assetsSlotByParentSlotId.Remove(slotId);
             _ = _progressBindingsByParentSlotId.Remove(slotId);
-            Response response = await _linkInterface.RemoveSlot(new RemoveSlot { SlotID = slotId }).ConfigureAwait(false);
+            Response response = await ExecuteLinkRequestAsync(
+                link => link.RemoveSlot(new RemoveSlot { SlotID = slotId }),
+                cancellationToken).ConfigureAwait(false);
             _ = EnsureSuccess(response);
         }
 
         public async ValueTask DisposeAsync()
         {
             await DisconnectCoreAsync(CancellationToken.None).ConfigureAwait(false);
+            _connectionGate.Dispose();
             _streamPlacementGate.Dispose();
         }
 
         private async Task DisconnectCoreAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _logger.LogDebug("Closing Resonite Link session.");
-
-            if (_linkInterface.IsConnected && !string.IsNullOrWhiteSpace(_sessionRootSlotId))
+            await _connectionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                try
-                {
-                    Response response = await _linkInterface.RemoveSlot(new RemoveSlot { SlotID = _sessionRootSlotId }).ConfigureAwait(false);
-                    _ = EnsureSuccess(response);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Failed to remove session root slot {SlotId} during disconnect.", _sessionRootSlotId);
-                }
-            }
+                _logger.LogDebug("Closing Resonite Link session.");
 
-            DisposeDirectLink();
+                if (_linkInterface.IsConnected && !string.IsNullOrWhiteSpace(_sessionRootSlotId))
+                {
+                    try
+                    {
+                        Response response = EnsureSuccess(
+                            await ExecuteLinkRequestAsync(
+                                link => link.RemoveSlot(new RemoveSlot { SlotID = _sessionRootSlotId }),
+                                cancellationToken,
+                                allowReconnect: false).ConfigureAwait(false));
+                        _ = response;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Failed to remove session root slot {SlotId} during disconnect.", _sessionRootSlotId);
+                    }
+                }
+
+                DisposeDirectLink(clearSessionState: true);
+            }
+            finally
+            {
+                _ = _connectionGate.Release();
+            }
         }
 
         private async Task<string> CreateSlotAsync(
@@ -448,10 +515,9 @@ namespace ThreeDTilesLink.Core.Resonite
             string? parentSlotId,
             Vector3? position = null,
             Quaternion? rotation = null,
-            Vector3? scale = null)
+            Vector3? scale = null,
+            CancellationToken cancellationToken = default)
         {
-            EnsureDirectConnection();
-
             Vector3 p = position ?? Vector3.Zero;
             Quaternion r = rotation ?? Quaternion.Identity;
             Vector3 s = scale ?? Vector3.One;
@@ -475,33 +541,43 @@ namespace ThreeDTilesLink.Core.Resonite
                 };
             }
 
-            NewEntityId response = EnsureSuccess(await _linkInterface.AddSlot(new AddSlot { Data = slot }).ConfigureAwait(false));
+            NewEntityId response = EnsureSuccess(await ExecuteLinkRequestAsync(
+                link => link.AddSlot(new AddSlot { Data = slot }),
+                cancellationToken).ConfigureAwait(false));
             return response.EntityId;
         }
 
-        private async Task<string> AddComponentAsync(string slotId, string componentType, Dictionary<string, Member> members)
+        private async Task<string> AddComponentAsync(
+            string slotId,
+            string componentType,
+            Dictionary<string, Member> members,
+            CancellationToken cancellationToken = default)
         {
-            EnsureDirectConnection();
-
-            NewEntityId response = EnsureSuccess(await _linkInterface.AddComponent(
-                new AddComponent
-                {
-                    ContainerSlotId = slotId,
-                    Data = new Component
+            NewEntityId response = EnsureSuccess(await ExecuteLinkRequestAsync(
+                link => link.AddComponent(
+                    new AddComponent
                     {
-                        ID = $"t3dtile_comp_{Guid.NewGuid():N}",
-                        ComponentType = componentType,
-                        Members = members
-                    }
-                }).ConfigureAwait(false));
+                        ContainerSlotId = slotId,
+                        Data = new Component
+                        {
+                            ID = $"t3dtile_comp_{Guid.NewGuid():N}",
+                            ComponentType = componentType,
+                            Members = members
+                        }
+                    }),
+                cancellationToken).ConfigureAwait(false));
             return response.EntityId;
         }
 
-        private async Task<string?> TryAddComponentAsync(string slotId, string componentType, Dictionary<string, Member> members)
+        private async Task<string?> TryAddComponentAsync(
+            string slotId,
+            string componentType,
+            Dictionary<string, Member> members,
+            CancellationToken cancellationToken = default)
         {
             try
             {
-                return await AddComponentAsync(slotId, componentType, members).ConfigureAwait(false);
+                return await AddComponentAsync(slotId, componentType, members, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -513,7 +589,7 @@ namespace ThreeDTilesLink.Core.Resonite
             }
         }
 
-        private async Task<string> AddDynamicValueVariableAsync(string slotId, string variablePath)
+        private async Task<string> AddDynamicValueVariableAsync(string slotId, string variablePath, CancellationToken cancellationToken = default)
         {
             return await AddComponentAsync(
                 slotId,
@@ -521,10 +597,11 @@ namespace ThreeDTilesLink.Core.Resonite
                 new Dictionary<string, Member>(StringComparer.Ordinal)
                 {
                     ["VariableName"] = new Field_string { Value = variablePath }
-                }).ConfigureAwait(false);
+                },
+                cancellationToken).ConfigureAwait(false);
         }
 
-        private async Task<string> AddDynamicStringValueVariableAsync(string slotId, string variablePath)
+        private async Task<string> AddDynamicStringValueVariableAsync(string slotId, string variablePath, CancellationToken cancellationToken = default)
         {
             return await AddComponentAsync(
                 slotId,
@@ -532,16 +609,17 @@ namespace ThreeDTilesLink.Core.Resonite
                 new Dictionary<string, Member>(StringComparer.Ordinal)
                 {
                     ["VariableName"] = new Field_string { Value = variablePath }
-                }).ConfigureAwait(false);
+                },
+                cancellationToken).ConfigureAwait(false);
         }
 
-        private async Task<string> CreateAssetSlotAsync(string parentSlotId, string assetName)
+        private async Task<string> CreateAssetSlotAsync(string parentSlotId, string assetName, CancellationToken cancellationToken = default)
         {
-            string assetsSlotId = await GetOrCreateAssetsSlotAsync(parentSlotId).ConfigureAwait(false);
-            return await CreateSlotAsync($"{assetName} Asset", assetsSlotId).ConfigureAwait(false);
+            string assetsSlotId = await GetOrCreateAssetsSlotAsync(parentSlotId, cancellationToken).ConfigureAwait(false);
+            return await CreateSlotAsync($"{assetName} Asset", assetsSlotId, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        private async Task<string> GetOrCreateAssetsSlotAsync(string parentSlotId)
+        private async Task<string> GetOrCreateAssetsSlotAsync(string parentSlotId, CancellationToken cancellationToken = default)
         {
             if (_assetsSlotByParentSlotId.TryGetValue(parentSlotId, out string? assetsSlotId) &&
                 !string.IsNullOrWhiteSpace(assetsSlotId))
@@ -549,7 +627,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 return assetsSlotId;
             }
 
-            assetsSlotId = await CreateSlotAsync(AssetsSlotName, parentSlotId).ConfigureAwait(false);
+            assetsSlotId = await CreateSlotAsync(AssetsSlotName, parentSlotId, cancellationToken: cancellationToken).ConfigureAwait(false);
             _assetsSlotByParentSlotId[parentSlotId] = assetsSlotId;
             return assetsSlotId;
         }
@@ -588,54 +666,54 @@ namespace ThreeDTilesLink.Core.Resonite
                     $"Unsupported string member type: componentId={componentId} member={memberName} type={member.GetType().Name}");
         }
 
-        private async Task UpdateNumericMemberAsync(string componentId, string memberName, float value)
+        private async Task UpdateNumericMemberAsync(string componentId, string memberName, float value, CancellationToken cancellationToken = default)
         {
-            EnsureDirectConnection();
-
-            Response response = await _linkInterface.UpdateComponent(
-                new UpdateComponent
-                {
-                    Data = new Component
+            Response response = await ExecuteLinkRequestAsync(
+                link => link.UpdateComponent(
+                    new UpdateComponent
                     {
-                        ID = componentId,
-                        Members = new Dictionary<string, Member>(StringComparer.Ordinal)
+                        Data = new Component
                         {
-                            [memberName] = new Field_float { Value = value }
+                            ID = componentId,
+                            Members = new Dictionary<string, Member>(StringComparer.Ordinal)
+                            {
+                                [memberName] = new Field_float { Value = value }
+                            }
                         }
-                    }
-                }).ConfigureAwait(false);
+                    }),
+                cancellationToken).ConfigureAwait(false);
             _ = EnsureSuccess(response);
         }
 
-        private async Task UpdateStringMemberAsync(string componentId, string memberName, string value)
+        private async Task UpdateStringMemberAsync(string componentId, string memberName, string value, CancellationToken cancellationToken = default)
         {
-            EnsureDirectConnection();
-
-            Response response = await _linkInterface.UpdateComponent(
-                new UpdateComponent
-                {
-                    Data = new Component
+            Response response = await ExecuteLinkRequestAsync(
+                link => link.UpdateComponent(
+                    new UpdateComponent
                     {
-                        ID = componentId,
-                        Members = new Dictionary<string, Member>(StringComparer.Ordinal)
+                        Data = new Component
                         {
-                            [memberName] = new Field_string { Value = value }
+                            ID = componentId,
+                            Members = new Dictionary<string, Member>(StringComparer.Ordinal)
+                            {
+                                [memberName] = new Field_string { Value = value }
+                            }
                         }
-                    }
-                }).ConfigureAwait(false);
+                    }),
+                cancellationToken).ConfigureAwait(false);
             _ = EnsureSuccess(response);
         }
 
         private async Task<Member> ReadComponentMemberAsync(string componentId, string memberName, CancellationToken cancellationToken)
         {
-            EnsureDirectConnection();
             for (int attempt = 1; attempt <= ReadComponentMemberMaxAttempts; attempt++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    ComponentData componentData = EnsureSuccess(await _linkInterface.GetComponentData(
-                        new GetComponent { ComponentID = componentId }).ConfigureAwait(false));
+                    ComponentData componentData = EnsureSuccess(await ExecuteLinkRequestAsync(
+                        link => link.GetComponentData(new GetComponent { ComponentID = componentId }),
+                        cancellationToken).ConfigureAwait(false));
 
                     if (componentData.Data is null || !componentData.Data.Members.TryGetValue(memberName, out Member? member))
                     {
@@ -655,7 +733,6 @@ namespace ThreeDTilesLink.Core.Resonite
 
         private async Task<AssetData?> ImportTextureAssetAsync(byte[]? textureBytes, string? extension, CancellationToken cancellationToken)
         {
-            EnsureDirectConnection();
             if (textureBytes is null || textureBytes.Length == 0)
             {
                 return null;
@@ -673,7 +750,9 @@ namespace ThreeDTilesLink.Core.Resonite
             }
 
             _ = _tempTextureFiles.Add(path);
-            return EnsureSuccess(await _linkInterface.ImportTexture(new ImportTexture2DFile { FilePath = path }).ConfigureAwait(false));
+            return EnsureSuccess(await ExecuteLinkRequestAsync(
+                link => link.ImportTexture(new ImportTexture2DFile { FilePath = path }),
+                cancellationToken).ConfigureAwait(false));
         }
 
         private async Task<string?> ResolveMaterialTextureMemberNameAsync()
@@ -738,7 +817,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private async Task AttachSessionMetadataAsync(string sessionRootSlotId, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await EnsureSessionDynamicSpaceAsync(sessionRootSlotId).ConfigureAwait(false);
+            await EnsureSessionDynamicSpaceAsync(sessionRootSlotId, cancellationToken).ConfigureAwait(false);
             string creditFieldId = $"t3dtile_field_{Guid.NewGuid():N}";
             string? licenseComponentId = await TryAddComponentAsync(
                 sessionRootSlotId,
@@ -752,7 +831,8 @@ namespace ThreeDTilesLink.Core.Resonite
                         Value = DefaultGoogleMapsCreditText
                     },
                     ["CanExport"] = new Field_bool { Value = false }
-                }).ConfigureAwait(false);
+                },
+                cancellationToken).ConfigureAwait(false);
 
             if (licenseComponentId is null)
             {
@@ -770,10 +850,11 @@ namespace ThreeDTilesLink.Core.Resonite
                     ["VariableName"] = new Field_string { Value = LicenseDynamicVariablePath },
                     ["TargetField"] = new Reference { TargetID = creditFieldId, TargetType = StringFieldType },
                     ["OverrideOnLink"] = new Field_bool { Value = true }
-                }).ConfigureAwait(false);
+                },
+                cancellationToken).ConfigureAwait(false);
         }
 
-        private async Task EnsureSessionDynamicSpaceAsync(string sessionRootSlotId)
+        private async Task EnsureSessionDynamicSpaceAsync(string sessionRootSlotId, CancellationToken cancellationToken = default)
         {
             if (_sessionDynamicSpaceInitialized)
             {
@@ -787,7 +868,8 @@ namespace ThreeDTilesLink.Core.Resonite
                 {
                     ["SpaceName"] = new Field_string { Value = GoogleTilesDynamicSpaceName },
                     ["OnlyDirectBinding"] = new Field_bool { Value = true }
-                }).ConfigureAwait(false);
+                },
+                cancellationToken).ConfigureAwait(false);
             _sessionDynamicSpaceInitialized = true;
         }
 
@@ -974,13 +1056,13 @@ namespace ThreeDTilesLink.Core.Resonite
 
         private async Task<(string ComponentType, Dictionary<string, MemberDefinition> Members)> ResolveComponentDefinitionAsync(IEnumerable<string> componentTypeCandidates)
         {
-            EnsureDirectConnection();
-
             foreach (string componentType in componentTypeCandidates)
             {
                 try
                 {
-                    ComponentDefinitionData definition = EnsureSuccess(await _linkInterface.GetComponentDefinition(componentType, flattened: true).ConfigureAwait(false));
+                    ComponentDefinitionData definition = EnsureSuccess(await ExecuteLinkRequestAsync(
+                        link => link.GetComponentDefinition(componentType, flattened: true),
+                        CancellationToken.None).ConfigureAwait(false));
                     return (componentType, definition.Definition?.Members ?? new Dictionary<string, MemberDefinition>(StringComparer.Ordinal));
                 }
                 catch (OperationCanceledException)
@@ -1002,21 +1084,23 @@ namespace ThreeDTilesLink.Core.Resonite
                 return _materialMemberDefinitions;
             }
 
-            EnsureDirectConnection();
-            ComponentDefinitionData definition = EnsureSuccess(await _linkInterface.GetComponentDefinition(MaterialComponentType, flattened: true).ConfigureAwait(false));
+            ComponentDefinitionData definition = EnsureSuccess(await ExecuteLinkRequestAsync(
+                link => link.GetComponentDefinition(MaterialComponentType, flattened: true),
+                CancellationToken.None).ConfigureAwait(false));
             _materialMemberDefinitions = definition.Definition?.Members ?? new Dictionary<string, MemberDefinition>(StringComparer.Ordinal);
             return _materialMemberDefinitions;
         }
 
-        private async Task RemoveComponentAsync(string componentId)
+        private async Task RemoveComponentAsync(string componentId, CancellationToken cancellationToken = default)
         {
-            EnsureDirectConnection();
             if (string.IsNullOrWhiteSpace(componentId))
             {
                 return;
             }
 
-            Response response = await _linkInterface.RemoveComponent(new RemoveComponent { ComponentID = componentId }).ConfigureAwait(false);
+            Response response = await ExecuteLinkRequestAsync(
+                link => link.RemoveComponent(new RemoveComponent { ComponentID = componentId }),
+                cancellationToken).ConfigureAwait(false);
             _ = EnsureSuccess(response);
         }
 
@@ -1061,12 +1145,146 @@ namespace ThreeDTilesLink.Core.Resonite
                 : response;
         }
 
-        private void EnsureDirectConnection()
+        private async Task<T> ExecuteLinkRequestAsync<T>(
+            Func<LinkInterface, Task<T>> operation,
+            CancellationToken cancellationToken,
+            TimeSpan? timeout = null,
+            bool allowReconnect = true)
         {
-            if (!_directClientInitialized || !_linkInterface.IsConnected)
+            ArgumentNullException.ThrowIfNull(operation);
+
+            for (int attempt = 1; attempt <= LinkRequestMaxAttempts; attempt++)
+            {
+                LinkInterface link = await EnsureConnectedLinkAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    return await WaitForLinkRequestAsync(
+                        () => operation(link),
+                        timeout ?? DefaultLinkRequestTimeout,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
+                {
+                    await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            throw new InvalidOperationException("ResoniteLink request retry loop exited unexpectedly.");
+        }
+
+        private static async Task<T> WaitForLinkRequestAsync<T>(
+            Func<Task<T>> operation,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutSource.CancelAfter(timeout);
+
+            try
+            {
+                return await operation().WaitAsync(timeoutSource.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && timeoutSource.IsCancellationRequested)
+            {
+                throw new TimeoutException($"ResoniteLink request timed out after {timeout}.", ex);
+            }
+        }
+
+        private async Task<LinkInterface> EnsureConnectedLinkAsync(CancellationToken cancellationToken)
+        {
+            if (_linkInterface.IsConnected)
+            {
+                return _linkInterface;
+            }
+
+            if (_connectionUri is null)
             {
                 throw new InvalidOperationException("ResoniteLink is not connected.");
             }
+
+            await ReconnectTransportAsync(reason: null, cancellationToken).ConfigureAwait(false);
+            if (_linkInterface.IsConnected)
+            {
+                return _linkInterface;
+            }
+
+            throw new InvalidOperationException("ResoniteLink is not connected.");
+        }
+
+        private async Task ReconnectTransportAsync(Exception? reason, CancellationToken cancellationToken)
+        {
+            if (_connectionUri is null)
+            {
+                throw new InvalidOperationException("ResoniteLink is not connected.", reason);
+            }
+
+            await _connectionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (_linkInterface.IsConnected)
+                {
+                    return;
+                }
+
+                if (reason is null)
+                {
+                    _logger.LogWarning(
+                        "Resonite Link transport is disconnected. Reconnecting to {Host}:{Port}.",
+                        _connectionUri.Host,
+                        _connectionUri.Port);
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        reason,
+                        "Resonite Link transport failed. Reconnecting to {Host}:{Port}.",
+                        _connectionUri.Host,
+                        _connectionUri.Port);
+                }
+
+                DisposeDirectLink(clearSessionState: false);
+                await ConnectTransportAsync(_connectionUri, cancellationToken).ConfigureAwait(false);
+                _logger.LogInformation("Reconnected to Resonite Link at {Host}:{Port}.", _connectionUri.Host, _connectionUri.Port);
+            }
+            finally
+            {
+                _ = _connectionGate.Release();
+            }
+        }
+
+        private async Task ConnectTransportAsync(Uri endpoint, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await _linkInterface.Connect(endpoint, cancellationToken).ConfigureAwait(false);
+                _directClientInitialized = true;
+            }
+            catch
+            {
+                DisposeDirectLink(clearSessionState: false);
+                throw;
+            }
+        }
+
+        private bool MatchesEndpoint(Uri endpoint)
+        {
+            return _connectionUri is not null &&
+                Uri.Compare(_connectionUri, endpoint, UriComponents.AbsoluteUri, UriFormat.SafeUnescaped, StringComparison.OrdinalIgnoreCase) == 0;
+        }
+
+        private static bool IsRecoverableTransportFailure(Exception exception)
+        {
+            return exception switch
+            {
+                TimeoutException => true,
+                ObjectDisposedException => true,
+                WebSocketException => true,
+                ResoniteLinkNoResponseException => true,
+                InvalidOperationException { Message: "ResoniteLink is not connected." } => true,
+                OperationCanceledException => false,
+                _ when exception.InnerException is not null => IsRecoverableTransportFailure(exception.InnerException),
+                _ => false
+            };
         }
 
         private string ResolveEffectiveParentSlotId(string? parentSlotId)
@@ -1080,7 +1298,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 : effectiveParentSlotId;
         }
 
-        private void DisposeDirectLink()
+        private void DisposeDirectLink(bool clearSessionState)
         {
             try
             {
@@ -1095,37 +1313,47 @@ namespace ThreeDTilesLink.Core.Resonite
             finally
             {
                 _directClientInitialized = false;
-                _sessionRootSlotId = null;
-                _sessionLicenseComponentId = null;
-                _sessionLicenseCreditText = null;
-                _materialTextureFieldName = null;
-                _materialTextureFieldResolved = false;
-                _materialMemberDefinitions = null;
-                _avatarProtectionComponentType = null;
-                _avatarProtectionUserTargetType = null;
-                _avatarProtectionHasReassignUserOnPackageImport = false;
-                _avatarProtectionUnavailable = false;
-                _localUserId = null;
-                _sessionDynamicSpaceInitialized = false;
-                _assetsSlotByParentSlotId.Clear();
-                _progressBindingsByParentSlotId.Clear();
-
-                foreach (string textureFile in _tempTextureFiles)
+                _linkInterface = _linkInterfaceFactory();
+                if (clearSessionState)
                 {
-                    try
+                    _connectionUri = null;
+                    ResetSessionState();
+
+                    foreach (string textureFile in _tempTextureFiles)
                     {
-                        if (File.Exists(textureFile))
+                        try
                         {
-                            File.Delete(textureFile);
+                            if (File.Exists(textureFile))
+                            {
+                                File.Delete(textureFile);
+                            }
+                        }
+                        catch
+                        {
                         }
                     }
-                    catch
-                    {
-                    }
-                }
 
-                _tempTextureFiles.Clear();
+                    _tempTextureFiles.Clear();
+                }
             }
+        }
+
+        private void ResetSessionState()
+        {
+            _sessionRootSlotId = null;
+            _sessionLicenseComponentId = null;
+            _sessionLicenseCreditText = null;
+            _materialTextureFieldName = null;
+            _materialTextureFieldResolved = false;
+            _materialMemberDefinitions = null;
+            _avatarProtectionComponentType = null;
+            _avatarProtectionUserTargetType = null;
+            _avatarProtectionHasReassignUserOnPackageImport = false;
+            _avatarProtectionUnavailable = false;
+            _localUserId = null;
+            _sessionDynamicSpaceInitialized = false;
+            _assetsSlotByParentSlotId.Clear();
+            _progressBindingsByParentSlotId.Clear();
         }
 
         private sealed record SlotProgressBinding(string ProgressValueComponentId, string ProgressTextComponentId);
