@@ -7,4 +7,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/ThreeDTilesLink.Tests/ThreeDTilesLink.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/ResoniteRawJson/ResoniteRawJson.csproj" />
+  </Folder>
 </Solution>

@@ -1,12 +1,59 @@
+// Diagnostic console tool; localized resources are unnecessary here.
+#pragma warning disable CA1303
+using System.Globalization;
 using ResoniteLink;
 
 var host = args.Length > 0 ? args[0] : "localhost";
-var port = args.Length > 1 ? int.Parse(args[1]) : 49379;
+var port = args.Length > 1 ? int.Parse(args[1], CultureInfo.InvariantCulture) : 49379;
+string[] protectionComponentCandidates =
+[
+    "[FrooxEngine]FrooxEngine.SimpleAvatarProtection",
+    "[FrooxEngine.Users]FrooxEngine.SimpleAvatarProtection",
+    "FrooxEngine.SimpleAvatarProtection"
+];
 
 using var link = new LinkInterface();
-await link.Connect(new Uri($"ws://{host}:{port}/"), CancellationToken.None);
+await link.Connect(new Uri($"ws://{host}:{port}/"), CancellationToken.None).ConfigureAwait(false);
 
-var materialDef = await link.GetComponentDefinition("[FrooxEngine]FrooxEngine.PBS_Metallic", true);
+var sessionData = await link.GetSessionData().ConfigureAwait(false);
+if (sessionData.Success)
+{
+    Console.WriteLine("Session data:");
+    Console.WriteLine($"  ResoniteVersion={sessionData.ResoniteVersion}");
+    Console.WriteLine($"  ResoniteLinkVersion={sessionData.ResoniteLinkVersion}");
+    Console.WriteLine($"  UniqueSessionId={sessionData.UniqueSessionId}");
+    Console.WriteLine("  Note: no host/user field is exposed by SessionData in ResoniteLink 0.13.1");
+}
+else
+{
+    Console.WriteLine($"GetSessionData failed: {sessionData.ErrorInfo}");
+}
+
+Console.WriteLine();
+Console.WriteLine("SimpleAvatarProtection component definition probes:");
+foreach (string componentType in protectionComponentCandidates)
+{
+    var protectionDef = await link.GetComponentDefinition(componentType, true).ConfigureAwait(false);
+    if (!protectionDef.Success || protectionDef.Definition is null)
+    {
+        Console.WriteLine($"  {componentType}: not found ({protectionDef.ErrorInfo})");
+        continue;
+    }
+
+    Console.WriteLine($"  {componentType}: found");
+    foreach (var kv in protectionDef.Definition.Members.OrderBy(x => x.Key))
+    {
+        var extra = kv.Value switch
+        {
+            ReferenceDefinition rd => $" targetType={rd.TargetType?.Type}",
+            _ => string.Empty
+        };
+        Console.WriteLine($"    {kv.Key}: {kv.Value.GetType().Name}{extra}");
+    }
+}
+
+Console.WriteLine();
+var materialDef = await link.GetComponentDefinition("[FrooxEngine]FrooxEngine.PBS_Metallic", true).ConfigureAwait(false);
 if (materialDef.Success && materialDef.Definition is not null)
 {
     Console.WriteLine("Material texture member definitions:");
@@ -25,7 +72,7 @@ var root = await link.GetSlotData(new GetSlot
     SlotID = Slot.ROOT_SLOT_ID,
     Depth = 2,
     IncludeComponentData = false
-});
+}).ConfigureAwait(false);
 
 if (!root.Success || root.Data is null)
 {
@@ -53,7 +100,7 @@ var sessionDetail = await link.GetSlotData(new GetSlot
     SlotID = latest.ID,
     Depth = 1,
     IncludeComponentData = true
-});
+}).ConfigureAwait(false);
 
 if (!sessionDetail.Success || sessionDetail.Data is null)
 {
@@ -76,7 +123,7 @@ foreach (var child in sessionDetail.Data.Children ?? [])
         SlotID = child.ID,
         Depth = 0,
         IncludeComponentData = true
-    });
+    }).ConfigureAwait(false);
 
     if (!childDetail.Success || childDetail.Data is null)
     {

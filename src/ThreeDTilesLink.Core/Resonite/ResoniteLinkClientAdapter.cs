@@ -19,6 +19,10 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string MaterialComponentType = "[FrooxEngine]FrooxEngine.PBS_Metallic";
         private const string MeshRendererComponentType = "[FrooxEngine]FrooxEngine.MeshRenderer";
         private const string LicenseComponentType = "[FrooxEngine]FrooxEngine.License";
+        private const string SimpleAvatarProtectionUserMemberName = "User";
+        private const string SimpleAvatarProtectionReassignMemberName = "ReassignUserOnPackageImport";
+        private const string UserLoginStatusLoggedInMemberName = "IsLoggedIn";
+        private const string UserLoginStatusUserIdMemberName = "LoggedUserId";
         private const string DynamicVariableSpaceComponentType = "[FrooxEngine]FrooxEngine.DynamicVariableSpace";
         // Policy: component type names are fixed from live ResoniteLink verification (no fallback guessing).
         private const string DynamicFieldStringComponentType = "[FrooxEngine]FrooxEngine.DynamicField<string>";
@@ -36,6 +40,19 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string ColliderTypeEnumType = "[FrooxEngine]FrooxEngine.ColliderType";
 
         private static readonly string[] PreferredTextureFieldNames = ["AlbedoTexture", "BaseColorTexture", "MainTexture", "Texture"];
+        private static readonly string[] SimpleAvatarProtectionComponentTypeCandidates =
+        [
+            "[FrooxEngine]FrooxEngine.SimpleAvatarProtection",
+            "[FrooxEngine.Users]FrooxEngine.SimpleAvatarProtection",
+            "FrooxEngine.SimpleAvatarProtection"
+        ];
+
+        private static readonly string[] UserLoginStatusComponentTypeCandidates =
+        [
+            "[FrooxEngine]FrooxEngine.UserLoginStatus",
+            "[FrooxEngine.Users]FrooxEngine.UserLoginStatus",
+            "FrooxEngine.UserLoginStatus"
+        ];
 
         private static readonly JsonSerializerOptions SerializationOptions = new()
         {
@@ -46,7 +63,6 @@ namespace ThreeDTilesLink.Core.Resonite
 
         private readonly ConcurrentDictionary<string, TaskCompletionSource<Response>> _pendingResponses = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _sendLock = new(1, 1);
-        private readonly string? _hostHeaderOverride;
         private readonly bool _dumpMeshJson;
         private readonly string _meshDumpDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "mesh-json");
         private readonly HashSet<string> _tempTextureFiles = new(StringComparer.OrdinalIgnoreCase);
@@ -63,10 +79,14 @@ namespace ThreeDTilesLink.Core.Resonite
         private string? _materialTextureFieldName;
         private bool _materialTextureFieldResolved;
         private Dictionary<string, MemberDefinition>? _materialMemberDefinitions;
+        private string? _avatarProtectionComponentType;
+        private string? _avatarProtectionUserTargetType;
+        private bool _avatarProtectionHasReassignUserOnPackageImport;
+        private bool _avatarProtectionUnavailable;
+        private string? _localUserId;
 
         public ResoniteLinkClientAdapter()
         {
-            _hostHeaderOverride = Environment.GetEnvironmentVariable("RESONITE_LINK_HOST_HEADER")?.Trim();
             string? dumpMeshJson = Environment.GetEnvironmentVariable("THREEDTILESLINK_DUMP_MESH_JSON")?.Trim();
             _dumpMeshJson = string.Equals(dumpMeshJson, "1", StringComparison.Ordinal) ||
                             string.Equals(dumpMeshJson, "true", StringComparison.OrdinalIgnoreCase);
@@ -80,11 +100,6 @@ namespace ThreeDTilesLink.Core.Resonite
             }
 
             _socket = new ClientWebSocket();
-            if (!string.IsNullOrWhiteSpace(_hostHeaderOverride))
-            {
-                _socket.Options.SetRequestHeader("Host", _hostHeaderOverride);
-            }
-
             var uri = new Uri($"ws://{host}:{port}/");
             _receiverCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             await _socket.ConnectAsync(uri, cancellationToken).ConfigureAwait(false);
@@ -97,6 +112,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 cancellationToken).ConfigureAwait(false);
 
             await AttachSessionMetadataAsync(_sessionRootSlotId, cancellationToken).ConfigureAwait(false);
+            await ResolveAvatarProtectionContextAsync(cancellationToken).ConfigureAwait(false);
         }
 
         public async Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
@@ -290,6 +306,8 @@ namespace ThreeDTilesLink.Core.Resonite
                 },
                 cancellationToken).ConfigureAwait(false);
 
+            await AttachAvatarProtectionAsync(tileSlotId, cancellationToken).ConfigureAwait(false);
+
             return tileSlotId;
         }
 
@@ -388,6 +406,23 @@ namespace ThreeDTilesLink.Core.Resonite
                 cancellationToken).ConfigureAwait(false);
         }
 
+        private async Task RemoveComponentAsync(string componentId, CancellationToken cancellationToken)
+        {
+            if (!_connected)
+            {
+                throw new InvalidOperationException("ResoniteLink is not connected.");
+            }
+
+            if (string.IsNullOrWhiteSpace(componentId))
+            {
+                return;
+            }
+
+            _ = await SendMessageAsync<Response>(
+                new RemoveComponent { ComponentID = componentId },
+                cancellationToken).ConfigureAwait(false);
+        }
+
         public Task DisconnectAsync(CancellationToken cancellationToken)
         {
             return DisconnectInternalAsync(cancellationToken);
@@ -473,6 +508,38 @@ namespace ThreeDTilesLink.Core.Resonite
 
         private async Task<float> ReadNumericMemberAsFloatAsync(string componentId, string memberName, CancellationToken cancellationToken)
         {
+            Member member = await ReadComponentMemberAsync(componentId, memberName, cancellationToken).ConfigureAwait(false);
+
+            return member switch
+            {
+                Field_double doubleMember => (float)doubleMember.Value,
+                Field_float floatMember => floatMember.Value,
+                Field_decimal decimalMember => (float)decimalMember.Value,
+                _ => throw new InvalidOperationException(
+                    $"Unsupported numeric member type: componentId={componentId} member={memberName} type={member.GetType().Name}")
+            };
+        }
+
+        private async Task<bool> ReadBooleanMemberAsync(string componentId, string memberName, CancellationToken cancellationToken)
+        {
+            Member member = await ReadComponentMemberAsync(componentId, memberName, cancellationToken).ConfigureAwait(false);
+            return member is Field_bool boolMember
+                ? boolMember.Value
+                : throw new InvalidOperationException(
+                    $"Unsupported boolean member type: componentId={componentId} member={memberName} type={member.GetType().Name}");
+        }
+
+        private async Task<string> ReadStringMemberAsync(string componentId, string memberName, CancellationToken cancellationToken)
+        {
+            Member member = await ReadComponentMemberAsync(componentId, memberName, cancellationToken).ConfigureAwait(false);
+            return member is Field_string stringMember
+                ? stringMember.Value
+                : throw new InvalidOperationException(
+                    $"Unsupported string member type: componentId={componentId} member={memberName} type={member.GetType().Name}");
+        }
+
+        private async Task<Member> ReadComponentMemberAsync(string componentId, string memberName, CancellationToken cancellationToken)
+        {
             ComponentData componentData = await SendMessageAsync<ComponentData>(
                 new GetComponent { ComponentID = componentId },
                 cancellationToken).ConfigureAwait(false);
@@ -483,14 +550,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 throw new InvalidOperationException($"Component member not found: componentId={componentId} member={memberName}");
             }
 
-            return member switch
-            {
-                Field_double doubleMember => (float)doubleMember.Value,
-                Field_float floatMember => floatMember.Value,
-                Field_decimal decimalMember => (float)decimalMember.Value,
-                _ => throw new InvalidOperationException(
-                    $"Unsupported numeric member type: componentId={componentId} member={memberName} type={member.GetType().Name}")
-            };
+            return member;
         }
 
         private async Task<AssetData?> ImportTextureAssetAsync(byte[]? textureBytes, string? extension, CancellationToken cancellationToken)
@@ -631,6 +691,141 @@ namespace ThreeDTilesLink.Core.Resonite
                 cancellationToken).ConfigureAwait(false);
         }
 
+        private async Task ResolveAvatarProtectionContextAsync(CancellationToken cancellationToken)
+        {
+            if (_avatarProtectionUnavailable)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_avatarProtectionComponentType) &&
+                !string.IsNullOrWhiteSpace(_avatarProtectionUserTargetType) &&
+                !string.IsNullOrWhiteSpace(_localUserId))
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_sessionRootSlotId))
+            {
+                throw new InvalidOperationException("Session root slot is not initialized.");
+            }
+
+            (string protectionComponentType, Dictionary<string, MemberDefinition> protectionMembers) protectionContext;
+            try
+            {
+                protectionContext = await ResolveComponentDefinitionAsync(
+                    SimpleAvatarProtectionComponentTypeCandidates,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException)
+            {
+                _avatarProtectionUnavailable = true;
+                return;
+            }
+
+            (string protectionComponentType, Dictionary<string, MemberDefinition> protectionMembers) = protectionContext;
+
+            if (!protectionMembers.TryGetValue(SimpleAvatarProtectionUserMemberName, out MemberDefinition? userMemberDefinition) ||
+                userMemberDefinition is not ReferenceDefinition userReferenceDefinition ||
+                string.IsNullOrWhiteSpace(userReferenceDefinition.TargetType?.Type))
+            {
+                _avatarProtectionUnavailable = true;
+                return;
+            }
+
+            (string loginStatusComponentType, Dictionary<string, MemberDefinition> loginStatusMembers) loginStatusContext;
+            try
+            {
+                loginStatusContext = await ResolveComponentDefinitionAsync(
+                    UserLoginStatusComponentTypeCandidates,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException)
+            {
+                _avatarProtectionUnavailable = true;
+                return;
+            }
+
+            (string loginStatusComponentType, Dictionary<string, MemberDefinition> _) = loginStatusContext;
+
+            string loginStatusComponentId = await AddComponentAsync(
+                _sessionRootSlotId,
+                loginStatusComponentType,
+                [],
+                cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                bool isLoggedIn = await ReadBooleanMemberAsync(
+                    loginStatusComponentId,
+                    UserLoginStatusLoggedInMemberName,
+                    cancellationToken).ConfigureAwait(false);
+
+                string userId = await ReadStringMemberAsync(
+                    loginStatusComponentId,
+                    UserLoginStatusUserIdMemberName,
+                    cancellationToken).ConfigureAwait(false);
+
+                if (!isLoggedIn || string.IsNullOrWhiteSpace(userId))
+                {
+                    _avatarProtectionUnavailable = true;
+                    return;
+                }
+
+                _localUserId = userId.Trim();
+            }
+            finally
+            {
+                await RemoveComponentAsync(loginStatusComponentId, cancellationToken).ConfigureAwait(false);
+            }
+
+            _avatarProtectionComponentType = protectionComponentType;
+            _avatarProtectionUserTargetType = userReferenceDefinition.TargetType.Type;
+            _avatarProtectionHasReassignUserOnPackageImport = protectionMembers.ContainsKey(SimpleAvatarProtectionReassignMemberName);
+        }
+
+        private async Task AttachAvatarProtectionAsync(string slotId, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(slotId))
+            {
+                throw new InvalidOperationException("Target slot is not initialized.");
+            }
+
+            await ResolveAvatarProtectionContextAsync(cancellationToken).ConfigureAwait(false);
+
+            if (_avatarProtectionUnavailable)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_avatarProtectionComponentType) ||
+                string.IsNullOrWhiteSpace(_avatarProtectionUserTargetType) ||
+                string.IsNullOrWhiteSpace(_localUserId))
+            {
+                return;
+            }
+
+            var members = new Dictionary<string, Member>(StringComparer.Ordinal)
+            {
+                [SimpleAvatarProtectionUserMemberName] = new Reference
+                {
+                    TargetID = _localUserId,
+                    TargetType = _avatarProtectionUserTargetType
+                }
+            };
+
+            if (_avatarProtectionHasReassignUserOnPackageImport)
+            {
+                members[SimpleAvatarProtectionReassignMemberName] = new Field_bool { Value = false };
+            }
+
+            _ = await AddComponentAsync(
+                slotId,
+                _avatarProtectionComponentType,
+                members,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         private async Task<string?> TryAddComponentAsync(
             string slotId,
             string componentType,
@@ -653,6 +848,37 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 return null;
             }
+        }
+
+        private async Task<(string ComponentType, Dictionary<string, MemberDefinition> Members)> ResolveComponentDefinitionAsync(
+            IEnumerable<string> componentTypeCandidates,
+            CancellationToken cancellationToken)
+        {
+            foreach (string componentType in componentTypeCandidates)
+            {
+                try
+                {
+                    ComponentDefinitionData definition = await SendMessageAsync<ComponentDefinitionData>(
+                        new GetComponentDefinition
+                        {
+                            ComponentType = componentType,
+                            Flattened = true
+                        },
+                        cancellationToken).ConfigureAwait(false);
+
+                    return (componentType, definition.Definition?.Members ?? new Dictionary<string, MemberDefinition>(StringComparer.Ordinal));
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                }
+            }
+
+            throw new InvalidOperationException(
+                $"No supported component type was found. Candidates: {string.Join(", ", componentTypeCandidates)}");
         }
 
         private async Task<Dictionary<string, MemberDefinition>> ResolveMaterialMemberDefinitionsAsync(CancellationToken cancellationToken)
@@ -870,6 +1096,11 @@ namespace ThreeDTilesLink.Core.Resonite
                 _materialTextureFieldName = null;
                 _materialTextureFieldResolved = false;
                 _materialMemberDefinitions = null;
+                _avatarProtectionComponentType = null;
+                _avatarProtectionUserTargetType = null;
+                _avatarProtectionHasReassignUserOnPackageImport = false;
+                _avatarProtectionUnavailable = false;
+                _localUserId = null;
 
                 foreach (string textureFile in _tempTextureFiles)
                 {
