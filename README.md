@@ -1,32 +1,32 @@
 # 3DTilesLink
 
-Google Photorealistic 3D Tiles を指定地点周辺だけ取得し、Resonite Link 経由で非永続に可視化する .NET CLI ツールです。
+A .NET CLI tool that fetches Google Photorealistic 3D Tiles only around a specified location and visualizes them non-persistently through Resonite Link.
 
-人間向けの入口はこの `README.md` に置き、最新の運用情報や AI 向け手順は `docs/` に分離します。
+This `README.md` is the human-facing entry point. Current operational details and AI-oriented procedures are kept separately under `docs/`.
 
-## 前提
+## Prerequisites
 
 - `.NET SDK 10.0+`
-- Google Map Tiles API の認証
-  - `GOOGLE_MAPS_API_KEY` を使う
-  - または ADC を使う (`gcloud auth application-default login` / `GOOGLE_APPLICATION_CREDENTIALS`)
-- Resonite で Resonite Link を有効化し、接続先ポートを確認する
+- Authentication for the Google Map Tiles API
+  - Use `GOOGLE_MAPS_API_KEY`
+  - Or use ADC (`gcloud auth application-default login` / `GOOGLE_APPLICATION_CREDENTIALS`)
+- Enable Resonite Link in Resonite and confirm the destination port
 
-CLI 起動時は `.env` を上位ディレクトリ探索付きで自動ロードし、既存の環境変数は上書きしません。
+At startup, the CLI automatically loads `.env` with parent-directory discovery and does not overwrite existing environment variables.
 
-## ビルド
+## Build
 
 ```bash
 dotnet build ThreeDTilesLink.slnx
 ```
 
-## テスト
+## Test
 
 ```bash
 dotnet test ThreeDTilesLink.slnx
 ```
 
-## 使い方
+## Usage
 
 ```bash
 dotnet run --project src/ThreeDTilesLink.Cli -- \
@@ -42,11 +42,11 @@ dotnet run --project src/ThreeDTilesLink.Cli -- \
   --log-level Information
 ```
 
-- `--dry-run` を付けると Resonite 送信なしで取得・変換経路だけを検証できます。
-- `GOOGLE_MAPS_API_KEY` があれば API キーを使い、未設定なら ADC を使います。
-- `--height-offset-m` を省略した場合は `0` を使います。
+- Add `--dry-run` to verify only the fetch and conversion path without sending anything to Resonite.
+- If `GOOGLE_MAPS_API_KEY` is set, the API key is used; otherwise ADC is used.
+- If `--height-offset-m` is omitted, `0` is used.
 
-ADC を使う例:
+Example using ADC:
 
 ```bash
 gcloud auth application-default login
@@ -59,8 +59,8 @@ dotnet run --project src/ThreeDTilesLink.Cli -- \
   --dry-run
 ```
 
-## ドキュメント
+## Documentation
 
-- `AGENTS.md`: Coding Agent 向けの最小ガイド
-- `docs/current-state.md`: 現時点の運用情報と制約
-- `docs/agent-procedures.md`: AI 向けの作業手順
+- `AGENTS.md`: Minimal guide for coding agents
+- `docs/current-state.md`: Current operational information and constraints
+- `docs/agent-procedures.md`: Work procedures for AI agents
