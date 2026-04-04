@@ -237,7 +237,7 @@ namespace ThreeDTilesLink.Tests
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             {
-                [StableId("near")] = new(StableId("near"), "near", ["slot_existing"], "Google; Airbus")
+                [StableId("near")] = new(StableId("near"), "near", null, [], ["slot_existing"], "Google; Airbus")
             };
 
             InteractiveTileRunResult result = await coordinator.RunInteractiveAsync(
@@ -278,7 +278,7 @@ namespace ThreeDTilesLink.Tests
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             {
-                [StableId("far")] = new(StableId("far"), "far", ["slot_far"], "Google; Maxar")
+                [StableId("far")] = new(StableId("far"), "far", null, [], ["slot_far"], "Google; Maxar")
             };
 
             InteractiveTileRunResult result = await coordinator.RunInteractiveAsync(
@@ -319,7 +319,7 @@ namespace ThreeDTilesLink.Tests
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             {
-                [StableId("far")] = new(StableId("far"), "far", ["slot_far"], "Google; Maxar")
+                [StableId("far")] = new(StableId("far"), "far", null, [], ["slot_far"], "Google; Maxar")
             };
 
             InteractiveTileRunResult result = await coordinator.RunInteractiveAsync(
@@ -331,6 +331,52 @@ namespace ThreeDTilesLink.Tests
             _ = client.RemovedSlotIds.Should().Contain("slot_far");
             _ = result.VisibleTiles.Should().ContainKey(StableId("near"));
             _ = result.VisibleTiles.Should().NotContainKey(StableId("far"));
+        }
+
+        [Fact]
+        public async Task RunInteractive_KeepMode_DoesNotStreamParent_WhenRetainedChildAlreadyVisible()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 80d),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "c",
+                                ContentUri = new Uri("https://example.com/c.glb"),
+                                BoundingVolume = CreateBox(80d, 0d, 0d, 10d)
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            string parentStableId = StableId("p");
+            string childStableId = StableId("p", "c");
+            var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [childStableId] = new(childStableId, "pc", parentStableId, [parentStableId], ["slot_child"], "Google; Airbus")
+            };
+
+            InteractiveTileRunResult result = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false),
+                retainedTiles,
+                removeOutOfRangeTiles: false,
+                CancellationToken.None);
+
+            _ = client.SendCount.Should().Be(0);
+            _ = result.VisibleTiles.Should().ContainKey(childStableId);
+            _ = result.VisibleTiles.Should().NotContainKey(parentStableId);
         }
 
         [Fact]
@@ -778,6 +824,11 @@ namespace ThreeDTilesLink.Tests
         private static string StableId(string id)
         {
             return $"0:|{id.Length}:{id}";
+        }
+
+        private static string StableId(string prefix, string id)
+        {
+            return $"{prefix.Length}:{prefix}|{id.Length}:{id}";
         }
 
         private static BoundingVolume CreateBox(double cx, double cy, double cz, double halfExtent)

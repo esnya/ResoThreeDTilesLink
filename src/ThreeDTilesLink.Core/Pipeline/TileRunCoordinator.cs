@@ -223,6 +223,13 @@ namespace ThreeDTilesLink.Core.Pipeline
                     new RenderableContentReadyResult(command.Tile, 0, retainedTile.SlotIds, retainedTile.AssetCopyright));
             }
 
+            if (interactiveContext is not null &&
+                interactiveContext.HasRetainedVisibleDescendant(command.Tile))
+            {
+                return new PreparedPlannerResult(
+                    new ContentSkippedResult(command.Tile, "Suppressed by retained descendant."));
+            }
+
             try
             {
                 ContentProcessResult content = await _contentProcessor.ProcessAsync(command.Tile, auth, cancellationToken).ConfigureAwait(false);
@@ -623,6 +630,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             private readonly Dictionary<string, RetainedTileState> _retainedTiles = new(StringComparer.Ordinal);
             private readonly Dictionary<string, string> _stableIdByRetainedSlotId = new(StringComparer.Ordinal);
+            private readonly HashSet<string> _stableIdsWithRetainedDescendants = new(StringComparer.Ordinal);
             private readonly Dictionary<string, RetainedTileRemoval> _stagedRetainedRemovals = new(StringComparer.Ordinal);
             private readonly HashSet<string> _newSlotIds = new(StringComparer.Ordinal);
 
@@ -637,6 +645,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                     foreach (string slotId in retainedTile.SlotIds)
                     {
                         _stableIdByRetainedSlotId[slotId] = stableId;
+                    }
+
+                    foreach (string ancestorStableId in retainedTile.AncestorStableIds)
+                    {
+                        _ = _stableIdsWithRetainedDescendants.Add(ancestorStableId);
                     }
                 }
             }
@@ -655,6 +668,11 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 retainedTile = null!;
                 return false;
+            }
+
+            public bool HasRetainedVisibleDescendant(TileSelectionResult tile)
+            {
+                return _stableIdsWithRetainedDescendants.Contains(ResolveStableId(tile));
             }
 
             public void TrackNewSlotId(string slotId)
