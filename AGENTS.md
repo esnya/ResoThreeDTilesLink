@@ -17,3 +17,4 @@
 - `README.md` を詳細仕様置き場にしない
 - `AGENTS.md` は最小に保つ
 - 長い手順、変わりうる情報、最新の運用情報は `docs/` に置く
+- コミットメッセージは `type(scope): gitmoji summary` の conventional commit 形式にそろえる
