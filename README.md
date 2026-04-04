@@ -12,7 +12,7 @@ Google Photorealistic 3D Tiles を指定地点周辺だけ取得し、Resonite L
 - Resonite 側は実送信用 `WebSocket` クライアントを自前実装し、`ResoniteLink` はメッセージ定義のみ利用
 - 送信時はセッション親 Slot 配下に tile Slot を作成し、`MeshCollider` と `PBS_Metallic(Smoothness=0)` を付与
 - セッション親 Slot に `License` + `DynamicVariableSpace(Google3DTiles)` + `DynamicField<string>(Google3DTiles/License)` を付与
-- `CreditString` は表示中タイルの `copyright` を権利者単位で集計し、出現頻度の高い順に `;` 区切りで反映（親タイル削除時は対応 attribution を減算）
+- `CreditString` は表示中 GLB タイルの `asset.copyright` を集計し、権利者を `;` 区切り・出現頻度の高い順で反映（親タイル削除時は対応 attribution を減算）
 - 非永続利用前提（永続保存/アセット化を前提にしない）
 
 ## UV / Texture Convention

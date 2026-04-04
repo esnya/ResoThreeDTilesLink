@@ -8,14 +8,14 @@ namespace ThreeDTilesLink.Core.Mesh;
 
 public sealed class GlbMeshExtractor : IGlbMeshExtractor
 {
-    public IReadOnlyList<MeshData> Extract(byte[] glbBytes)
+    public GlbExtractResult Extract(byte[] glbBytes)
     {
         using var stream = new MemoryStream(glbBytes, writable: false);
         var model = ModelRoot.ReadGLB(stream);
         var scene = model.DefaultScene ?? model.LogicalScenes.FirstOrDefault();
         if (scene is null)
         {
-            return Array.Empty<MeshData>();
+            return new GlbExtractResult(Array.Empty<MeshData>(), model.Asset?.Copyright);
         }
 
         var result = new List<MeshData>();
@@ -25,7 +25,7 @@ public sealed class GlbMeshExtractor : IGlbMeshExtractor
             ExtractNode(node, result);
         }
 
-        return result;
+        return new GlbExtractResult(result, model.Asset?.Copyright);
     }
 
     private static void ExtractNode(Node node, ICollection<MeshData> output)

@@ -52,7 +52,6 @@ public sealed class TileStreamingService
         var attributionOrder = new List<string>();
         var knownAttributions = new HashSet<string>(StringComparer.Ordinal);
         var activeAttributionCounts = new Dictionary<string, int>(StringComparer.Ordinal);
-        RegisterAttributionOrder(tileset.Copyrights ?? []);
 
         var streamedMeshes = 0;
         var failedTiles = 0;
@@ -102,7 +101,7 @@ public sealed class TileStreamingService
                     continue;
                 }
 
-                var segments = raw.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                var segments = raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 foreach (var segment in segments)
                 {
                     var normalized = NormalizeAttributionOwner(segment);
@@ -232,11 +231,6 @@ public sealed class TileStreamingService
         void RegisterTile(TileSelectionResult tile)
         {
             var tileState = GetOrCreateTileState(tile.TileId, tile.ParentTileId, tile.ContentKind);
-            if (tile.Attributions.Count > 0)
-            {
-                tileState.AttributionOwners = ParseAttributionOwners(tile.Attributions);
-                RegisterAttributionOrder(tile.Attributions);
-            }
 
             if (string.IsNullOrWhiteSpace(tile.ParentTileId))
             {
@@ -369,7 +363,13 @@ public sealed class TileStreamingService
             {
                 candidateTiles++;
                 var glb = await _fetcher.FetchTileContentAsync(glbTile.ContentUri, auth, cancellationToken);
-                var meshes = _glbMeshExtractor.Extract(glb);
+                var extracted = _glbMeshExtractor.Extract(glb);
+                var meshes = extracted.Meshes;
+                glbState.AttributionOwners = ParseAttributionOwners(
+                    string.IsNullOrWhiteSpace(extracted.AssetCopyright)
+                        ? []
+                        : [extracted.AssetCopyright!]);
+                RegisterAttributionOrder(glbState.AttributionOwners);
                 var texturedMeshes = meshes.Count(m => m.BaseColorTextureBytes is { Length: > 0 });
 
                 foreach (var mesh in meshes)
@@ -512,7 +512,6 @@ public sealed class TileStreamingService
                                             nestedTileset = await _fetcher.FetchTilesetAsync(tile.ContentUri, auth, cancellationToken);
                                             tilesetCache[tile.ContentUri.AbsoluteUri] = nestedTileset;
                                             nestedTilesetFetches++;
-                                            RegisterAttributionOrder(nestedTileset.Copyrights ?? []);
                                         }
 
                                         var pending = new PendingTileset(

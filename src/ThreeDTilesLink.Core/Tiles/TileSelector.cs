@@ -59,7 +59,7 @@ public sealed class TileSelector : ITileSelector
                     kind,
                     hasChildren,
                     horizontalSpanM,
-                    tileset.Copyrights ?? []));
+                    []));
                 parentContentId = tileId;
                 if (selected.Count >= selectionLimit)
                 {
