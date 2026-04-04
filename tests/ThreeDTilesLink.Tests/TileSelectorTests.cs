@@ -58,7 +58,7 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            IReadOnlyList<TileSelectionResult> selected = selector.Select(tileset, reference, new QuerySquare(120d), maxDepth: 8, detailTargetM: 40d, maxTiles: 32, Matrix4x4d.Identity, string.Empty, 0, null, null);
+            IReadOnlyList<TileSelectionResult> selected = selector.Select(tileset, reference, new QueryRange(120d), maxDepth: 8, detailTargetM: 40d, maxTiles: 32, Matrix4x4d.Identity, string.Empty, 0, null, null);
 
             _ = selected.Select(x => x.TileId).Should().Contain(["region-in", "box-in"]);
             _ = selected.Select(x => x.TileId).Should().NotContain("sphere-out");
@@ -98,7 +98,7 @@ namespace ThreeDTilesLink.Tests
             IReadOnlyList<TileSelectionResult> selected = selector.Select(
                 tileset,
                 new GeoReference(0d, 0d, 0d),
-                new QuerySquare(500d),
+                new QueryRange(500d),
                 maxDepth: 16,
                 detailTargetM: 30d,
                 maxTiles: 64,
@@ -186,7 +186,7 @@ namespace ThreeDTilesLink.Tests
             IReadOnlyList<TileSelectionResult> selected = selector.Select(
                 tileset,
                 reference,
-                new QuerySquare(500d),
+                new QueryRange(500d),
                 maxDepth: 16,
                 detailTargetM: 60d,
                 maxTiles: 64,
@@ -205,7 +205,7 @@ namespace ThreeDTilesLink.Tests
         {
             var selector = new TileSelector(new GeographicCoordinateTransformer());
             var reference = new GeoReference(0d, 0d, 0d);
-            var square = new QuerySquare(500d);
+            var range = new QueryRange(500d);
 
             var tilesetA = new Tileset(new Tile
             {
@@ -236,7 +236,7 @@ namespace ThreeDTilesLink.Tests
             IReadOnlyList<TileSelectionResult> selectedA = selector.Select(
                 tilesetA,
                 reference,
-                square,
+                range,
                 maxDepth: 8,
                 detailTargetM: 40d,
                 maxTiles: 32,
@@ -249,7 +249,7 @@ namespace ThreeDTilesLink.Tests
             IReadOnlyList<TileSelectionResult> selectedB = selector.Select(
                 tilesetB,
                 reference,
-                square,
+                range,
                 maxDepth: 8,
                 detailTargetM: 40d,
                 maxTiles: 32,

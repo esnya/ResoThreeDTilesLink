@@ -9,7 +9,7 @@ namespace ThreeDTilesLink.Core.Contracts
         IReadOnlyList<TileSelectionResult> Select(
             Tileset tileset,
             GeoReference reference,
-            QuerySquare square,
+            QueryRange range,
             int maxDepth,
             double detailTargetM,
             int maxTiles,

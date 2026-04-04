@@ -1,15 +1,15 @@
 namespace ThreeDTilesLink.Core.Models
 {
     public sealed record ProbeDrivenStreamerOptions(
-        string LinkHost,
-        int LinkPort,
+        string ResoniteHost,
+        int ResonitePort,
         double HeightOffsetM,
         int MaxTiles,
         int MaxDepth,
         double DetailTargetM,
         bool DryRun,
         string? ApiKey,
-        double RenderStartSpanRatio,
+        double BootstrapRangeMultiplier,
         TimeSpan PollInterval,
         TimeSpan Debounce,
         TimeSpan Throttle,

@@ -1,0 +1,69 @@
+using FluentAssertions;
+using Microsoft.Extensions.Logging;
+using ThreeDTilesLink.Core.CommandLine;
+
+namespace ThreeDTilesLink.Tests
+{
+    public sealed class InteractiveCommandLineTests
+    {
+        [Fact]
+        public void Parse_Help_IncludesProbeAndTimingOptions()
+        {
+            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(["--help"]);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(0);
+            _ = invocation.Output.Should().Contain("--poll-interval <value>");
+            _ = invocation.Output.Should().Contain("--probe-path <path>");
+            _ = invocation.Output.Should().Contain("Unit: ms.");
+            _ = invocation.Output.Should().Contain("Default: World/ThreeDTilesLink.");
+        }
+
+        [Fact]
+        public void Parse_AcceptsNewVocabulary()
+        {
+            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
+            [
+                "--height-offset", "20",
+                "--resonite-host", "127.0.0.1",
+                "--resonite-port", "12000",
+                "--tile-limit=128",
+                "--depth-limit", "16",
+                "--detail", "25",
+                "--timeout", "90",
+                "--poll-interval", "250",
+                "--debounce=800",
+                "--throttle", "3000",
+                "--probe-path", "World/ThreeDTilesLink/Probe/",
+                "--probe-name", "3DTilesLink Probe",
+                "--dry-run",
+                "--log-level", "Trace"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeTrue();
+            InteractiveCommandOptions parsed = invocation.Options!;
+            _ = parsed.HeightOffsetM.Should().Be(20d);
+            _ = parsed.PollIntervalMs.Should().Be(250);
+            _ = parsed.DebounceMs.Should().Be(800);
+            _ = parsed.ThrottleMs.Should().Be(3000);
+            _ = parsed.ProbePath.Should().Be("World/ThreeDTilesLink.Probe");
+            _ = parsed.ProbeName.Should().Be("3DTilesLink Probe");
+            _ = parsed.LogLevel.Should().Be(LogLevel.Trace);
+        }
+
+        [Fact]
+        public void Parse_RejectsInteractiveRangeArgument()
+        {
+            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
+            [
+                "--range", "400",
+                "--resonite-host", "127.0.0.1",
+                "--resonite-port", "12000"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(1);
+            _ = invocation.Output.Should().Contain("--range is no longer supported in interactive mode.");
+        }
+    }
+}

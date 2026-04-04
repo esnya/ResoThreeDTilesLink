@@ -16,7 +16,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly ILogger<DefaultTileStreamingScheduler> _logger = logger;
 
         private StreamerOptions? _options;
-        private QuerySquare? _square;
+        private QueryRange? _range;
         private bool _initialized;
         private bool _stopped;
         private bool _bootstrapActive;
@@ -43,7 +43,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly Queue<SchedulerWorkItem> _outbound = new();
 
         private StreamerOptions Options => _options ?? throw new InvalidOperationException("Scheduler is not initialized.");
-        private QuerySquare Square => _square ?? throw new InvalidOperationException("Scheduler is not initialized.");
+        private QueryRange Range => _range ?? throw new InvalidOperationException("Scheduler is not initialized.");
 
         public void Initialize(Tileset rootTileset, StreamerOptions options)
         {
@@ -51,12 +51,12 @@ namespace ThreeDTilesLink.Core.Pipeline
             ArgumentNullException.ThrowIfNull(options);
 
             _options = options;
-            _square = new QuerySquare(options.HalfWidthM);
+            _range = new QueryRange(options.RangeM);
             _initialized = true;
             _stopped = false;
 
             _bootstrapActive = true;
-            _renderStartSpanM = options.HalfWidthM * (options.RenderStartSpanRatio > 0d ? options.RenderStartSpanRatio : 4d);
+            _renderStartSpanM = options.RangeM * (options.BootstrapRangeMultiplier > 0d ? options.BootstrapRangeMultiplier : 4d);
             _maxNestedTilesetFetches = SMath.Max(options.MaxTiles * 64, 512);
             _nestedTilesetFetches = 0;
 
@@ -80,10 +80,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             _pendingTilesets.Enqueue(new PendingTileset(rootTileset, Matrix4x4d.Identity, string.Empty, 0, null, null), 0d);
 
             _logger.LogInformation(
-                "Bootstrap discovery active (renderStartSpan={RenderStartSpan}m, halfWidth={HalfWidth}m, ratio={Ratio}).",
+                "Bootstrap discovery active (renderStartSpan={RenderStartSpan}m, range={Range}m, multiplier={Multiplier}).",
                 _renderStartSpanM.ToString("F1", CultureInfo.InvariantCulture),
-                options.HalfWidthM.ToString("F1", CultureInfo.InvariantCulture),
-                options.RenderStartSpanRatio.ToString("F2", CultureInfo.InvariantCulture));
+                options.RangeM.ToString("F1", CultureInfo.InvariantCulture),
+                options.BootstrapRangeMultiplier.ToString("F2", CultureInfo.InvariantCulture));
 
             if (!options.DryRun)
             {
@@ -328,7 +328,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     if (_pendingGlbTiles.Count > 0 || _pendingTilesets.Count > 0 || _deferredGlbTiles.Count > 0)
                     {
                         _logger.LogWarning(
-                            "Stopped at max tile budget ({MaxTiles}) with pending work (streamableGlb={PendingGlb}, deferredGlb={PendingDeferredGlb}, tilesets={PendingTilesets}). Increase --max-tiles to reduce holes.",
+                            "Stopped at tile limit ({MaxTiles}) with pending work (streamableGlb={PendingGlb}, deferredGlb={PendingDeferredGlb}, tilesets={PendingTilesets}). Increase tile-limit to reduce holes.",
                             Options.MaxTiles,
                             _pendingGlbTiles.Count,
                             _deferredGlbTiles.Count,
@@ -397,7 +397,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             IReadOnlyList<TileSelectionResult> selected = _selector.Select(
                 tilesetWork.Tileset,
                 Options.Reference,
-                Square,
+                Range,
                 Options.MaxDepth,
                 effectiveDetailTargetM,
                 maxTiles: 0,

@@ -1,5 +1,6 @@
 using DotNetEnv;
 using Microsoft.Extensions.Logging;
+using ThreeDTilesLink.Core.CommandLine;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Runtime;
 
@@ -12,29 +13,21 @@ static async Task<int> RunAsync(string[] args)
     {
         _ = Env.TraversePath().NoClobber().Load();
 
-        Dictionary<string, string?> parsed = ParseArgs(args);
+        CommandInvocation<CliCommandOptions> invocation = CliCommandLine.Parse(args);
+        if (!invocation.ShouldRun)
+        {
+            WriteOutput(invocation.Output, invocation.WriteToError);
+            return invocation.ExitCode;
+        }
 
-        double lat = GetRequiredDouble(parsed, "--lat");
-        double lon = GetRequiredDouble(parsed, "--lon");
-        double heightM = GetOptionalDouble(parsed, "--height-offset-m", 0d);
-        double halfWidthM = GetRequiredDouble(parsed, "--half-width-m");
-        string linkHost = GetRequiredString(parsed, "--link-host");
-        int linkPort = GetRequiredInt(parsed, "--link-port");
-
-        int maxTiles = GetOptionalInt(parsed, "--max-tiles", 1024);
-        int maxDepth = GetOptionalInt(parsed, "--max-depth", 32);
-        double detailTargetM = GetOptionalDouble(parsed, "--detail-target-m", 30d);
-        double renderStartSpanRatio = GetOptionalDouble(parsed, "--render-start-span-ratio", 4d);
-        int timeoutSec = GetOptionalInt(parsed, "--timeout-sec", 120);
-        bool dryRun = parsed.ContainsKey("--dry-run");
-        LogLevel logLevel = ParseLogLevel(GetOptionalString(parsed, "--log-level", "Information"));
+        CliCommandOptions parsed = invocation.Options!;
 
         string apiKey = Environment.GetEnvironmentVariable("GOOGLE_MAPS_API_KEY") ?? string.Empty;
 
         using ILoggerFactory loggerFactory = LoggerFactory.Create(builder =>
         {
             _ = builder
-                .SetMinimumLevel(logLevel)
+                .SetMinimumLevel(parsed.LogLevel)
                 .AddSimpleConsole(options =>
                 {
                     options.IncludeScopes = false;
@@ -43,20 +36,19 @@ static async Task<int> RunAsync(string[] args)
                 });
         });
 
-        var runtime = new TileStreamingRuntime(loggerFactory, TimeSpan.FromSeconds(timeoutSec));
+        var runtime = new TileStreamingRuntime(loggerFactory, TimeSpan.FromSeconds(parsed.TimeoutSec));
         await using (runtime.ConfigureAwait(false))
         {
             var options = new StreamerOptions(
-                new GeoReference(lat, lon, heightM),
-                halfWidthM,
-                linkHost,
-                linkPort,
-                maxTiles,
-                maxDepth,
-                detailTargetM,
-                dryRun,
-                apiKey,
-                renderStartSpanRatio);
+                new GeoReference(parsed.Latitude, parsed.Longitude, parsed.HeightOffsetM),
+                parsed.RangeM,
+                parsed.ResoniteHost,
+                parsed.ResonitePort,
+                parsed.TileLimit,
+                parsed.DepthLimit,
+                parsed.DetailTargetM,
+                parsed.DryRun,
+                apiKey);
 
             RunSummary summary = await runtime.RunAsync(options, CancellationToken.None).ConfigureAwait(false);
 
@@ -71,90 +63,18 @@ static async Task<int> RunAsync(string[] args)
     }
 }
 
-static Dictionary<string, string?> ParseArgs(IReadOnlyList<string> args)
+static void WriteOutput(string output, bool writeToError)
 {
-    var result = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-
-    for (int i = 0; i < args.Count; i++)
+    if (string.IsNullOrWhiteSpace(output))
     {
-        string current = args[i];
-        if (!current.StartsWith("--", StringComparison.Ordinal))
-        {
-            continue;
-        }
-
-        int equalsIndex = current.IndexOf('=', StringComparison.Ordinal);
-        if (equalsIndex > 2)
-        {
-            string key = current[..equalsIndex];
-            string value = current[(equalsIndex + 1)..];
-            result[key] = string.IsNullOrWhiteSpace(value) ? null : value;
-            continue;
-        }
-
-        if (i + 1 < args.Count && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
-        {
-            result[current] = args[i + 1];
-            i++;
-        }
-        else
-        {
-            result[current] = null;
-        }
+        return;
     }
 
-    return result;
-}
+    if (writeToError)
+    {
+        Console.Error.WriteLine(output);
+        return;
+    }
 
-static string GetRequiredString(IReadOnlyDictionary<string, string?> args, string key)
-{
-    return !args.TryGetValue(key, out string? value) || string.IsNullOrWhiteSpace(value)
-        ? throw new InvalidOperationException($"Missing required argument: {key}")
-        : value;
-}
-
-static double GetRequiredDouble(IReadOnlyDictionary<string, string?> args, string key)
-{
-    string value = GetRequiredString(args, key);
-    return !double.TryParse(value, out double parsed)
-        ? throw new InvalidOperationException($"Invalid numeric value for {key}: {value}")
-        : parsed;
-}
-
-static int GetRequiredInt(IReadOnlyDictionary<string, string?> args, string key)
-{
-    string value = GetRequiredString(args, key);
-    return !int.TryParse(value, out int parsed)
-        ? throw new InvalidOperationException($"Invalid integer value for {key}: {value}")
-        : parsed;
-}
-
-static int GetOptionalInt(IReadOnlyDictionary<string, string?> args, string key, int fallback)
-{
-    return !args.TryGetValue(key, out string? value) || string.IsNullOrWhiteSpace(value)
-        ? fallback
-        : int.TryParse(value, out int parsed)
-        ? parsed
-        : throw new InvalidOperationException($"Invalid integer value for {key}: {value}");
-}
-
-static double GetOptionalDouble(IReadOnlyDictionary<string, string?> args, string key, double fallback)
-{
-    return !args.TryGetValue(key, out string? value) || string.IsNullOrWhiteSpace(value)
-        ? fallback
-        : double.TryParse(value, out double parsed)
-        ? parsed
-        : throw new InvalidOperationException($"Invalid numeric value for {key}: {value}");
-}
-
-static string GetOptionalString(IReadOnlyDictionary<string, string?> args, string key, string fallback)
-{
-    return !args.TryGetValue(key, out string? value) || string.IsNullOrWhiteSpace(value) ? fallback : value;
-}
-
-static LogLevel ParseLogLevel(string value)
-{
-    return Enum.TryParse<LogLevel>(value, ignoreCase: true, out LogLevel parsed)
-        ? parsed
-        : LogLevel.Information;
+    Console.WriteLine(output);
 }

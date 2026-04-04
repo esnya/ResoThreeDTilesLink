@@ -44,8 +44,8 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             if (!options.DryRun && options.ManageResoniteConnection)
             {
-                _logger.LogInformation("Connecting to Resonite Link at {Host}:{Port}", options.LinkHost, options.LinkPort);
-                await _resoniteLinkClient.ConnectAsync(options.LinkHost, options.LinkPort, cancellationToken).ConfigureAwait(false);
+                _logger.LogInformation("Connecting to Resonite Link at {Host}:{Port}", options.ResoniteHost, options.ResonitePort);
+                await _resoniteLinkClient.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
             }
 
             try

@@ -33,32 +33,29 @@ dotnet test ThreeDTilesLink.slnx
 
 ```bash
 dotnet run --project src/ThreeDTilesLink.Cli -- \
-  --lat 35.65858 \
-  --lon 139.745433 \
-  --height-offset-m 20 \
-  --half-width-m 400 \
-  --link-host 127.0.0.1 \
-  --link-port 12000 \
-  --max-tiles 1024 \
-  --max-depth 16 \
-  --timeout-sec 120 \
-  --log-level Information
+  --latitude 35.65858 \
+  --longitude 139.745433 \
+  --range 400 \
+  --resonite-host 127.0.0.1 \
+  --resonite-port 12000
 ```
 
+- `--range` is the minimum coverage range from the center point.
 - Add `--dry-run` to verify only the fetch and conversion path without sending anything to Resonite.
 - If `GOOGLE_MAPS_API_KEY` is set, the API key is used; otherwise ADC is used.
-- If `--height-offset-m` is omitted, `0` is used.
+- If `--height-offset` is omitted, `0` is used.
+- Run `dotnet run --project src/ThreeDTilesLink.Cli -- --help` for units and defaults.
 
 Example using ADC:
 
 ```bash
 gcloud auth application-default login
 dotnet run --project src/ThreeDTilesLink.Cli -- \
-  --lat 35.65858 \
-  --lon 139.745433 \
-  --half-width-m 400 \
-  --link-host 127.0.0.1 \
-  --link-port 12000 \
+  --latitude 35.65858 \
+  --longitude 139.745433 \
+  --range 400 \
+  --resonite-host 127.0.0.1 \
+  --resonite-port 12000 \
   --dry-run
 ```
 
@@ -66,24 +63,25 @@ dotnet run --project src/ThreeDTilesLink.Cli -- \
 
 At connection time, the app creates a probe slot and watches `DynamicValueVariable<T>` values under:
 
-- `World/3DTilesLink.Latitude`
-- `World/3DTilesLink.Longitude`
-- `World/3DTilesLink.Range`
+- `World/ThreeDTilesLink.Latitude`
+- `World/ThreeDTilesLink.Longitude`
+- `World/ThreeDTilesLink.Range`
 
 Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and old run slots are removed.
 If probe `Range` is `0` or less, no streaming run is started.
 
 ```bash
 dotnet run --project src/ThreeDTilesLink.Interactive -- \
-  --height-offset-m 20 \
-  --link-host 127.0.0.1 \
-  --link-port 12000 \
-  --poll-ms 250 \
-  --debounce-ms 800 \
-  --throttle-ms 3000 \
-  --probe-path-prefix World/3DTilesLink \
-  --probe-slot-name "3DTilesLink Probe"
+  --resonite-host 127.0.0.1 \
+  --resonite-port 12000 \
+  --poll-interval 250 \
+  --debounce 800 \
+  --throttle 3000 \
+  --probe-path World/ThreeDTilesLink \
+  --probe-name "3DTilesLink Probe"
 ```
+
+Run `dotnet run --project src/ThreeDTilesLink.Interactive -- --help` for units and defaults.
 
 ## Documentation
 

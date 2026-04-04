@@ -19,7 +19,7 @@ namespace ThreeDTilesLink.Tests
                 CreateTile("c", "https://example.com/c.glb", depth: 1, parentTileId: "p", hasChildren: false, span: 120d)
             ]));
 
-            scheduler.Initialize(CreateRootTileset(), CreateOptions(dryRun: true, renderStartSpanRatio: 0.5d));
+            scheduler.Initialize(CreateRootTileset(), CreateOptions(dryRun: true, bootstrapRangeMultiplier: 0.5d));
 
             bool hasItem = scheduler.TryDequeueWorkItem(out SchedulerWorkItem? workItem);
 
@@ -36,7 +36,7 @@ namespace ThreeDTilesLink.Tests
                 CreateTile("p", "https://example.com/p.glb", depth: 0, parentTileId: null, hasChildren: true, span: 1200d)
             ]));
 
-            scheduler.Initialize(CreateRootTileset(), CreateOptions(dryRun: true, renderStartSpanRatio: 0.5d));
+            scheduler.Initialize(CreateRootTileset(), CreateOptions(dryRun: true, bootstrapRangeMultiplier: 0.5d));
 
             bool hasItem = scheduler.TryDequeueWorkItem(out SchedulerWorkItem? workItem);
 
@@ -158,7 +158,7 @@ namespace ThreeDTilesLink.Tests
             return new DefaultTileStreamingScheduler(selector, NullLogger<DefaultTileStreamingScheduler>.Instance);
         }
 
-        private static StreamerOptions CreateOptions(bool dryRun, int maxTiles = 16, double renderStartSpanRatio = 4d)
+        private static StreamerOptions CreateOptions(bool dryRun, int maxTiles = 16, double bootstrapRangeMultiplier = 4d)
         {
             return new StreamerOptions(
                 new GeoReference(0d, 0d, 0d),
@@ -170,7 +170,7 @@ namespace ThreeDTilesLink.Tests
                 40d,
                 dryRun,
                 "k",
-                renderStartSpanRatio);
+                bootstrapRangeMultiplier);
         }
 
         private static Tileset CreateRootTileset()
@@ -205,7 +205,7 @@ namespace ThreeDTilesLink.Tests
             public IReadOnlyList<TileSelectionResult> Select(
                 Tileset tileset,
                 GeoReference reference,
-                QuerySquare square,
+                QueryRange range,
                 int maxDepth,
                 double detailTargetM,
                 int maxTiles,

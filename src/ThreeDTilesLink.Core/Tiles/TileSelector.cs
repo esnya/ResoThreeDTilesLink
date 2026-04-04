@@ -12,7 +12,7 @@ namespace ThreeDTilesLink.Core.Tiles
         public IReadOnlyList<TileSelectionResult> Select(
             Tileset tileset,
             GeoReference reference,
-            QuerySquare square,
+            QueryRange range,
             int maxDepth,
             double detailTargetM,
             int maxTiles,
@@ -24,7 +24,7 @@ namespace ThreeDTilesLink.Core.Tiles
         {
             ArgumentNullException.ThrowIfNull(tileset);
             ArgumentNullException.ThrowIfNull(reference);
-            ArgumentNullException.ThrowIfNull(square);
+            ArgumentNullException.ThrowIfNull(range);
             int selectionLimit = maxTiles <= 0 ? int.MaxValue : maxTiles;
             var selected = new List<TileSelectionResult>(capacity: SMath.Max(1, SMath.Min(selectionLimit, 4096)));
             var queue = new Queue<(Tile Tile, Matrix4x4d ParentWorld, int Depth, string? ParentContentTileId, string? ParentContentStableId)>();
@@ -38,7 +38,7 @@ namespace ThreeDTilesLink.Core.Tiles
                     : Matrix4x4d.Identity;
                 Matrix4x4d world = local * parentWorld;
 
-                if (!Intersects(tile.BoundingVolume, world, reference, square, out double? horizontalSpanM))
+                if (!Intersects(tile.BoundingVolume, world, reference, range, out double? horizontalSpanM))
                 {
                     continue;
                 }
@@ -127,7 +127,7 @@ namespace ThreeDTilesLink.Core.Tiles
             return $"{normalizedPrefix.Length}:{normalizedPrefix}|{normalizedId.Length}:{normalizedId}";
         }
 
-        private bool Intersects(BoundingVolume? volume, Matrix4x4d world, GeoReference reference, QuerySquare square, out double? horizontalSpanM)
+        private bool Intersects(BoundingVolume? volume, Matrix4x4d world, GeoReference reference, QueryRange range, out double? horizontalSpanM)
         {
             if (volume is null)
             {
@@ -142,7 +142,7 @@ namespace ThreeDTilesLink.Core.Tiles
             }
 
             horizontalSpanM = SMath.Max(maxEast - minEast, maxNorth - minNorth);
-            return !(maxEast < square.Min || minEast > square.Max || maxNorth < square.Min || minNorth > square.Max);
+            return !(maxEast < range.Min || minEast > range.Max || maxNorth < range.Min || minNorth > range.Max);
         }
 
         private bool TryGetHorizontalBounds(

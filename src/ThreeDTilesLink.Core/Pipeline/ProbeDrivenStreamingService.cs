@@ -32,8 +32,8 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                _logger.LogInformation("Connecting to Resonite Link at {Host}:{Port}", options.LinkHost, options.LinkPort);
-                await _resoniteLinkClient.ConnectAsync(options.LinkHost, options.LinkPort, cancellationToken).ConfigureAwait(false);
+                _logger.LogInformation("Connecting to Resonite Link at {Host}:{Port}", options.ResoniteHost, options.ResonitePort);
+                await _resoniteLinkClient.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
                 connected = true;
 
                 probeBinding = await _resoniteLinkClient.CreateProbeAsync(options.Probe, cancellationToken).ConfigureAwait(false);
@@ -278,16 +278,16 @@ namespace ThreeDTilesLink.Core.Pipeline
         private static StreamerOptions BuildRunOptions(ProbeDrivenStreamerOptions options, ProbeValues probeValues, string runSlotId)
         {
             return new StreamerOptions(
-                new GeoReference((double)probeValues.Latitude, (double)probeValues.Longitude, options.HeightOffsetM),
-                (double)probeValues.RangeM,
-                options.LinkHost,
-                options.LinkPort,
+                new GeoReference(probeValues.Latitude, probeValues.Longitude, options.HeightOffsetM),
+                probeValues.RangeM,
+                options.ResoniteHost,
+                options.ResonitePort,
                 options.MaxTiles,
                 options.MaxDepth,
                 options.DetailTargetM,
                 options.DryRun,
                 options.ApiKey,
-                options.RenderStartSpanRatio,
+                options.BootstrapRangeMultiplier,
                 ManageResoniteConnection: false,
                 MeshParentSlotId: runSlotId);
         }
