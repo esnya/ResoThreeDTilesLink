@@ -29,6 +29,7 @@ static async Task<int> RunAsync(string[] args)
         int maxTiles = GetOptionalInt(parsed, "--max-tiles", 1024);
         int maxDepth = GetOptionalInt(parsed, "--max-depth", 32);
         double detailTargetM = GetOptionalDouble(parsed, "--detail-target-m", 30d);
+        double renderStartSpanRatio = GetOptionalDouble(parsed, "--render-start-span-ratio", 4d);
         int timeoutSec = GetOptionalInt(parsed, "--timeout-sec", 120);
         bool dryRun = parsed.ContainsKey("--dry-run");
         LogLevel logLevel = ParseLogLevel(GetOptionalString(parsed, "--log-level", "Information"));
@@ -78,7 +79,8 @@ static async Task<int> RunAsync(string[] args)
                 maxDepth,
                 detailTargetM,
                 dryRun,
-                apiKey);
+                apiKey,
+                renderStartSpanRatio);
 
             RunSummary summary = await service.RunAsync(options, CancellationToken.None).ConfigureAwait(false);
 

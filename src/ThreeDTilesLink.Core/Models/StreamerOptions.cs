@@ -9,5 +9,6 @@ namespace ThreeDTilesLink.Core.Models
         int MaxDepth,
         double DetailTargetM,
         bool DryRun,
-        string? ApiKey);
+        string? ApiKey,
+        double RenderStartSpanRatio = 4d);
 }

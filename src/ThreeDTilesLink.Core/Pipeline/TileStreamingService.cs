@@ -56,10 +56,20 @@ namespace ThreeDTilesLink.Core.Pipeline
             var pendingTilesets = new PriorityQueue<PendingTileset, double>();
             pendingTilesets.Enqueue(new PendingTileset(tileset, Matrix4x4d.Identity, string.Empty, 0, null), 0d);
             var pendingGlbTiles = new PriorityQueue<TileSelectionResult, double>();
+            var deferredGlbTiles = new Dictionary<string, TileSelectionResult>(StringComparer.Ordinal);
             int nestedTilesetFetches = 0;
             int maxNestedTilesetFetches = SMath.Max(options.MaxTiles * 64, 512);
             // Use unbounded subtree selection to avoid dropping branches in dense urban areas.
             int selectBudgetPerSubtree = 0;
+            double renderStartSpanRatio = options.RenderStartSpanRatio > 0d ? options.RenderStartSpanRatio : 4d;
+            double renderStartSpanM = options.HalfWidthM * renderStartSpanRatio;
+            bool bootstrapActive = true;
+
+            _logger.LogInformation(
+                "Bootstrap discovery active (renderStartSpan={RenderStartSpan}m, halfWidth={HalfWidth}m, ratio={Ratio}).",
+                renderStartSpanM.ToString("F1", CultureInfo.InvariantCulture),
+                options.HalfWidthM.ToString("F1", CultureInfo.InvariantCulture),
+                renderStartSpanRatio.ToString("F2", CultureInfo.InvariantCulture));
 
             double GetTraversalPriority(TileSelectionResult tile)
             {
@@ -68,6 +78,32 @@ namespace ThreeDTilesLink.Core.Pipeline
                 double leafBias = tile.HasChildren ? 0d : -0.1d;
                 // Coarse coverage first: shallower depth first, then larger span first.
                 return (depth * 1_000_000_000_000d) - span + leafBias;
+            }
+
+            bool IsStreamableGlbCandidate(TileSelectionResult tile)
+            {
+                return tile.HorizontalSpanM is null ||
+                    tile.HorizontalSpanM.Value <= renderStartSpanM ||
+                    !tile.HasChildren;
+            }
+
+            void TryDeactivateBootstrap(string reason, TileSelectionResult? triggerTile = null)
+            {
+                if (!bootstrapActive || pendingGlbTiles.Count == 0)
+                {
+                    return;
+                }
+
+                bootstrapActive = false;
+                _logger.LogInformation(
+                    "Bootstrap discovery complete: reason={Reason}, streamable={Streamable}, deferred={Deferred}, pendingTilesets={PendingTilesets}, triggerTile={TileId}, triggerDepth={Depth}, triggerSpan={Span}m.",
+                    reason,
+                    pendingGlbTiles.Count,
+                    deferredGlbTiles.Count,
+                    pendingTilesets.Count,
+                    triggerTile?.TileId ?? "n/a",
+                    triggerTile?.Depth.ToString(CultureInfo.InvariantCulture) ?? "n/a",
+                    triggerTile?.HorizontalSpanM?.ToString("F1", CultureInfo.InvariantCulture) ?? "n/a");
             }
 
             static string? NormalizeAttributionOwner(string? value)
@@ -227,9 +263,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 return state.ContentKind switch
                 {
-                    TileContentKind.Glb => state.SelfCompleted,
+                    TileContentKind.Glb => state.SelfCompleted || (state.DeferredSuppressed && state.ChildrenDiscoveryDone && state.PendingChildBranches.Count == 0),
                     TileContentKind.Json => state.SelfCompleted && state.ChildrenDiscoveryDone && state.PendingChildBranches.Count == 0,
-                    TileContentKind.Other => throw new NotImplementedException(),
                     _ => state.SelfCompleted
                 };
             }
@@ -293,6 +328,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                         continue;
                     }
 
+                    if (TryQueueDeferredFallback(state, "branch-complete"))
+                    {
+                        continue;
+                    }
+
                     await TryRemoveParentTileIfReadyAsync(state).ConfigureAwait(false);
 
                     if (state.BranchCompleted || !IsBranchCompleteForParent(state))
@@ -301,6 +341,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
 
                     state.BranchCompleted = true;
+                    if (state.DeferredSuppressed && !state.SelfCompleted)
+                    {
+                        _ = deferredGlbTiles.Remove(state.TileId);
+                    }
+
                     if (string.IsNullOrWhiteSpace(state.ParentTileId))
                     {
                         continue;
@@ -321,6 +366,73 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 state.SelfCompleted = true;
                 await PropagateCompletionAsync(tileId).ConfigureAwait(false);
+            }
+
+            void MarkBranchVisible(string tileId)
+            {
+                string? currentId = tileId;
+                while (!string.IsNullOrWhiteSpace(currentId) &&
+                       tileStates.TryGetValue(currentId, out TileLifecycle? current))
+                {
+                    if (current.BranchHasVisibleContent)
+                    {
+                        break;
+                    }
+
+                    current.BranchHasVisibleContent = true;
+                    currentId = current.ParentTileId;
+                }
+            }
+
+            bool TryQueueDeferredFallback(TileLifecycle state, string reason)
+            {
+                if (!state.DeferredSuppressed ||
+                    state.SelfCompleted ||
+                    state.FallbackQueued ||
+                    !state.ChildrenDiscoveryDone ||
+                    state.PendingChildBranches.Count > 0 ||
+                    state.BranchHasVisibleContent ||
+                    !deferredGlbTiles.TryGetValue(state.TileId, out TileSelectionResult? deferredTile))
+                {
+                    return false;
+                }
+
+                if (pendingTilesets.Count > 0)
+                {
+                    return false;
+                }
+
+                _ = deferredGlbTiles.Remove(state.TileId);
+                pendingGlbTiles.Enqueue(deferredTile, GetTraversalPriority(deferredTile));
+                state.FallbackQueued = true;
+
+                _logger.LogDebug(
+                    "Queued deferred fallback tile {TileId} (reason={Reason}, depth={Depth}, span={Span}m).",
+                    deferredTile.TileId,
+                    reason,
+                    deferredTile.Depth,
+                    deferredTile.HorizontalSpanM?.ToString("F1", CultureInfo.InvariantCulture) ?? "n/a");
+
+                TryDeactivateBootstrap("deferred-fallback", deferredTile);
+                return true;
+            }
+
+            void QueueReadyDeferredFallbacks(string reason)
+            {
+                if (deferredGlbTiles.Count == 0)
+                {
+                    return;
+                }
+
+                foreach (string tileId in deferredGlbTiles.Keys.ToList())
+                {
+                    if (!tileStates.TryGetValue(tileId, out TileLifecycle? state))
+                    {
+                        continue;
+                    }
+
+                    _ = TryQueueDeferredFallback(state, reason);
+                }
             }
 
             async Task<bool> TryStreamNextGlbAsync()
@@ -388,6 +500,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                     _ = glbState.SlotIds.Add(slotId);
                 }
 
+                if (streamedSlotIds.Count > 0)
+                {
+                    MarkBranchVisible(glbTile.TileId);
+                }
+
                 if (!options.DryRun && streamedSlotIds.Count > 0 && TryActivateAttributions(glbState))
                 {
                     await RefreshSessionLicenseCreditAsync().ConfigureAwait(false);
@@ -406,11 +523,19 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                while ((pendingTilesets.Count > 0 || pendingGlbTiles.Count > 0) &&
+                while ((pendingTilesets.Count > 0 || pendingGlbTiles.Count > 0 || deferredGlbTiles.Count > 0) &&
                        streamedTileCount < options.MaxTiles)
                 {
+                    QueueReadyDeferredFallbacks("loop-check");
+                    _logger.LogDebug(
+                        "Bootstrap={Bootstrap} queues: streamable={Streamable}, deferred={Deferred}, pendingTilesets={PendingTilesets}.",
+                        bootstrapActive ? "active" : "inactive",
+                        pendingGlbTiles.Count,
+                        deferredGlbTiles.Count,
+                        pendingTilesets.Count);
+
                     bool didWork = false;
-                    if (pendingGlbTiles.Count > 0)
+                    if (!bootstrapActive && pendingGlbTiles.Count > 0)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         _ = await TryStreamNextGlbAsync().ConfigureAwait(false);
@@ -440,19 +565,28 @@ namespace ThreeDTilesLink.Core.Pipeline
                             continue;
                         }
 
+                        double effectiveDetailTargetM = bootstrapActive
+                            ? SMath.Max(options.DetailTargetM, renderStartSpanM)
+                            : options.DetailTargetM;
+
                         IReadOnlyList<TileSelectionResult> selected = _selector.Select(
                             tilesetWork.Tileset,
                             options.Reference,
                             square,
                             options.MaxDepth,
-                            options.DetailTargetM,
+                            effectiveDetailTargetM,
                             selectBudgetPerSubtree,
                             tilesetWork.ParentWorld,
                             tilesetWork.IdPrefix,
                             tilesetWork.DepthOffset,
                             tilesetWork.OwnerTileId);
 
-                        _logger.LogDebug("Selected {Count} candidate tiles from subtree '{Prefix}'.", selected.Count, tilesetWork.IdPrefix);
+                        _logger.LogDebug(
+                            "Selected {Count} candidate tiles from subtree '{Prefix}' (detailTarget={DetailTarget}m, bootstrap={Bootstrap}).",
+                            selected.Count,
+                            tilesetWork.IdPrefix,
+                            effectiveDetailTargetM.ToString("F1", CultureInfo.InvariantCulture),
+                            bootstrapActive ? "active" : "inactive");
 
                         foreach (TileSelectionResult tile in selected)
                         {
@@ -527,7 +661,31 @@ namespace ThreeDTilesLink.Core.Pipeline
                                                 continue;
                                             }
 
-                                            pendingGlbTiles.Enqueue(tile, GetTraversalPriority(tile));
+                                            if (IsStreamableGlbCandidate(tile))
+                                            {
+                                                tileState.DeferredSuppressed = false;
+                                                tileState.FallbackQueued = false;
+                                                _ = deferredGlbTiles.Remove(tile.TileId);
+                                                pendingGlbTiles.Enqueue(tile, GetTraversalPriority(tile));
+                                                _logger.LogDebug(
+                                                    "Queued streamable GLB tile {TileId} (depth={Depth}, span={Span}m, hasChildren={HasChildren}).",
+                                                    tile.TileId,
+                                                    tile.Depth,
+                                                    tile.HorizontalSpanM?.ToString("F1", CultureInfo.InvariantCulture) ?? "n/a",
+                                                    tile.HasChildren);
+                                                TryDeactivateBootstrap("streamable-glb-discovered", tile);
+                                            }
+                                            else
+                                            {
+                                                tileState.DeferredSuppressed = true;
+                                                deferredGlbTiles[tile.TileId] = tile;
+                                                _logger.LogDebug(
+                                                    "Deferred coarse GLB tile {TileId} (depth={Depth}, span={Span}m, threshold={Threshold}m).",
+                                                    tile.TileId,
+                                                    tile.Depth,
+                                                    tile.HorizontalSpanM?.ToString("F1", CultureInfo.InvariantCulture) ?? "n/a",
+                                                    renderStartSpanM.ToString("F1", CultureInfo.InvariantCulture));
+                                            }
 
                                             continue;
                                         }
@@ -553,21 +711,25 @@ namespace ThreeDTilesLink.Core.Pipeline
                             }
                         }
 
+                        QueueReadyDeferredFallbacks("subtree-processed");
+
                         if (!string.IsNullOrWhiteSpace(tilesetWork.OwnerTileId))
                         {
                             TileLifecycle owner = GetOrCreateTileState(tilesetWork.OwnerTileId);
                             owner.SelfCompleted = true;
                             owner.ChildrenDiscoveryDone = true;
                             await PropagateCompletionAsync(owner.TileId).ConfigureAwait(false);
+                            QueueReadyDeferredFallbacks("owner-completed");
                         }
                     }
 
                     if (pendingTilesets.Count > 0 &&
                         nestedTilesetFetches >= maxNestedTilesetFetches &&
-                        pendingGlbTiles.Count == 0)
+                        pendingGlbTiles.Count == 0 &&
+                        deferredGlbTiles.Count == 0)
                     {
                         _logger.LogWarning(
-                            "Stopped traversal because nested tileset fetch budget was reached ({MaxFetches}) and no streamable GLB tiles are queued.",
+                            "Stopped traversal because nested tileset fetch budget was reached ({MaxFetches}) and no streamable/deferred GLB tiles are queued.",
                             maxNestedTilesetFetches);
                         break;
                     }
@@ -587,12 +749,13 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             if (streamedTileCount >= options.MaxTiles &&
-                (pendingGlbTiles.Count > 0 || pendingTilesets.Count > 0))
+                (pendingGlbTiles.Count > 0 || pendingTilesets.Count > 0 || deferredGlbTiles.Count > 0))
             {
                 _logger.LogWarning(
-                    "Stopped at max tile budget ({MaxTiles}) with pending work (glb={PendingGlb}, tilesets={PendingTilesets}). Increase --max-tiles to reduce holes.",
+                    "Stopped at max tile budget ({MaxTiles}) with pending work (streamableGlb={PendingGlb}, deferredGlb={PendingDeferredGlb}, tilesets={PendingTilesets}). Increase --max-tiles to reduce holes.",
                     options.MaxTiles,
                     pendingGlbTiles.Count,
+                    deferredGlbTiles.Count,
                     pendingTilesets.Count);
             }
 
@@ -823,6 +986,9 @@ namespace ThreeDTilesLink.Core.Pipeline
             public bool BranchCompleted { get; set; }
             public bool ChildrenDiscoveryDone { get; set; } = true;
             public bool Removed { get; set; }
+            public bool DeferredSuppressed { get; set; }
+            public bool FallbackQueued { get; set; }
+            public bool BranchHasVisibleContent { get; set; }
             public IReadOnlyList<string> AttributionOwners { get; set; } = [];
             public bool AttributionsApplied { get; set; }
             public HashSet<string> DirectChildren { get; } = new(StringComparer.Ordinal);

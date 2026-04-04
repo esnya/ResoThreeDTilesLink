@@ -600,6 +600,111 @@ namespace ThreeDTilesLink.Tests
                 "Data SIO, NOAA, U.S. Navy, NGA, GEBCO; Landsat / Copernicus");
         }
 
+        [Fact]
+        public async Task Run_Bootstrap_DefersCoarseGlb_UntilStreamableChildDiscovered()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 1200d),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "c",
+                                ContentUri = new Uri("https://example.com/c.glb"),
+                                BoundingVolume = CreateBox(0d, 0d, 0d, 120d)
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteClient();
+            var service = new TileStreamingService(
+                new FakeFetcher(tileset),
+                new TileSelector(new PassThroughTransformer()),
+                new FakeExtractor(),
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
+
+            RunSummary summary = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 16, 40d, false, "k", 0.5d),
+                CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(1);
+            _ = client.Payloads.Should().HaveCount(1);
+            _ = client.Payloads[0].Name.Should().Contain("tile_c_");
+            _ = client.Payloads[0].Name.Should().NotContain("tile_p_");
+        }
+
+        [Fact]
+        public async Task Run_DeferredCoarseTile_FallbackStreamsParent_WhenNoChildBranchSelected()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 1200d),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "c-out",
+                                ContentUri = new Uri("https://example.com/c-out.glb"),
+                                BoundingVolume = CreateBox(5000d, 5000d, 0d, 120d)
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteClient();
+            var service = new TileStreamingService(
+                new FakeFetcher(tileset),
+                new TileSelector(new PassThroughTransformer()),
+                new FakeExtractor(),
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
+
+            RunSummary summary = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 16, 40d, false, "k", 0.5d),
+                CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(1);
+            _ = client.Payloads.Should().HaveCount(1);
+            _ = client.Payloads[0].Name.Should().Contain("tile_p_");
+        }
+
+        private static BoundingVolume CreateBox(double cx, double cy, double cz, double halfExtent)
+        {
+            return new BoundingVolume
+            {
+                Box =
+                [
+                    cx, cy, cz,
+                    halfExtent, 0d, 0d,
+                    0d, halfExtent, 0d,
+                    0d, 0d, halfExtent
+                ]
+            };
+        }
+
         private sealed class PassThroughTransformer : ICoordinateTransformer
         {
             public Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double heightM)
