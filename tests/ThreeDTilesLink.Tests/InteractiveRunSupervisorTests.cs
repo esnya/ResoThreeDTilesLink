@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Google;
+using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
 
@@ -31,6 +32,68 @@ namespace ThreeDTilesLink.Tests
             _ = coordinator.Requests[0].Traversal.RangeM.Should().Be(400d);
             _ = coordinator.Requests[0].Output.ManageConnection.Should().BeFalse();
             _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().Be(session.CreatedRunSlots[0]);
+        }
+
+        [Fact]
+        public async Task RunAsync_ReusesSessionSlot_AndPlacementReference_WhenRangesOverlap()
+        {
+            var session = new FakeSession();
+            var probeStore = new FakeProbeStore
+            {
+                ProbeValues = new Queue<ProbeValues?>(
+                [
+                    new ProbeValues(35f, 139f, 400f),
+                    new ProbeValues(35f, 139f, 400f),
+                    new ProbeValues(36f, 140f, 400f),
+                    new ProbeValues(36f, 140f, 400f)
+                ])
+            };
+            var clock = new FakeClock { CancelAfterDelayCalls = 4 };
+            var coordinator = new FakeTileRunCoordinator(() => { });
+            var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
+
+            using var cts = new CancellationTokenSource();
+            clock.CancellationSource = cts;
+
+            await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
+
+            _ = coordinator.Requests.Should().HaveCount(2);
+            _ = session.CreatedRunSlots.Should().ContainSingle();
+            _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().Be(coordinator.Requests[1].Output.MeshParentSlotId);
+            _ = coordinator.Requests[1].SelectionReference.Latitude.Should().Be(36d);
+            _ = coordinator.Requests[1].SelectionReference.Longitude.Should().Be(140d);
+            _ = coordinator.Requests[1].PlacementReference.Latitude.Should().Be(35d);
+            _ = coordinator.Requests[1].PlacementReference.Longitude.Should().Be(139d);
+        }
+
+        [Fact]
+        public async Task RunAsync_RecreatesSessionSlot_WhenRangesDoNotOverlap()
+        {
+            var session = new FakeSession();
+            var probeStore = new FakeProbeStore
+            {
+                ProbeValues = new Queue<ProbeValues?>(
+                [
+                    new ProbeValues(35f, 139f, 400f),
+                    new ProbeValues(35f, 139f, 400f),
+                    new ProbeValues(2000f, 2000f, 400f),
+                    new ProbeValues(2000f, 2000f, 400f)
+                ])
+            };
+            var clock = new FakeClock { CancelAfterDelayCalls = 4 };
+            var coordinator = new FakeTileRunCoordinator(() => { });
+            var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
+
+            using var cts = new CancellationTokenSource();
+            clock.CancellationSource = cts;
+
+            await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
+
+            _ = coordinator.Requests.Should().HaveCount(2);
+            _ = session.CreatedRunSlots.Should().HaveCount(2);
+            _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().NotBe(coordinator.Requests[1].Output.MeshParentSlotId);
+            _ = coordinator.Requests[1].PlacementReference.Latitude.Should().Be(2000d);
+            _ = coordinator.Requests[1].PlacementReference.Longitude.Should().Be(2000d);
         }
 
         [Fact]
@@ -83,8 +146,10 @@ namespace ThreeDTilesLink.Tests
             _ = probeStore.UpdatedCoordinates.Should().ContainSingle()
                 .Which.Should().Be((35.7147651d, 139.7966553d));
             _ = coordinator.Requests.Should().ContainSingle();
-            _ = coordinator.Requests[0].Reference.Latitude.Should().BeApproximately(35.7147651d, 1e-5);
-            _ = coordinator.Requests[0].Reference.Longitude.Should().BeApproximately(139.7966553d, 1e-5);
+            _ = coordinator.Requests[0].SelectionReference.Latitude.Should().BeApproximately(35.7147651d, 1e-5);
+            _ = coordinator.Requests[0].SelectionReference.Longitude.Should().BeApproximately(139.7966553d, 1e-5);
+            _ = coordinator.Requests[0].PlacementReference.Latitude.Should().BeApproximately(35.7147651d, 1e-5);
+            _ = coordinator.Requests[0].PlacementReference.Longitude.Should().BeApproximately(139.7966553d, 1e-5);
             _ = coordinator.Requests[0].Traversal.RangeM.Should().Be(400d);
         }
 
@@ -100,6 +165,7 @@ namespace ThreeDTilesLink.Tests
                 session,
                 probeStore,
                 searchResolver,
+                new FakeTransformer(),
                 clock,
                 new ProbeMonitor(probeStore, NullLogger<ProbeMonitor>.Instance),
                 NullLogger<InteractiveRunSupervisor>.Instance);
@@ -114,6 +180,7 @@ namespace ThreeDTilesLink.Tests
                 new TraversalOptions(500d, 16, 16, 40d),
                 false,
                 apiKey,
+                false,
                 new ProbeWatchOptions(
                     TimeSpan.FromMilliseconds(10),
                     TimeSpan.FromMilliseconds(10),
@@ -137,6 +204,20 @@ namespace ThreeDTilesLink.Tests
                 Requests.Add(request);
                 _onRunStarted();
                 return Task.FromResult(new RunSummary(1, 1, 1, 0));
+            }
+
+            public Task<InteractiveTileRunResult> RunInteractiveAsync(
+                TileRunRequest request,
+                IReadOnlyDictionary<string, RetainedTileState> retainedTiles,
+                bool removeOutOfRangeTiles,
+                CancellationToken cancellationToken)
+            {
+                Requests.Add(request);
+                _onRunStarted();
+                return Task.FromResult(new InteractiveTileRunResult(
+                    new RunSummary(1, 1, 1, 0),
+                    new Dictionary<string, RetainedTileState>(retainedTiles, StringComparer.Ordinal),
+                    new HashSet<string>(StringComparer.Ordinal)));
             }
         }
 
@@ -220,6 +301,24 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
+        private sealed class FakeTransformer : ICoordinateTransformer
+        {
+            public Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double heightM)
+            {
+                return new Vector3d(latitudeDeg, longitudeDeg, heightM);
+            }
+
+            public Vector3d EcefToEnu(Vector3d ecef, GeoReference reference)
+            {
+                return new Vector3d(ecef.X - reference.Latitude, ecef.Y - reference.Longitude, ecef.Z - reference.HeightM);
+            }
+
+            public Vector3d EnuToEun(Vector3d enu)
+            {
+                return enu;
+            }
+        }
+
         private sealed class FakeClock : IClock
         {
             private int _delayCalls;
@@ -246,6 +345,5 @@ namespace ThreeDTilesLink.Tests
                 CancellationSource?.Cancel();
             }
         }
-
     }
 }

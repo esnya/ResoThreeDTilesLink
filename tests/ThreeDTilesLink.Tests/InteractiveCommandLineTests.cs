@@ -14,6 +14,7 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.ShouldRun.Should().BeFalse();
             _ = invocation.ExitCode.Should().Be(0);
             _ = invocation.Output.Should().Contain("--poll-interval <value>");
+            _ = invocation.Output.Should().Contain("--remove-out-of-range");
             _ = invocation.Output.Should().Contain("--probe-path <path>");
             _ = invocation.Output.Should().Contain("Unit: ms.");
             _ = invocation.Output.Should().Contain("Default: World/ThreeDTilesLink.");
@@ -34,6 +35,7 @@ namespace ThreeDTilesLink.Tests
                 "--poll-interval", "250",
                 "--debounce=800",
                 "--throttle", "3000",
+                "--remove-out-of-range",
                 "--probe-path", "World/ThreeDTilesLink/Probe/",
                 "--probe-name", "3DTilesLink Probe",
                 "--dry-run",
@@ -46,6 +48,7 @@ namespace ThreeDTilesLink.Tests
             _ = parsed.PollIntervalMs.Should().Be(250);
             _ = parsed.DebounceMs.Should().Be(800);
             _ = parsed.ThrottleMs.Should().Be(3000);
+            _ = parsed.RemoveOutOfRange.Should().BeTrue();
             _ = parsed.ProbePath.Should().Be("World/ThreeDTilesLink.Probe");
             _ = parsed.ProbeName.Should().Be("3DTilesLink Probe");
             _ = parsed.LogLevel.Should().Be(LogLevel.Trace);

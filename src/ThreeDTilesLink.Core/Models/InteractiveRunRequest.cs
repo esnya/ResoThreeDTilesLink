@@ -7,5 +7,6 @@ namespace ThreeDTilesLink.Core.Models
         TraversalOptions Traversal,
         bool DryRun,
         string? ApiKey,
+        bool RemoveOutOfRange,
         ProbeWatchOptions ProbeWatch);
 }

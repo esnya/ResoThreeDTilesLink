@@ -5,5 +5,10 @@ namespace ThreeDTilesLink.Core.Contracts
     public interface ITileRunCoordinator
     {
         Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken);
+        Task<InteractiveTileRunResult> RunInteractiveAsync(
+            TileRunRequest request,
+            IReadOnlyDictionary<string, RetainedTileState> retainedTiles,
+            bool removeOutOfRangeTiles,
+            CancellationToken cancellationToken);
     }
 }

@@ -41,6 +41,7 @@ static async Task<int> RunAsync(string[] args)
         {
             var request = new TileRunRequest(
                 new GeoReference(parsed.Latitude, parsed.Longitude, parsed.HeightOffsetM),
+                new GeoReference(parsed.Latitude, parsed.Longitude, parsed.HeightOffsetM),
                 new TraversalOptions(
                     parsed.RangeM,
                     parsed.TileLimit,

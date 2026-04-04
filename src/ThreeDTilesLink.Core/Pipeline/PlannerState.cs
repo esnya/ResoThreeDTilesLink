@@ -18,6 +18,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         internal int ProcessedTiles { get; set; }
         internal int CandidateTiles { get; set; }
         internal int StreamedTileCount { get; set; }
+        internal HashSet<string> SelectedTileStateIds { get; } = new(StringComparer.Ordinal);
         internal Dictionary<string, Tileset> TilesetCache { get; } = new(StringComparer.OrdinalIgnoreCase);
         internal Dictionary<string, TileLifecycle> TileStates { get; } = new(StringComparer.Ordinal);
         internal HashSet<string> QueuedGlbTileIds { get; } = new(StringComparer.Ordinal);
@@ -49,6 +50,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             public bool FallbackQueued { get; set; }
             public bool BranchHasVisibleContent { get; set; }
             public IReadOnlyList<string> AttributionOwners { get; set; } = [];
+            public string? AssetCopyright { get; set; }
             public bool AttributionsApplied { get; set; }
             public HashSet<string> DirectChildren { get; } = new(StringComparer.Ordinal);
             public HashSet<string> PendingChildBranches { get; } = new(StringComparer.Ordinal);

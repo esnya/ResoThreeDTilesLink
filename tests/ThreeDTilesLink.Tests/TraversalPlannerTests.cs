@@ -137,6 +137,7 @@ namespace ThreeDTilesLink.Tests
         {
             return new TileRunRequest(
                 new GeoReference(0d, 0d, 0d),
+                new GeoReference(0d, 0d, 0d),
                 new TraversalOptions(500d, maxTiles, 16, 40d, bootstrapRangeMultiplier),
                 new ResoniteOutputOptions("127.0.0.1", 12000, dryRun),
                 "k");

@@ -59,6 +59,7 @@ static async Task<int> RunAsync(string[] args)
                     parsed.DetailTargetM),
                 parsed.DryRun,
                 apiKey,
+                parsed.RemoveOutOfRange,
                 new ProbeWatchOptions(
                     TimeSpan.FromMilliseconds(parsed.PollIntervalMs),
                     TimeSpan.FromMilliseconds(parsed.DebounceMs),

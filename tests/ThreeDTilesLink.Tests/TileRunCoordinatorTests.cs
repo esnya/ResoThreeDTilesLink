@@ -65,7 +65,7 @@ namespace ThreeDTilesLink.Tests
             _ = client.DisconnectCount.Should().Be(1);
             _ = client.SendCount.Should().Be(2);
             _ = client.ProgressUpdates.Should().NotBeEmpty();
-            _ = client.ProgressUpdates.Should().Contain(update => update.Progress01 > 0f && update.Progress01 < 1f);
+            _ = client.ProgressUpdates.Should().Contain(update => update.ProgressText.StartsWith("Running:", StringComparison.Ordinal));
             _ = client.ProgressUpdates[^1].Progress01.Should().Be(1f);
             _ = client.ProgressUpdates[^1].ProgressText.Should().Contain("Completed:");
         }
@@ -213,6 +213,123 @@ namespace ThreeDTilesLink.Tests
             _ = summary.StreamedMeshes.Should().Be(2);
             _ = client.Payloads.Should().HaveCount(2);
             _ = client.Payloads[0].Name.Should().Contain("tile_coarse_");
+        }
+
+        [Fact]
+        public async Task RunInteractive_RetainsExistingVisibleTile_WithoutRestreaming()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "near",
+                        ContentUri = new Uri("https://example.com/near.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 10d)
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("near")] = new(StableId("near"), "near", ["slot_existing"], "Google; Airbus")
+            };
+
+            InteractiveTileRunResult result = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false),
+                retainedTiles,
+                removeOutOfRangeTiles: false,
+                CancellationToken.None);
+
+            _ = client.SendCount.Should().Be(0);
+            _ = result.VisibleTiles.Should().ContainKey(StableId("near"));
+            _ = result.VisibleTiles[StableId("near")].SlotIds.Should().ContainSingle().Which.Should().Be("slot_existing");
+        }
+
+        [Fact]
+        public async Task RunInteractive_KeepOutOfRangeRetainedTiles_WhenCleanupDisabled()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "near",
+                        ContentUri = new Uri("https://example.com/near.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 10d)
+                    },
+                    new Tile
+                    {
+                        Id = "far",
+                        ContentUri = new Uri("https://example.com/far.glb"),
+                        BoundingVolume = CreateBox(900d, 0d, 0d, 10d)
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("far")] = new(StableId("far"), "far", ["slot_far"], "Google; Maxar")
+            };
+
+            InteractiveTileRunResult result = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false),
+                retainedTiles,
+                removeOutOfRangeTiles: false,
+                CancellationToken.None);
+
+            _ = client.RemovedSlotIds.Should().NotContain("slot_far");
+            _ = result.VisibleTiles.Should().ContainKey(StableId("near"));
+            _ = result.VisibleTiles.Should().ContainKey(StableId("far"));
+        }
+
+        [Fact]
+        public async Task RunInteractive_RemovesOutOfRangeRetainedTiles_WhenCleanupEnabled()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "near",
+                        ContentUri = new Uri("https://example.com/near.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 10d)
+                    },
+                    new Tile
+                    {
+                        Id = "far",
+                        ContentUri = new Uri("https://example.com/far.glb"),
+                        BoundingVolume = CreateBox(900d, 0d, 0d, 10d)
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("far")] = new(StableId("far"), "far", ["slot_far"], "Google; Maxar")
+            };
+
+            InteractiveTileRunResult result = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false),
+                retainedTiles,
+                removeOutOfRangeTiles: true,
+                CancellationToken.None);
+
+            _ = client.RemovedSlotIds.Should().Contain("slot_far");
+            _ = result.VisibleTiles.Should().ContainKey(StableId("near"));
+            _ = result.VisibleTiles.Should().NotContainKey(StableId("far"));
         }
 
         [Fact]
@@ -599,9 +716,15 @@ namespace ThreeDTilesLink.Tests
         {
             return new TileRunRequest(
                 new GeoReference(0d, 0d, 0d),
+                new GeoReference(0d, 0d, 0d),
                 new TraversalOptions(500d, maxTiles, maxDepth, 40d, bootstrapRangeMultiplier),
                 new ResoniteOutputOptions("127.0.0.1", 12345, dryRun, manageConnection),
                 "k");
+        }
+
+        private static string StableId(string id)
+        {
+            return $"0:|{id.Length}:{id}";
         }
 
         private static BoundingVolume CreateBox(double cx, double cy, double cz, double halfExtent)

@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.Extensions.Logging;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Google;
+using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Pipeline
@@ -11,6 +12,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         IResoniteSession resoniteSession,
         IProbeStore probeStore,
         ISearchResolver searchResolver,
+        ICoordinateTransformer coordinateTransformer,
         IClock clock,
         ProbeMonitor probeMonitor,
         ILogger<InteractiveRunSupervisor> logger)
@@ -19,6 +21,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly IResoniteSession _resoniteSession = resoniteSession;
         private readonly IProbeStore _probeStore = probeStore;
         private readonly ISearchResolver _searchResolver = searchResolver;
+        private readonly ICoordinateTransformer _coordinateTransformer = coordinateTransformer;
         private readonly IClock _clock = clock;
         private readonly ProbeMonitor _probeMonitor = probeMonitor;
         private readonly ILogger<InteractiveRunSupervisor> _logger = logger;
@@ -28,10 +31,12 @@ namespace ThreeDTilesLink.Core.Pipeline
             ArgumentNullException.ThrowIfNull(options);
             ProbeMonitor.ValidateIntervals(options.ProbeWatch);
 
-            string? activeRunSlotId = null;
-            string? completedRunSlotId = null;
-            Task<RunSummary>? activeRunTask = null;
+            string? sessionSlotId = null;
+            GeoReference? placementReference = null;
+            RangeFootprint? lastRequestedFootprint = null;
+            Task<InteractiveTileRunResult>? activeRunTask = null;
             CancellationTokenSource? activeRunCts = null;
+            Dictionary<string, RetainedTileState> retainedTiles = new(StringComparer.Ordinal);
             ProbeBinding? probeBinding = null;
             ProbeValues? lastProbeValues = null;
             ProbeValues? pendingProbeValues = null;
@@ -62,11 +67,10 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    (activeRunTask, activeRunCts, activeRunSlotId, completedRunSlotId) = await ObserveActiveRunAsync(
+                    (activeRunTask, activeRunCts, retainedTiles) = await ObserveActiveRunAsync(
                         activeRunTask,
                         activeRunCts,
-                        activeRunSlotId,
-                        completedRunSlotId,
+                        retainedTiles,
                         cancellationToken).ConfigureAwait(false);
 
                     string? currentSearch = await _probeMonitor.TryReadProbeSearchAsync(probeBinding, cancellationToken).ConfigureAwait(false);
@@ -139,27 +143,56 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                         if (debounceElapsed && throttleElapsed)
                         {
-                            (activeRunTask, activeRunCts, activeRunSlotId) = await CancelAndCleanupActiveRunAsync(
-                                activeRunTask,
-                                activeRunCts,
-                                activeRunSlotId,
-                                cancellationToken).ConfigureAwait(false);
-
-                            completedRunSlotId = await RemoveOldCompletedRunAsync(completedRunSlotId, cancellationToken).ConfigureAwait(false);
-
-                            string runSlotName = BuildRunSlotName(pendingProbeValues);
-                            activeRunSlotId = await _resoniteSession.CreateSessionChildSlotAsync(runSlotName, cancellationToken).ConfigureAwait(false);
-                            activeRunCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                            TileRunRequest runRequest = BuildRunRequest(options, pendingProbeValues, activeRunSlotId);
-
-                            activeRunTask = _tileRunCoordinator.RunAsync(runRequest, activeRunCts.Token);
-                            lastRunStartedAt = now;
-                            _logger.LogInformation(
-                                "Run started: slot={SlotId} lat={Lat:F7} lon={Lon:F7} range={Range:F1}m",
-                                activeRunSlotId,
+                            GeoReference selectionReference = new(
                                 pendingProbeValues.Latitude,
                                 pendingProbeValues.Longitude,
-                                pendingProbeValues.RangeM);
+                                options.HeightOffsetM);
+                            var currentFootprint = new RangeFootprint(selectionReference, pendingProbeValues.RangeM);
+                            bool overlaps = lastRequestedFootprint is not null &&
+                                Overlaps(lastRequestedFootprint, currentFootprint);
+
+                            (activeRunTask, activeRunCts, retainedTiles) = await CancelActiveRunAsync(
+                                activeRunTask,
+                                activeRunCts,
+                                retainedTiles).ConfigureAwait(false);
+
+                            if (!overlaps || string.IsNullOrWhiteSpace(sessionSlotId) || placementReference is null)
+                            {
+                                if (!string.IsNullOrWhiteSpace(sessionSlotId))
+                                {
+                                    await TryRemoveSlotAsync(sessionSlotId, cancellationToken).ConfigureAwait(false);
+                                }
+
+                                sessionSlotId = await _resoniteSession.CreateSessionChildSlotAsync(
+                                    BuildRunSlotName(pendingProbeValues),
+                                    cancellationToken).ConfigureAwait(false);
+                                placementReference = selectionReference;
+                                retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal);
+                            }
+
+                            TileRunRequest runRequest = BuildRunRequest(
+                                options,
+                                selectionReference,
+                                placementReference,
+                                pendingProbeValues.RangeM,
+                                sessionSlotId);
+                            activeRunCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                            activeRunTask = _tileRunCoordinator.RunInteractiveAsync(
+                                runRequest,
+                                retainedTiles,
+                                overlaps && options.RemoveOutOfRange,
+                                activeRunCts.Token);
+                            lastRequestedFootprint = currentFootprint;
+                            lastRunStartedAt = now;
+                            _logger.LogInformation(
+                                "Run started: slot={SlotId} selectionLat={Lat:F7} selectionLon={Lon:F7} placementLat={PlacementLat:F7} placementLon={PlacementLon:F7} range={Range:F1}m overlap={Overlap}",
+                                sessionSlotId,
+                                pendingProbeValues.Latitude,
+                                pendingProbeValues.Longitude,
+                                placementReference.Latitude,
+                                placementReference.Longitude,
+                                pendingProbeValues.RangeM,
+                                overlaps);
 
                             pendingProbeValues = null;
                             pendingChangedAt = null;
@@ -171,18 +204,18 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
             finally
             {
-                (activeRunTask, activeRunCts, activeRunSlotId) = await CancelAndCleanupActiveRunAsync(
+                (activeRunTask, activeRunCts, retainedTiles) = await CancelActiveRunAsync(
                     activeRunTask,
                     activeRunCts,
-                    activeRunSlotId,
-                    CancellationToken.None).ConfigureAwait(false);
+                    retainedTiles).ConfigureAwait(false);
 
                 _ = activeRunTask;
                 _ = activeRunCts;
+                _ = retainedTiles;
 
-                if (!string.IsNullOrWhiteSpace(completedRunSlotId))
+                if (!string.IsNullOrWhiteSpace(sessionSlotId))
                 {
-                    await TryRemoveSlotAsync(completedRunSlotId, CancellationToken.None).ConfigureAwait(false);
+                    await TryRemoveSlotAsync(sessionSlotId, CancellationToken.None).ConfigureAwait(false);
                 }
 
                 if (probeBinding is not null && probeBinding.OwnsSlot && !string.IsNullOrWhiteSpace(probeBinding.SlotId))
@@ -248,68 +281,53 @@ namespace ThreeDTilesLink.Core.Pipeline
                    MathF.Abs(probeValues.Longitude - (float)resolved.Longitude) <= coordinateTolerance;
         }
 
-        private async Task<(Task<RunSummary>? Task, CancellationTokenSource? Cts, string? ActiveSlotId, string? CompletedSlotId)> ObserveActiveRunAsync(
-            Task<RunSummary>? activeRunTask,
+        private async Task<(Task<InteractiveTileRunResult>? Task, CancellationTokenSource? Cts, Dictionary<string, RetainedTileState> RetainedTiles)> ObserveActiveRunAsync(
+            Task<InteractiveTileRunResult>? activeRunTask,
             CancellationTokenSource? activeRunCts,
-            string? activeRunSlotId,
-            string? completedRunSlotId,
+            Dictionary<string, RetainedTileState> retainedTiles,
             CancellationToken cancellationToken)
         {
+            _ = cancellationToken;
             if (activeRunTask is null || !activeRunTask.IsCompleted)
             {
-                return (activeRunTask, activeRunCts, activeRunSlotId, completedRunSlotId);
+                return (activeRunTask, activeRunCts, retainedTiles);
             }
 
             try
             {
-                RunSummary summary = await activeRunTask.ConfigureAwait(false);
+                InteractiveTileRunResult result = await activeRunTask.ConfigureAwait(false);
+                retainedTiles = new Dictionary<string, RetainedTileState>(result.VisibleTiles, StringComparer.Ordinal);
                 _logger.LogInformation(
-                    "Run completed: slot={SlotId} candidate={Candidate} processed={Processed} streamed={Streamed} failed={Failed}",
-                    activeRunSlotId ?? "n/a",
-                    summary.CandidateTiles,
-                    summary.ProcessedTiles,
-                    summary.StreamedMeshes,
-                    summary.FailedTiles);
-
-                if (!string.IsNullOrWhiteSpace(completedRunSlotId))
-                {
-                    await TryRemoveSlotAsync(completedRunSlotId, cancellationToken).ConfigureAwait(false);
-                }
-
-                completedRunSlotId = activeRunSlotId;
+                    "Run completed: retained={Retained} candidate={Candidate} processed={Processed} streamed={Streamed} failed={Failed}",
+                    retainedTiles.Count,
+                    result.Summary.CandidateTiles,
+                    result.Summary.ProcessedTiles,
+                    result.Summary.StreamedMeshes,
+                    result.Summary.FailedTiles);
             }
             catch (OperationCanceledException)
             {
-                if (!string.IsNullOrWhiteSpace(activeRunSlotId))
-                {
-                    await TryRemoveSlotAsync(activeRunSlotId, cancellationToken).ConfigureAwait(false);
-                }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Run failed: slot={SlotId}", activeRunSlotId ?? "n/a");
-                if (!string.IsNullOrWhiteSpace(activeRunSlotId))
-                {
-                    await TryRemoveSlotAsync(activeRunSlotId, cancellationToken).ConfigureAwait(false);
-                }
+                _logger.LogWarning(ex, "Run failed.");
             }
             finally
             {
                 activeRunCts?.Dispose();
             }
 
-            return (null, null, null, completedRunSlotId);
+            return (null, null, retainedTiles);
         }
 
-        private async Task<(Task<RunSummary>? Task, CancellationTokenSource? Cts, string? SlotId)> CancelAndCleanupActiveRunAsync(
-            Task<RunSummary>? activeRunTask,
+        private async Task<(Task<InteractiveTileRunResult>? Task, CancellationTokenSource? Cts, Dictionary<string, RetainedTileState> RetainedTiles)> CancelActiveRunAsync(
+            Task<InteractiveTileRunResult>? activeRunTask,
             CancellationTokenSource? activeRunCts,
-            string? activeRunSlotId,
-            CancellationToken cancellationToken)
+            Dictionary<string, RetainedTileState> retainedTiles)
         {
             if (activeRunTask is null)
             {
-                return (null, null, null);
+                return (null, null, retainedTiles);
             }
 
             if (!activeRunTask.IsCompleted)
@@ -319,37 +337,34 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                _ = await activeRunTask.ConfigureAwait(false);
+                InteractiveTileRunResult result = await activeRunTask.ConfigureAwait(false);
+                retainedTiles = new Dictionary<string, RetainedTileState>(result.VisibleTiles, StringComparer.Ordinal);
             }
             catch (OperationCanceledException)
             {
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Run finished with error while superseding: slot={SlotId}", activeRunSlotId ?? "n/a");
+                _logger.LogWarning(ex, "Run finished with error while superseding.");
             }
             finally
             {
                 activeRunCts?.Dispose();
             }
 
-            if (!string.IsNullOrWhiteSpace(activeRunSlotId))
-            {
-                await TryRemoveSlotAsync(activeRunSlotId, cancellationToken).ConfigureAwait(false);
-            }
-
-            return (null, null, null);
+            return (null, null, retainedTiles);
         }
 
-        private async Task<string?> RemoveOldCompletedRunAsync(string? completedRunSlotId, CancellationToken cancellationToken)
+        private bool Overlaps(RangeFootprint previous, RangeFootprint current)
         {
-            if (string.IsNullOrWhiteSpace(completedRunSlotId))
-            {
-                return null;
-            }
-
-            await TryRemoveSlotAsync(completedRunSlotId, cancellationToken).ConfigureAwait(false);
-            return null;
+            Vector3d currentEcef = _coordinateTransformer.GeographicToEcef(
+                current.Reference.Latitude,
+                current.Reference.Longitude,
+                current.Reference.HeightM);
+            Vector3d currentEnu = _coordinateTransformer.EcefToEnu(currentEcef, previous.Reference);
+            double overlapThreshold = previous.RangeM + current.RangeM;
+            return System.Math.Abs(currentEnu.X) <= overlapThreshold &&
+                   System.Math.Abs(currentEnu.Y) <= overlapThreshold;
         }
 
         private async Task TryRemoveSlotAsync(string slotId, CancellationToken cancellationToken)
@@ -364,12 +379,18 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        private static TileRunRequest BuildRunRequest(InteractiveRunRequest options, ProbeValues probeValues, string runSlotId)
+        private static TileRunRequest BuildRunRequest(
+            InteractiveRunRequest options,
+            GeoReference selectionReference,
+            GeoReference placementReference,
+            double rangeM,
+            string runSlotId)
         {
             return new TileRunRequest(
-                new GeoReference(probeValues.Latitude, probeValues.Longitude, options.HeightOffsetM),
+                selectionReference,
+                placementReference,
                 new TraversalOptions(
-                    probeValues.RangeM,
+                    rangeM,
                     options.Traversal.MaxTiles,
                     options.Traversal.MaxDepth,
                     options.Traversal.DetailTargetM,
@@ -390,5 +411,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             string range = probeValues.RangeM.ToString("F0", CultureInfo.InvariantCulture);
             return $"Run {lat}, {lon}, {range}m";
         }
+
+        private sealed record RangeFootprint(GeoReference Reference, double RangeM);
     }
 }

@@ -76,6 +76,7 @@ namespace ThreeDTilesLink.Core.Runtime
                 resoniteSession,
                 resoniteSession,
                 searchResolver,
+                transformer,
                 new SystemClock(),
                 probeMonitor,
                 loggerFactory.CreateLogger<InteractiveRunSupervisor>());

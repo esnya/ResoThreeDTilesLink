@@ -40,6 +40,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             _state.ProcessedTiles = 0;
             _state.CandidateTiles = 0;
             _state.StreamedTileCount = 0;
+            _state.SelectedTileStateIds.Clear();
             _state.TilesetCache.Clear();
             _state.TileStates.Clear();
             _state.QueuedGlbTileIds.Clear();
@@ -122,6 +123,29 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             EnsureInitialized();
             return new RunSummary(_state.CandidateTiles, _state.ProcessedTiles, _state.StreamedMeshes, _state.FailedTiles);
+        }
+
+        public IReadOnlySet<string> GetSelectedTileStableIds()
+        {
+            EnsureInitialized();
+            return new HashSet<string>(_state.SelectedTileStateIds, StringComparer.Ordinal);
+        }
+
+        public IReadOnlyDictionary<string, RetainedTileState> GetVisibleTiles()
+        {
+            EnsureInitialized();
+
+            return _state.TileStates
+                .Values
+                .Where(static state => !state.Removed && state.SlotIds.Count > 0)
+                .ToDictionary(
+                    static state => state.StateId,
+                    static state => new RetainedTileState(
+                        state.StateId,
+                        state.TileId,
+                        state.SlotIds.ToArray(),
+                        state.AssetCopyright),
+                    StringComparer.Ordinal);
         }
 
         public PlannerProgress GetProgress()
@@ -240,6 +264,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 string.IsNullOrWhiteSpace(assetCopyright)
                     ? []
                     : [assetCopyright]);
+            tileState.AssetCopyright = assetCopyright;
             _licenseCredits.RegisterOrder(tileState.AttributionOwners);
 
             foreach (string slotId in slotIds)
@@ -395,7 +420,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             IReadOnlyList<TileSelectionResult> selected = _selector.Select(
                 tilesetWork.Tileset,
-                Request.Reference,
+                Request.SelectionReference,
                 Range,
                 Traversal.MaxDepth,
                 effectiveDetailTargetM,
@@ -643,6 +668,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         private void RegisterTile(TileSelectionResult tile)
         {
             string tileStateId = ResolveStableId(tile);
+            _ = _state.SelectedTileStateIds.Add(tileStateId);
             string? parentStateId = ResolveParentStableId(tile);
             PlannerState.TileLifecycle tileState = GetOrCreateTileState(tileStateId, tile.TileId, parentStateId, tile.ContentKind);
             if (string.IsNullOrWhiteSpace(parentStateId))
