@@ -380,6 +380,57 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task RunInteractive_CancelDuringOverlapUpdate_PreservesStreamedAndRetainedTiles()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "near-a",
+                        ContentUri = new Uri("https://example.com/near-a.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 10d)
+                    },
+                    new Tile
+                    {
+                        Id = "near-b",
+                        ContentUri = new Uri("https://example.com/near-b.glb"),
+                        BoundingVolume = CreateBox(20d, 0d, 0d, 10d)
+                    }
+                ]
+            });
+
+            using var cts = new CancellationTokenSource();
+            var client = new FakeResoniteSession(onStreamCompleted: (_, sendCount) =>
+            {
+                if (sendCount == 1)
+                {
+                    cts.Cancel();
+                }
+            });
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            string farStableId = StableId("far");
+            var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [farStableId] = new(farStableId, "far", null, [], ["slot_far"], "Google; Maxar")
+            };
+
+            InteractiveTileRunResult result = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false),
+                retainedTiles,
+                removeOutOfRangeTiles: true,
+                cts.Token);
+
+            _ = client.SendCount.Should().Be(1);
+            _ = client.RemovedSlotIds.Should().BeEmpty();
+            _ = result.VisibleTiles.Should().ContainKey(StableId("near-a"));
+            _ = result.VisibleTiles.Should().ContainKey(farStableId);
+            _ = result.VisibleTiles.Should().NotContainKey(StableId("near-b"));
+        }
+
+        [Fact]
         public async Task Run_RemovesParent_WhenDirectChildBranchCompletes()
         {
             var tileset = new Tileset(new Tile
@@ -956,11 +1007,13 @@ namespace ThreeDTilesLink.Tests
         private sealed class FakeResoniteSession(
             bool failFirstSend = false,
             string? failOnNameContains = null,
-            TimeSpan? streamDelay = null) : IResoniteSession
+            TimeSpan? streamDelay = null,
+            Action<PlacedMeshPayload, int>? onStreamCompleted = null) : IResoniteSession
         {
             private readonly bool _failFirstSend = failFirstSend;
             private readonly string? _failOnNameContains = failOnNameContains;
             private readonly TimeSpan _streamDelay = streamDelay ?? TimeSpan.Zero;
+            private readonly Action<PlacedMeshPayload, int>? _onStreamCompleted = onStreamCompleted;
             private int _activeStreams;
             private int _maxConcurrentStreams;
 
@@ -1012,11 +1065,15 @@ namespace ThreeDTilesLink.Tests
                         await Task.Delay(_streamDelay, cancellationToken).ConfigureAwait(false);
                     }
 
-                    return (_failFirstSend && SendCount == 1) ||
+                    if ((_failFirstSend && SendCount == 1) ||
                         (!string.IsNullOrWhiteSpace(_failOnNameContains) &&
-                         payload.Name.Contains(_failOnNameContains, StringComparison.Ordinal))
-                        ? throw new InvalidOperationException("synthetic send failure")
-                        : $"slot_{SendCount}_{payload.Name}";
+                         payload.Name.Contains(_failOnNameContains, StringComparison.Ordinal)))
+                    {
+                        throw new InvalidOperationException("synthetic send failure");
+                    }
+
+                    _onStreamCompleted?.Invoke(payload, SendCount);
+                    return $"slot_{SendCount}_{payload.Name}";
                 }
                 finally
                 {

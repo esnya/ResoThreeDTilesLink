@@ -19,7 +19,7 @@ namespace ThreeDTilesLink.Tests
                 ProbeValues = new Queue<ProbeValues?>([new ProbeValues(35f, 139f, 400f), new ProbeValues(35f, 139f, 400f)])
             };
             var clock = new FakeClock { CancelAfterDelayCalls = 3 };
-            var coordinator = new FakeTileRunCoordinator(() => clock.RequestCancellation());
+            var coordinator = new FakeTileRunCoordinator(_ => clock.RequestCancellation());
             var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
 
             using var cts = new CancellationTokenSource();
@@ -49,7 +49,7 @@ namespace ThreeDTilesLink.Tests
                 ])
             };
             var clock = new FakeClock { CancelAfterDelayCalls = 4 };
-            var coordinator = new FakeTileRunCoordinator(() => { });
+            var coordinator = new FakeTileRunCoordinator(_ => { });
             var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
 
             using var cts = new CancellationTokenSource();
@@ -81,7 +81,7 @@ namespace ThreeDTilesLink.Tests
                 ])
             };
             var clock = new FakeClock { CancelAfterDelayCalls = 4 };
-            var coordinator = new FakeTileRunCoordinator(() => { });
+            var coordinator = new FakeTileRunCoordinator(_ => { });
             var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
 
             using var cts = new CancellationTokenSource();
@@ -97,6 +97,62 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task RunAsync_SupersededOverlapRun_CarriesPartialVisibleTilesIntoNextRun()
+        {
+            var session = new FakeSession();
+            var probeStore = new FakeProbeStore
+            {
+                ProbeValues = new Queue<ProbeValues?>(
+                [
+                    new ProbeValues(35f, 139f, 400f),
+                    new ProbeValues(35f, 139f, 400f),
+                    new ProbeValues(36f, 140f, 400f),
+                    new ProbeValues(36f, 140f, 400f)
+                ])
+            };
+            var clock = new FakeClock { CancelAfterDelayCalls = 4 };
+            string partialStableId = "partial";
+            var partialVisibleTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [partialStableId] = new(partialStableId, "partial-tile", null, [], ["slot_partial"], "Google; Airbus")
+            };
+            var coordinator = new FakeTileRunCoordinator(
+                onRunStarted: callIndex =>
+                {
+                    if (callIndex >= 2)
+                    {
+                        clock.RequestCancellation();
+                    }
+                },
+                interactiveHandler: async (callIndex, _, retainedTiles, cancellationToken) =>
+                {
+                    if (callIndex == 1)
+                    {
+                        await WaitForCancellationAsync(cancellationToken).ConfigureAwait(false);
+                        return new InteractiveTileRunResult(
+                            new RunSummary(1, 1, 1, 0),
+                            partialVisibleTiles,
+                            new HashSet<string>([partialStableId], StringComparer.Ordinal));
+                    }
+
+                    return new InteractiveTileRunResult(
+                        new RunSummary(1, 1, 1, 0),
+                        new Dictionary<string, RetainedTileState>(retainedTiles, StringComparer.Ordinal),
+                        new HashSet<string>(retainedTiles.Keys, StringComparer.Ordinal));
+                });
+            var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
+
+            using var cts = new CancellationTokenSource();
+            clock.CancellationSource = cts;
+
+            await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
+
+            _ = coordinator.Requests.Should().HaveCount(2);
+            _ = coordinator.RetainedTileInputs.Should().HaveCount(2);
+            _ = coordinator.RetainedTileInputs[1].Should().ContainKey(partialStableId);
+        }
+
+        [Fact]
         public async Task RunAsync_IgnoresSearchWithoutApiKey()
         {
             var session = new FakeSession();
@@ -106,7 +162,7 @@ namespace ThreeDTilesLink.Tests
                 ProbeValues = new Queue<ProbeValues?>([null, null])
             };
             var clock = new FakeClock { CancelAfterDelayCalls = 3 };
-            var coordinator = new FakeTileRunCoordinator(() => clock.RequestCancellation());
+            var coordinator = new FakeTileRunCoordinator(_ => clock.RequestCancellation());
             var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
 
             using var cts = new CancellationTokenSource();
@@ -134,7 +190,7 @@ namespace ThreeDTilesLink.Tests
                 ])
             };
             var clock = new FakeClock();
-            var coordinator = new FakeTileRunCoordinator(() => clock.RequestCancellation());
+            var coordinator = new FakeTileRunCoordinator(_ => clock.RequestCancellation());
             var searchResolver = new FakeSearchResolver(new LocationSearchResult("Asakusa", 35.7147651d, 139.7966553d));
             var supervisor = CreateSupervisor(coordinator, session, probeStore, searchResolver, clock);
 
@@ -162,7 +218,7 @@ namespace ThreeDTilesLink.Tests
                 SearchReadException = new InvalidOperationException("ResoniteLink is not connected.")
             };
             var supervisor = CreateSupervisor(
-                new FakeTileRunCoordinator(static () => { }),
+                new FakeTileRunCoordinator(static _ => { }),
                 session,
                 probeStore,
                 new FakeSearchResolver(),
@@ -215,16 +271,37 @@ namespace ThreeDTilesLink.Tests
                         "World/ThreeDTilesLink.Search")));
         }
 
-        private sealed class FakeTileRunCoordinator(Action onRunStarted) : ITileRunCoordinator
+        private static async Task WaitForCancellationAsync(CancellationToken cancellationToken)
         {
-            private readonly Action _onRunStarted = onRunStarted;
+            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using CancellationTokenRegistration registration = cancellationToken.Register(static state =>
+            {
+                _ = ((TaskCompletionSource)state!).TrySetResult();
+            }, tcs);
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await tcs.Task.ConfigureAwait(false);
+        }
+
+        private sealed class FakeTileRunCoordinator(
+            Action<int> onRunStarted,
+            Func<int, TileRunRequest, IReadOnlyDictionary<string, RetainedTileState>, CancellationToken, Task<InteractiveTileRunResult>>? interactiveHandler = null) : ITileRunCoordinator
+        {
+            private readonly Action<int> _onRunStarted = onRunStarted;
+            private readonly Func<int, TileRunRequest, IReadOnlyDictionary<string, RetainedTileState>, CancellationToken, Task<InteractiveTileRunResult>>? _interactiveHandler = interactiveHandler;
+            private int _interactiveRunCount;
 
             public List<TileRunRequest> Requests { get; } = [];
+            public List<Dictionary<string, RetainedTileState>> RetainedTileInputs { get; } = [];
 
             public Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)
             {
                 Requests.Add(request);
-                _onRunStarted();
+                _onRunStarted(Requests.Count);
                 return Task.FromResult(new RunSummary(1, 1, 1, 0));
             }
 
@@ -235,7 +312,15 @@ namespace ThreeDTilesLink.Tests
                 CancellationToken cancellationToken)
             {
                 Requests.Add(request);
-                _onRunStarted();
+                RetainedTileInputs.Add(new Dictionary<string, RetainedTileState>(retainedTiles, StringComparer.Ordinal));
+                int callIndex = ++_interactiveRunCount;
+                _onRunStarted(callIndex);
+
+                if (_interactiveHandler is not null)
+                {
+                    return _interactiveHandler(callIndex, request, retainedTiles, cancellationToken);
+                }
+
                 return Task.FromResult(new InteractiveTileRunResult(
                     new RunSummary(1, 1, 1, 0),
                     new Dictionary<string, RetainedTileState>(retainedTiles, StringComparer.Ordinal),

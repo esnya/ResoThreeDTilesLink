@@ -66,8 +66,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
             catch (OperationCanceledException)
             {
-                await RollbackInteractiveChangesAsync(request, interactiveContext).ConfigureAwait(false);
-                throw;
+                return await FinalizeCanceledInteractiveRunAsync(request, interactiveContext).ConfigureAwait(false);
             }
             catch
             {
@@ -94,6 +93,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 await SetProgressAsync(request, 0f, "Fetching root tileset...", cancellationToken).ConfigureAwait(false);
                 Tiles.Tileset rootTileset = await _tilesSource.FetchRootTilesetAsync(auth, cancellationToken).ConfigureAwait(false);
                 _traversalPlanner.Initialize(rootTileset, request);
+                interactiveContext?.MarkPlannerInitialized();
                 await SetProgressAsync(request, _traversalPlanner.GetProgress(), cancellationToken).ConfigureAwait(false);
 
                 while (_traversalPlanner.TryPlanNextBatch(_maxConcurrentTileProcessing, out IReadOnlyList<PlannerCommand> commandBatch) &&
@@ -458,6 +458,32 @@ namespace ThreeDTilesLink.Core.Pipeline
             await ApplyFinalLicenseCreditAsync(request, interactiveContext.RetainedTiles, CancellationToken.None).ConfigureAwait(false);
         }
 
+        private async Task<InteractiveTileRunResult> FinalizeCanceledInteractiveRunAsync(
+            TileRunRequest request,
+            InteractiveExecutionContext interactiveContext)
+        {
+            IReadOnlyDictionary<string, RetainedTileState> nextRetainedTiles;
+            IReadOnlySet<string> selectedTileStableIds;
+            RunSummary summary;
+
+            if (interactiveContext.PlannerInitialized)
+            {
+                IReadOnlyDictionary<string, RetainedTileState> visibleTiles = _traversalPlanner.GetVisibleTiles();
+                selectedTileStableIds = _traversalPlanner.GetSelectedTileStableIds();
+                nextRetainedTiles = BuildCanceledRetainedTiles(interactiveContext.RetainedTiles, visibleTiles);
+                summary = _traversalPlanner.GetSummary();
+            }
+            else
+            {
+                nextRetainedTiles = new Dictionary<string, RetainedTileState>(interactiveContext.RetainedTiles, StringComparer.Ordinal);
+                selectedTileStableIds = new HashSet<string>(StringComparer.Ordinal);
+                summary = new RunSummary(0, 0, 0, 0);
+            }
+
+            await ApplyFinalLicenseCreditAsync(request, nextRetainedTiles, CancellationToken.None).ConfigureAwait(false);
+            return new InteractiveTileRunResult(summary, nextRetainedTiles, selectedTileStableIds);
+        }
+
         private async Task<bool> TryRemoveSlotsAsync(
             string tileId,
             IReadOnlyList<string> slotIds,
@@ -534,6 +560,18 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             return next;
+        }
+
+        private static IReadOnlyDictionary<string, RetainedTileState> BuildCanceledRetainedTiles(
+            IReadOnlyDictionary<string, RetainedTileState> retainedTiles,
+            IReadOnlyDictionary<string, RetainedTileState> visibleTiles)
+        {
+            return BuildNextRetainedTiles(
+                retainedTiles,
+                visibleTiles,
+                new HashSet<string>(StringComparer.Ordinal),
+                removeOutOfRangeTiles: false,
+                new HashSet<string>(StringComparer.Ordinal));
         }
 
         private async Task SetProgressAsync(TileRunRequest request, RunSummary summary, CancellationToken cancellationToken, bool completed = false)
@@ -658,6 +696,8 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             public bool RemoveOutOfRangeTiles { get; }
 
+            public bool PlannerInitialized { get; private set; }
+
             public bool TryGetRetainedTile(TileSelectionResult tile, out RetainedTileState retainedTile)
             {
                 if (_retainedTiles.TryGetValue(ResolveStableId(tile), out RetainedTileState? existing))
@@ -724,6 +764,11 @@ namespace ThreeDTilesLink.Core.Pipeline
             public IReadOnlyCollection<RetainedTileRemoval> GetStagedRetainedRemovals()
             {
                 return _stagedRetainedRemovals.Values.ToArray();
+            }
+
+            public void MarkPlannerInitialized()
+            {
+                PlannerInitialized = true;
             }
         }
 
