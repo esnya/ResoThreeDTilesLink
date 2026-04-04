@@ -1,8 +1,9 @@
-namespace ThreeDTilesLink.Core.Models;
-
-public enum TileContentKind
+namespace ThreeDTilesLink.Core.Models
 {
-    Json = 0,
-    Glb = 1,
-    Other = 2
+    public enum TileContentKind
+    {
+        Json = 0,
+        Glb = 1,
+        Other = 2
+    }
 }

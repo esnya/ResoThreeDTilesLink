@@ -1,11 +1,12 @@
 using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Models;
 
-namespace ThreeDTilesLink.Core.Contracts;
-
-public interface ICoordinateTransformer
+namespace ThreeDTilesLink.Core.Contracts
 {
-    Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double heightM);
-    Vector3d EcefToEnu(Vector3d ecef, GeoReference reference);
-    Vector3d EnuToEun(Vector3d enu);
+    public interface ICoordinateTransformer
+    {
+        Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double heightM);
+        Vector3d EcefToEnu(Vector3d ecef, GeoReference reference);
+        Vector3d EnuToEun(Vector3d enu);
+    }
 }

@@ -8,36 +8,36 @@ using ThreeDTilesLink.Core.Pipeline;
 using ThreeDTilesLink.Core.Resonite;
 using ThreeDTilesLink.Core.Tiles;
 
-var exitCode = await RunAsync(args);
+int exitCode = await RunAsync(args).ConfigureAwait(false);
 return exitCode;
 
 static async Task<int> RunAsync(string[] args)
 {
     try
     {
-        Env.TraversePath().NoClobber().Load();
+        _ = Env.TraversePath().NoClobber().Load();
 
-        var parsed = ParseArgs(args);
+        Dictionary<string, string?> parsed = ParseArgs(args);
 
-        var lat = GetRequiredDouble(parsed, "--lat");
-        var lon = GetRequiredDouble(parsed, "--lon");
-        var heightM = GetOptionalDouble(parsed, "--height-offset-m", 0d);
-        var halfWidthM = GetRequiredDouble(parsed, "--half-width-m");
-        var linkHost = GetRequiredString(parsed, "--link-host");
-        var linkPort = GetRequiredInt(parsed, "--link-port");
+        double lat = GetRequiredDouble(parsed, "--lat");
+        double lon = GetRequiredDouble(parsed, "--lon");
+        double heightM = GetOptionalDouble(parsed, "--height-offset-m", 0d);
+        double halfWidthM = GetRequiredDouble(parsed, "--half-width-m");
+        string linkHost = GetRequiredString(parsed, "--link-host");
+        int linkPort = GetRequiredInt(parsed, "--link-port");
 
-        var maxTiles = GetOptionalInt(parsed, "--max-tiles", 1024);
-        var maxDepth = GetOptionalInt(parsed, "--max-depth", 32);
-        var detailTargetM = GetOptionalDouble(parsed, "--detail-target-m", 30d);
-        var timeoutSec = GetOptionalInt(parsed, "--timeout-sec", 120);
-        var dryRun = parsed.ContainsKey("--dry-run");
-        var logLevel = ParseLogLevel(GetOptionalString(parsed, "--log-level", "Information"));
+        int maxTiles = GetOptionalInt(parsed, "--max-tiles", 1024);
+        int maxDepth = GetOptionalInt(parsed, "--max-depth", 32);
+        double detailTargetM = GetOptionalDouble(parsed, "--detail-target-m", 30d);
+        int timeoutSec = GetOptionalInt(parsed, "--timeout-sec", 120);
+        bool dryRun = parsed.ContainsKey("--dry-run");
+        LogLevel logLevel = ParseLogLevel(GetOptionalString(parsed, "--log-level", "Information"));
 
-        var apiKey = Environment.GetEnvironmentVariable("GOOGLE_MAPS_API_KEY") ?? string.Empty;
+        string apiKey = Environment.GetEnvironmentVariable("GOOGLE_MAPS_API_KEY") ?? string.Empty;
 
-        using var loggerFactory = LoggerFactory.Create(builder =>
+        using ILoggerFactory loggerFactory = LoggerFactory.Create(builder =>
         {
-            builder
+            _ = builder
                 .SetMinimumLevel(logLevel)
                 .AddSimpleConsole(options =>
                 {
@@ -53,37 +53,38 @@ static async Task<int> RunAsync(string[] args)
         };
 
         var transformer = new GeographicCoordinateTransformer();
-        var parser = new TilesetParser();
-        var fetcher = new HttpTileContentFetcher(httpClient, parser);
+        var fetcher = new HttpTileContentFetcher(httpClient);
         var selector = new TileSelector(transformer);
         var extractor = new GlbMeshExtractor();
         var gcloudTokenProvider = new AdcAccessTokenProvider();
-        await using var resonite = new ResoniteLinkClientAdapter();
+        var resonite = new ResoniteLinkClientAdapter();
+        await using (resonite.ConfigureAwait(false))
+        {
+            var service = new TileStreamingService(
+                fetcher,
+                selector,
+                extractor,
+                transformer,
+                resonite,
+                gcloudTokenProvider,
+                loggerFactory.CreateLogger<TileStreamingService>());
 
-        var service = new TileStreamingService(
-            fetcher,
-            selector,
-            extractor,
-            transformer,
-            resonite,
-            gcloudTokenProvider,
-            loggerFactory.CreateLogger<TileStreamingService>());
+            var options = new StreamerOptions(
+                new GeoReference(lat, lon, heightM),
+                halfWidthM,
+                linkHost,
+                linkPort,
+                maxTiles,
+                maxDepth,
+                detailTargetM,
+                dryRun,
+                apiKey);
 
-        var options = new StreamerOptions(
-            new GeoReference(lat, lon, heightM),
-            halfWidthM,
-            linkHost,
-            linkPort,
-            maxTiles,
-            maxDepth,
-            detailTargetM,
-            dryRun,
-            apiKey);
+            RunSummary summary = await service.RunAsync(options, CancellationToken.None).ConfigureAwait(false);
 
-        var summary = await service.RunAsync(options, CancellationToken.None);
-
-        Console.WriteLine($"CandidateTiles={summary.CandidateTiles} ProcessedTiles={summary.ProcessedTiles} StreamedMeshes={summary.StreamedMeshes} FailedTiles={summary.FailedTiles}");
-        return 0;
+            Console.WriteLine($"CandidateTiles={summary.CandidateTiles} ProcessedTiles={summary.ProcessedTiles} StreamedMeshes={summary.StreamedMeshes} FailedTiles={summary.FailedTiles}");
+            return 0;
+        }
     }
     catch (Exception ex)
     {
@@ -96,19 +97,19 @@ static Dictionary<string, string?> ParseArgs(IReadOnlyList<string> args)
 {
     var result = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
-    for (var i = 0; i < args.Count; i++)
+    for (int i = 0; i < args.Count; i++)
     {
-        var current = args[i];
+        string current = args[i];
         if (!current.StartsWith("--", StringComparison.Ordinal))
         {
             continue;
         }
 
-        var equalsIndex = current.IndexOf('=');
+        int equalsIndex = current.IndexOf('=', StringComparison.Ordinal);
         if (equalsIndex > 2)
         {
-            var key = current[..equalsIndex];
-            var value = current[(equalsIndex + 1)..];
+            string key = current[..equalsIndex];
+            string value = current[(equalsIndex + 1)..];
             result[key] = string.IsNullOrWhiteSpace(value) ? null : value;
             continue;
         }
@@ -129,79 +130,53 @@ static Dictionary<string, string?> ParseArgs(IReadOnlyList<string> args)
 
 static string GetRequiredString(IReadOnlyDictionary<string, string?> args, string key)
 {
-    if (!args.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
-    {
-        throw new InvalidOperationException($"Missing required argument: {key}");
-    }
-
-    return value;
+    return !args.TryGetValue(key, out string? value) || string.IsNullOrWhiteSpace(value)
+        ? throw new InvalidOperationException($"Missing required argument: {key}")
+        : value;
 }
 
 static double GetRequiredDouble(IReadOnlyDictionary<string, string?> args, string key)
 {
-    var value = GetRequiredString(args, key);
-    if (!double.TryParse(value, out var parsed))
-    {
-        throw new InvalidOperationException($"Invalid numeric value for {key}: {value}");
-    }
-
-    return parsed;
+    string value = GetRequiredString(args, key);
+    return !double.TryParse(value, out double parsed)
+        ? throw new InvalidOperationException($"Invalid numeric value for {key}: {value}")
+        : parsed;
 }
 
 static int GetRequiredInt(IReadOnlyDictionary<string, string?> args, string key)
 {
-    var value = GetRequiredString(args, key);
-    if (!int.TryParse(value, out var parsed))
-    {
-        throw new InvalidOperationException($"Invalid integer value for {key}: {value}");
-    }
-
-    return parsed;
+    string value = GetRequiredString(args, key);
+    return !int.TryParse(value, out int parsed)
+        ? throw new InvalidOperationException($"Invalid integer value for {key}: {value}")
+        : parsed;
 }
 
 static int GetOptionalInt(IReadOnlyDictionary<string, string?> args, string key, int fallback)
 {
-    if (!args.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
-    {
-        return fallback;
-    }
-
-    if (int.TryParse(value, out var parsed))
-    {
-        return parsed;
-    }
-
-    throw new InvalidOperationException($"Invalid integer value for {key}: {value}");
+    return !args.TryGetValue(key, out string? value) || string.IsNullOrWhiteSpace(value)
+        ? fallback
+        : int.TryParse(value, out int parsed)
+        ? parsed
+        : throw new InvalidOperationException($"Invalid integer value for {key}: {value}");
 }
 
 static double GetOptionalDouble(IReadOnlyDictionary<string, string?> args, string key, double fallback)
 {
-    if (!args.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
-    {
-        return fallback;
-    }
-
-    if (double.TryParse(value, out var parsed))
-    {
-        return parsed;
-    }
-
-    throw new InvalidOperationException($"Invalid numeric value for {key}: {value}");
+    return !args.TryGetValue(key, out string? value) || string.IsNullOrWhiteSpace(value)
+        ? fallback
+        : double.TryParse(value, out double parsed)
+        ? parsed
+        : throw new InvalidOperationException($"Invalid numeric value for {key}: {value}");
 }
 
 static string GetOptionalString(IReadOnlyDictionary<string, string?> args, string key, string fallback)
 {
-    if (!args.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
-    {
-        return fallback;
-    }
-
-    return value;
+    return !args.TryGetValue(key, out string? value) || string.IsNullOrWhiteSpace(value) ? fallback : value;
 }
 
 static LogLevel ParseLogLevel(string value)
 {
-    return Enum.TryParse<LogLevel>(value, ignoreCase: true, out var parsed)
+    return Enum.TryParse<LogLevel>(value, ignoreCase: true, out LogLevel parsed)
         ? parsed
         : LogLevel.Information;
 }

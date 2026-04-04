@@ -1,16 +1,16 @@
 using FluentAssertions;
 using ThreeDTilesLink.Core.Tiles;
 
-namespace ThreeDTilesLink.Tests;
-
-public sealed class TilesetParserTests
+namespace ThreeDTilesLink.Tests
 {
-    [Fact]
-    public void Parse_GeneratesCompactTileIdsWithoutSlash()
+    public sealed class TilesetParserTests
     {
-        var parser = new TilesetParser();
-        var source = new Uri("https://tile.googleapis.com/v1/3dtiles/root.json?session=s");
-        var json = """
+        [Fact]
+        public void Parse_GeneratesCompactTileIdsWithoutSlash()
+        {
+            var parser = new TilesetParser();
+            var source = new Uri("https://tile.googleapis.com/v1/3dtiles/root.json?session=s");
+            string json = /*lang=json,strict*/ """
                    {
                      "root": {
                        "children": [
@@ -56,23 +56,23 @@ public sealed class TilesetParserTests
                    }
                    """;
 
-        var tileset = parser.Parse(json, source);
+            Tileset tileset = TilesetParser.Parse(json, source);
 
-        tileset.Root.Id.Should().Be("0");
-        tileset.Root.Children[0].Id.Should().Be("00");
-        tileset.Root.Children[9].Id.Should().Be("09");
-        tileset.Root.Children[10].Id.Should().Be("0A");
-        tileset.Root.Children[35].Id.Should().Be("0Z");
-        tileset.Root.Children[36].Id.Should().Be("0A");
-        tileset.Root.Children.Select(c => c.Id).Should().OnlyContain(id => !id.Contains('/'));
-    }
+            _ = tileset.Root.Id.Should().Be("0");
+            _ = tileset.Root.Children[0].Id.Should().Be("00");
+            _ = tileset.Root.Children[9].Id.Should().Be("09");
+            _ = tileset.Root.Children[10].Id.Should().Be("0A");
+            _ = tileset.Root.Children[35].Id.Should().Be("0Z");
+            _ = tileset.Root.Children[36].Id.Should().Be("0A");
+            _ = tileset.Root.Children.Select(c => c.Id).Should().OnlyContain(id => !id.Contains('/'));
+        }
 
-    [Fact]
-    public void Parse_CollectsCopyrightStrings()
-    {
-        var parser = new TilesetParser();
-        var source = new Uri("https://tile.googleapis.com/v1/3dtiles/root.json?session=s");
-        var json = """
+        [Fact]
+        public void Parse_CollectsCopyrightStrings()
+        {
+            var parser = new TilesetParser();
+            var source = new Uri("https://tile.googleapis.com/v1/3dtiles/root.json?session=s");
+            string json = /*lang=json,strict*/ """
                    {
                      "asset": {
                        "version": "1.0",
@@ -90,10 +90,11 @@ public sealed class TilesetParserTests
                    }
                    """;
 
-        var tileset = parser.Parse(json, source);
+            Tileset tileset = TilesetParser.Parse(json, source);
 
-        tileset.Copyrights.Should().BeEquivalentTo(
-            "Google, Maxar Technologies",
-            "Google, Airbus");
+            _ = tileset.Copyrights.Should().BeEquivalentTo(
+                "Google, Maxar Technologies",
+                "Google, Airbus");
+        }
     }
 }

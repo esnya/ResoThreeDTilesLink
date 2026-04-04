@@ -3,42 +3,43 @@ using ThreeDTilesLink.Core.Geo;
 using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Models;
 
-namespace ThreeDTilesLink.Tests;
-
-public sealed class CoordinateTransformerTests
+namespace ThreeDTilesLink.Tests
 {
-    private readonly GeographicCoordinateTransformer _sut = new();
-
-    [Fact]
-    public void GeographicToEcef_EquatorPrimeMeridian_MapsToWgs84Radius()
+    public sealed class CoordinateTransformerTests
     {
-        var ecef = _sut.GeographicToEcef(0d, 0d, 0d);
+        private readonly GeographicCoordinateTransformer _sut = new();
 
-        ecef.X.Should().BeApproximately(6378137d, 1e-3);
-        ecef.Y.Should().BeApproximately(0d, 1e-6);
-        ecef.Z.Should().BeApproximately(0d, 1e-6);
-    }
+        [Fact]
+        public void GeographicToEcef_EquatorPrimeMeridian_MapsToWgs84Radius()
+        {
+            Vector3d ecef = _sut.GeographicToEcef(0d, 0d, 0d);
 
-    [Fact]
-    public void EcefToEnu_AtReferencePoint_IsApproximatelyZero()
-    {
-        var reference = new GeoReference(35.65858, 139.745433, 20d);
-        var ecef = _sut.GeographicToEcef(reference.Latitude, reference.Longitude, reference.HeightM);
+            _ = ecef.X.Should().BeApproximately(6378137d, 1e-3);
+            _ = ecef.Y.Should().BeApproximately(0d, 1e-6);
+            _ = ecef.Z.Should().BeApproximately(0d, 1e-6);
+        }
 
-        var enu = _sut.EcefToEnu(ecef, reference);
+        [Fact]
+        public void EcefToEnu_AtReferencePoint_IsApproximatelyZero()
+        {
+            var reference = new GeoReference(35.65858, 139.745433, 20d);
+            Vector3d ecef = _sut.GeographicToEcef(reference.Latitude, reference.Longitude, reference.HeightM);
 
-        enu.X.Should().BeApproximately(0d, 0.01d);
-        enu.Y.Should().BeApproximately(0d, 0.01d);
-        enu.Z.Should().BeApproximately(0d, 0.01d);
-    }
+            Vector3d enu = _sut.EcefToEnu(ecef, reference);
 
-    [Fact]
-    public void EnuToEun_ReordersAxesWithoutTranslationMix()
-    {
-        var eun = _sut.EnuToEun(new Vector3d(12d, -3d, 7d));
+            _ = enu.X.Should().BeApproximately(0d, 0.01d);
+            _ = enu.Y.Should().BeApproximately(0d, 0.01d);
+            _ = enu.Z.Should().BeApproximately(0d, 0.01d);
+        }
 
-        eun.X.Should().Be(12d);
-        eun.Y.Should().Be(7d);
-        eun.Z.Should().Be(-3d);
+        [Fact]
+        public void EnuToEun_ReordersAxesWithoutTranslationMix()
+        {
+            Vector3d eun = _sut.EnuToEun(new Vector3d(12d, -3d, 7d));
+
+            _ = eun.X.Should().Be(12d);
+            _ = eun.Y.Should().Be(7d);
+            _ = eun.Z.Should().Be(-3d);
+        }
     }
 }

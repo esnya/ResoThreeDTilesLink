@@ -6,453 +6,329 @@ using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
 using ThreeDTilesLink.Core.Tiles;
 
-namespace ThreeDTilesLink.Tests;
-
-public sealed class TileStreamingServiceTests
+namespace ThreeDTilesLink.Tests
 {
-    [Fact]
-    public async Task Run_DryRun_ProcessesTilesWithoutSending()
+    public sealed class TileStreamingServiceTests
     {
-        var tileset = new Tileset(new Tile
+        [Fact]
+        public async Task Run_DryRun_ProcessesTilesWithoutSending()
         {
-            Id = "root",
-            Children =
-            [
-                new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") },
-                new Tile { Id = "1", ContentUri = new Uri("https://example.com/b.glb") }
-            ]
-        });
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") },
+                    new Tile { Id = "1", ContentUri = new Uri("https://example.com/b.glb") }
+                ]
+            });
 
-        var fetcher = new FakeFetcher(tileset);
-        var selector = new TileSelector(new PassThroughTransformer());
-        var extractor = new FakeExtractor();
-        var client = new FakeResoniteClient();
+            var fetcher = new FakeFetcher(tileset);
+            var selector = new TileSelector(new PassThroughTransformer());
+            var extractor = new FakeExtractor();
+            var client = new FakeResoniteClient();
 
-        var service = new TileStreamingService(
-            fetcher,
-            selector,
-            extractor,
-            new PassThroughTransformer(),
-            client,
-            new FakeGoogleAccessTokenProvider(),
-            NullLogger<TileStreamingService>.Instance);
+            var service = new TileStreamingService(
+                fetcher,
+                selector,
+                extractor,
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
 
-        var summary = await service.RunAsync(
-            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, true, "k"),
-            CancellationToken.None);
+            RunSummary summary = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, true, "k"),
+                CancellationToken.None);
 
-        summary.CandidateTiles.Should().Be(2);
-        summary.ProcessedTiles.Should().Be(2);
-        summary.StreamedMeshes.Should().Be(2);
-        summary.FailedTiles.Should().Be(0);
-        client.ConnectCount.Should().Be(0);
-        client.SendCount.Should().Be(0);
-        client.RemoveCount.Should().Be(0);
-    }
+            _ = summary.CandidateTiles.Should().Be(2);
+            _ = summary.ProcessedTiles.Should().Be(2);
+            _ = summary.StreamedMeshes.Should().Be(2);
+            _ = summary.FailedTiles.Should().Be(0);
+            _ = client.ConnectCount.Should().Be(0);
+            _ = client.SendCount.Should().Be(0);
+            _ = client.RemoveCount.Should().Be(0);
+        }
 
-    [Fact]
-    public async Task Run_SendFailureOnOneTile_ContinuesNextTile()
-    {
-        var tileset = new Tileset(new Tile
+        [Fact]
+        public async Task Run_SendFailureOnOneTile_ContinuesNextTile()
         {
-            Id = "root",
-            Children =
-            [
-                new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") },
-                new Tile { Id = "1", ContentUri = new Uri("https://example.com/b.glb") }
-            ]
-        });
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") },
+                    new Tile { Id = "1", ContentUri = new Uri("https://example.com/b.glb") }
+                ]
+            });
 
-        var fetcher = new FakeFetcher(tileset);
-        var selector = new TileSelector(new PassThroughTransformer());
-        var extractor = new FakeExtractor();
-        var client = new FakeResoniteClient(failFirstSend: true);
+            var fetcher = new FakeFetcher(tileset);
+            var selector = new TileSelector(new PassThroughTransformer());
+            var extractor = new FakeExtractor();
+            var client = new FakeResoniteClient(failFirstSend: true);
 
-        var service = new TileStreamingService(
-            fetcher,
-            selector,
-            extractor,
-            new PassThroughTransformer(),
-            client,
-            new FakeGoogleAccessTokenProvider(),
-            NullLogger<TileStreamingService>.Instance);
+            var service = new TileStreamingService(
+                fetcher,
+                selector,
+                extractor,
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
 
-        var summary = await service.RunAsync(
-            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
-            CancellationToken.None);
+            RunSummary summary = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
+                CancellationToken.None);
 
-        summary.CandidateTiles.Should().Be(2);
-        summary.ProcessedTiles.Should().Be(1);
-        summary.StreamedMeshes.Should().Be(1);
-        summary.FailedTiles.Should().Be(1);
-        client.ConnectCount.Should().Be(1);
-        client.DisconnectCount.Should().Be(1);
-        client.SendCount.Should().Be(2);
-    }
+            _ = summary.CandidateTiles.Should().Be(2);
+            _ = summary.ProcessedTiles.Should().Be(1);
+            _ = summary.StreamedMeshes.Should().Be(1);
+            _ = summary.FailedTiles.Should().Be(1);
+            _ = client.ConnectCount.Should().Be(1);
+            _ = client.DisconnectCount.Should().Be(1);
+            _ = client.SendCount.Should().Be(2);
+        }
 
-    [Fact]
-    public async Task Run_NestedJsonTileset_TraversesAndStreamsLeafGlb()
-    {
-        var rootTileset = new Tileset(new Tile
+        [Fact]
+        public async Task Run_NestedJsonTileset_TraversesAndStreamsLeafGlb()
         {
-            Id = "root",
-            Children =
-            [
-                new Tile { Id = "0", ContentUri = new Uri("https://example.com/nested.json") }
-            ]
-        });
+            var rootTileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/nested.json") }
+                ]
+            });
 
-        var nestedTileset = new Tileset(new Tile
-        {
-            Id = "nestedRoot",
-            Children =
-            [
-                new Tile { Id = "leaf", ContentUri = new Uri("https://example.com/leaf.glb") }
-            ]
-        });
+            var nestedTileset = new Tileset(new Tile
+            {
+                Id = "nestedRoot",
+                Children =
+                [
+                    new Tile { Id = "leaf", ContentUri = new Uri("https://example.com/leaf.glb") }
+                ]
+            });
 
-        var fetcher = new FakeFetcher(rootTileset, new Dictionary<string, Tileset>
-        {
-            ["https://example.com/nested.json"] = nestedTileset
-        });
-        var selector = new TileSelector(new PassThroughTransformer());
-        var extractor = new FakeExtractor();
-        var client = new FakeResoniteClient();
-
-        var service = new TileStreamingService(
-            fetcher,
-            selector,
-            extractor,
-            new PassThroughTransformer(),
-            client,
-            new FakeGoogleAccessTokenProvider(),
-            NullLogger<TileStreamingService>.Instance);
-
-        var summary = await service.RunAsync(
-            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, true, "k"),
-            CancellationToken.None);
-
-        summary.CandidateTiles.Should().Be(1);
-        summary.ProcessedTiles.Should().Be(2);
-        summary.StreamedMeshes.Should().Be(1);
-        summary.FailedTiles.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task Run_EnuToEun_ReversesTriangleWinding()
-    {
-        var tileset = new Tileset(new Tile
-        {
-            Id = "root",
-            Children =
-            [
-                new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") }
-            ]
-        });
-
-        var fetcher = new FakeFetcher(tileset);
-        var selector = new TileSelector(new PassThroughTransformer());
-        var extractor = new FakeExtractor();
-        var client = new FakeResoniteClient();
-
-        var service = new TileStreamingService(
-            fetcher,
-            selector,
-            extractor,
-            new PassThroughTransformer(),
-            client,
-            new FakeGoogleAccessTokenProvider(),
-            NullLogger<TileStreamingService>.Instance);
-
-        var summary = await service.RunAsync(
-            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 8, 8, 40d, false, "k"),
-            CancellationToken.None);
-
-        summary.StreamedMeshes.Should().Be(1);
-        client.Payloads.Should().HaveCount(1);
-        client.Payloads[0].Indices.Should().Equal(0, 2, 1);
-        client.Payloads[0].Name.Should().NotContain("/");
-    }
-
-    [Fact]
-    public async Task Run_SameGlbUriInMultipleTiles_StreamsAllInstances()
-    {
-        var sharedUri = new Uri("https://example.com/shared.glb");
-        var tileset = new Tileset(new Tile
-        {
-            Id = "root",
-            Children =
-            [
-                new Tile { Id = "0", ContentUri = sharedUri },
-                new Tile { Id = "1", ContentUri = sharedUri }
-            ]
-        });
-
-        var fetcher = new FakeFetcher(tileset);
-        var selector = new TileSelector(new PassThroughTransformer());
-        var extractor = new FakeExtractor();
-        var client = new FakeResoniteClient();
-
-        var service = new TileStreamingService(
-            fetcher,
-            selector,
-            extractor,
-            new PassThroughTransformer(),
-            client,
-            new FakeGoogleAccessTokenProvider(),
-            NullLogger<TileStreamingService>.Instance);
-
-        var summary = await service.RunAsync(
-            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 8, 8, 40d, false, "k"),
-            CancellationToken.None);
-
-        summary.CandidateTiles.Should().Be(2);
-        summary.ProcessedTiles.Should().Be(2);
-        summary.StreamedMeshes.Should().Be(2);
-        summary.FailedTiles.Should().Be(0);
-        client.Payloads.Should().HaveCount(2);
-    }
-
-    [Fact]
-    public async Task Run_StreamsCoarseBeforeNestedFine_WhenFineNotYetDiscovered()
-    {
-        var rootTileset = new Tileset(new Tile
-        {
-            Id = "root",
-            Children =
-            [
-                new Tile { Id = "coarse", ContentUri = new Uri("https://example.com/coarse.glb") },
-                new Tile { Id = "j", ContentUri = new Uri("https://example.com/nested.json") }
-            ]
-        });
-
-        var nestedTileset = new Tileset(new Tile
-        {
-            Id = "nestedRoot",
-            Children =
-            [
-                new Tile { Id = "leaf", ContentUri = new Uri("https://example.com/fine.glb") }
-            ]
-        });
-
-        var fetcher = new FakeFetcher(rootTileset, new Dictionary<string, Tileset>
-        {
-            ["https://example.com/nested.json"] = nestedTileset
-        });
-        var selector = new TileSelector(new PassThroughTransformer());
-        var extractor = new FakeExtractor();
-        var client = new FakeResoniteClient();
-
-        var service = new TileStreamingService(
-            fetcher,
-            selector,
-            extractor,
-            new PassThroughTransformer(),
-            client,
-            new FakeGoogleAccessTokenProvider(),
-            NullLogger<TileStreamingService>.Instance);
-
-        var summary = await service.RunAsync(
-            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
-            CancellationToken.None);
-
-        summary.StreamedMeshes.Should().Be(2);
-        client.Payloads.Should().HaveCount(2);
-        client.Payloads[0].Name.Should().Contain("tile_coarse_");
-    }
-
-    [Fact]
-    public async Task Run_RemovesParent_WhenDirectChildBranchCompletes()
-    {
-        var tileset = new Tileset(new Tile
-        {
-            Id = "root",
-            Children =
-            [
-                new Tile
-                {
-                    Id = "p",
-                    ContentUri = new Uri("https://example.com/p.glb"),
-                    Children =
-                    [
-                        new Tile
-                        {
-                            Id = "c",
-                            ContentUri = new Uri("https://example.com/c.glb")
-                        }
-                    ]
-                }
-            ]
-        });
-
-        var client = new FakeResoniteClient();
-        var service = new TileStreamingService(
-            new FakeFetcher(tileset),
-            new TileSelector(new PassThroughTransformer()),
-            new FakeExtractor(),
-            new PassThroughTransformer(),
-            client,
-            new FakeGoogleAccessTokenProvider(),
-            NullLogger<TileStreamingService>.Instance);
-
-        var summary = await service.RunAsync(
-            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
-            CancellationToken.None);
-
-        summary.FailedTiles.Should().Be(0);
-        client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
-        client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_c_m", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public async Task Run_RemovesParent_WhenJsonRelayBranchCompletes()
-    {
-        var rootTileset = new Tileset(new Tile
-        {
-            Id = "root",
-            Children =
-            [
-                new Tile
-                {
-                    Id = "p",
-                    ContentUri = new Uri("https://example.com/p.glb"),
-                    Children =
-                    [
-                        new Tile
-                        {
-                            Id = "j",
-                            ContentUri = new Uri("https://example.com/nested.json")
-                        }
-                    ]
-                }
-            ]
-        });
-
-        var nestedTileset = new Tileset(new Tile
-        {
-            Id = "nestedRoot",
-            Children =
-            [
-                new Tile { Id = "leaf", ContentUri = new Uri("https://example.com/leaf.glb") }
-            ]
-        });
-
-        var client = new FakeResoniteClient();
-        var service = new TileStreamingService(
-            new FakeFetcher(rootTileset, new Dictionary<string, Tileset>
+            var fetcher = new FakeFetcher(rootTileset, new Dictionary<string, Tileset>
             {
                 ["https://example.com/nested.json"] = nestedTileset
-            }),
-            new TileSelector(new PassThroughTransformer()),
-            new FakeExtractor(),
-            new PassThroughTransformer(),
-            client,
-            new FakeGoogleAccessTokenProvider(),
-            NullLogger<TileStreamingService>.Instance);
+            });
+            var selector = new TileSelector(new PassThroughTransformer());
+            var extractor = new FakeExtractor();
+            var client = new FakeResoniteClient();
 
-        var summary = await service.RunAsync(
-            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
-            CancellationToken.None);
+            var service = new TileStreamingService(
+                fetcher,
+                selector,
+                extractor,
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
 
-        summary.FailedTiles.Should().Be(0);
-        client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
-    }
+            RunSummary summary = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, true, "k"),
+                CancellationToken.None);
 
-    [Fact]
-    public async Task Run_ChildFailureStillCompletesBranch_AndRemovesParent()
-    {
-        var tileset = new Tileset(new Tile
+            _ = summary.CandidateTiles.Should().Be(1);
+            _ = summary.ProcessedTiles.Should().Be(2);
+            _ = summary.StreamedMeshes.Should().Be(1);
+            _ = summary.FailedTiles.Should().Be(0);
+        }
+
+        [Fact]
+        public async Task Run_EnuToEun_ReversesTriangleWinding()
         {
-            Id = "root",
-            Children =
-            [
-                new Tile
-                {
-                    Id = "p",
-                    ContentUri = new Uri("https://example.com/p.glb"),
-                    Children =
-                    [
-                        new Tile
-                        {
-                            Id = "c",
-                            ContentUri = new Uri("https://example.com/c.glb")
-                        }
-                    ]
-                }
-            ]
-        });
-
-        var client = new FakeResoniteClient(failOnNameContains: "tile_c_m");
-        var service = new TileStreamingService(
-            new FakeFetcher(tileset),
-            new TileSelector(new PassThroughTransformer()),
-            new FakeExtractor(),
-            new PassThroughTransformer(),
-            client,
-            new FakeGoogleAccessTokenProvider(),
-            NullLogger<TileStreamingService>.Instance);
-
-        var summary = await service.RunAsync(
-            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
-            CancellationToken.None);
-
-        summary.FailedTiles.Should().BeGreaterThanOrEqualTo(1);
-        client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public async Task Run_SetsLicenseCredit_FromGlbAssetCopyright()
-    {
-        var tileset = new Tileset(new Tile
-        {
-            Id = "root",
-            Children =
-            [
-                new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") }
-            ]
-        });
-
-        var client = new FakeResoniteClient();
-        var service = new TileStreamingService(
-            new FakeFetcher(
-                tileset,
-                tileContentByUri: new Dictionary<string, byte[]>
-                {
-                    ["https://example.com/a.glb"] = [1]
-                }),
-            new TileSelector(new PassThroughTransformer()),
-            new FakeExtractor(new Dictionary<byte, string>
+            var tileset = new Tileset(new Tile
             {
-                [1] = "Google; Maxar Technologies"
-            }),
-            new PassThroughTransformer(),
-            client,
-            new FakeGoogleAccessTokenProvider(),
-            NullLogger<TileStreamingService>.Instance);
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") }
+                ]
+            });
 
-        await service.RunAsync(
-            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 8, 8, 40d, false, "k"),
-            CancellationToken.None);
+            var fetcher = new FakeFetcher(tileset);
+            var selector = new TileSelector(new PassThroughTransformer());
+            var extractor = new FakeExtractor();
+            var client = new FakeResoniteClient();
 
-        client.LicenseCredits.Should().ContainInOrder(
-            "Google Maps",
-            "Google; Maxar Technologies");
-    }
+            var service = new TileStreamingService(
+                fetcher,
+                selector,
+                extractor,
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
 
-    [Fact]
-    public async Task Run_UpdatesLicenseCredit_WhenNestedTilesetAddsAttribution()
-    {
-        var rootTileset = new Tileset(new Tile
+            RunSummary summary = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 8, 8, 40d, false, "k"),
+                CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(1);
+            _ = client.Payloads.Should().HaveCount(1);
+            _ = client.Payloads[0].Indices.Should().Equal(0, 2, 1);
+            _ = client.Payloads[0].Name.Should().NotContain("/");
+        }
+
+        [Fact]
+        public async Task Run_SameGlbUriInMultipleTiles_StreamsAllInstances()
         {
-            Id = "root",
-            Children =
-            [
-                new Tile { Id = "0", ContentUri = new Uri("https://example.com/nested.json") }
-            ]
-        });
+            var sharedUri = new Uri("https://example.com/shared.glb");
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = sharedUri },
+                    new Tile { Id = "1", ContentUri = sharedUri }
+                ]
+            });
 
-        var nestedTileset = new Tileset(
-            new Tile
+            var fetcher = new FakeFetcher(tileset);
+            var selector = new TileSelector(new PassThroughTransformer());
+            var extractor = new FakeExtractor();
+            var client = new FakeResoniteClient();
+
+            var service = new TileStreamingService(
+                fetcher,
+                selector,
+                extractor,
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
+
+            RunSummary summary = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 8, 8, 40d, false, "k"),
+                CancellationToken.None);
+
+            _ = summary.CandidateTiles.Should().Be(2);
+            _ = summary.ProcessedTiles.Should().Be(2);
+            _ = summary.StreamedMeshes.Should().Be(2);
+            _ = summary.FailedTiles.Should().Be(0);
+            _ = client.Payloads.Should().HaveCount(2);
+        }
+
+        [Fact]
+        public async Task Run_StreamsCoarseBeforeNestedFine_WhenFineNotYetDiscovered()
+        {
+            var rootTileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "coarse", ContentUri = new Uri("https://example.com/coarse.glb") },
+                    new Tile { Id = "j", ContentUri = new Uri("https://example.com/nested.json") }
+                ]
+            });
+
+            var nestedTileset = new Tileset(new Tile
+            {
+                Id = "nestedRoot",
+                Children =
+                [
+                    new Tile { Id = "leaf", ContentUri = new Uri("https://example.com/fine.glb") }
+                ]
+            });
+
+            var fetcher = new FakeFetcher(rootTileset, new Dictionary<string, Tileset>
+            {
+                ["https://example.com/nested.json"] = nestedTileset
+            });
+            var selector = new TileSelector(new PassThroughTransformer());
+            var extractor = new FakeExtractor();
+            var client = new FakeResoniteClient();
+
+            var service = new TileStreamingService(
+                fetcher,
+                selector,
+                extractor,
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
+
+            RunSummary summary = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
+                CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(2);
+            _ = client.Payloads.Should().HaveCount(2);
+            _ = client.Payloads[0].Name.Should().Contain("tile_coarse_");
+        }
+
+        [Fact]
+        public async Task Run_RemovesParent_WhenDirectChildBranchCompletes()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "c",
+                                ContentUri = new Uri("https://example.com/c.glb")
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteClient();
+            var service = new TileStreamingService(
+                new FakeFetcher(tileset),
+                new TileSelector(new PassThroughTransformer()),
+                new FakeExtractor(),
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
+
+            RunSummary summary = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
+                CancellationToken.None);
+
+            _ = summary.FailedTiles.Should().Be(0);
+            _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_c_m", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task Run_RemovesParent_WhenJsonRelayBranchCompletes()
+        {
+            var rootTileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "j",
+                                ContentUri = new Uri("https://example.com/nested.json")
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            var nestedTileset = new Tileset(new Tile
             {
                 Id = "nestedRoot",
                 Children =
@@ -461,284 +337,396 @@ public sealed class TileStreamingServiceTests
                 ]
             });
 
-        var client = new FakeResoniteClient();
-        var service = new TileStreamingService(
-            new FakeFetcher(
-                rootTileset,
-                new Dictionary<string, Tileset>
+            var client = new FakeResoniteClient();
+            var service = new TileStreamingService(
+                new FakeFetcher(rootTileset, new Dictionary<string, Tileset>
                 {
                     ["https://example.com/nested.json"] = nestedTileset
-                },
-                new Dictionary<string, byte[]>
-                {
-                    ["https://example.com/leaf.glb"] = [2]
                 }),
-            new TileSelector(new PassThroughTransformer()),
-            new FakeExtractor(new Dictionary<byte, string>
-            {
-                [2] = "Google; Airbus"
-            }),
-            new PassThroughTransformer(),
-            client,
-            new FakeGoogleAccessTokenProvider(),
-            NullLogger<TileStreamingService>.Instance);
+                new TileSelector(new PassThroughTransformer()),
+                new FakeExtractor(),
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
 
-        await service.RunAsync(
-            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
-            CancellationToken.None);
+            RunSummary summary = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
+                CancellationToken.None);
 
-        client.LicenseCredits.Should().ContainInOrder(
-            "Google Maps",
-            "Google; Airbus");
-    }
+            _ = summary.FailedTiles.Should().Be(0);
+            _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+        }
 
-    [Fact]
-    public async Task Run_RemovingParentTile_AlsoRemovesParentAttribution()
-    {
-        var rootTileset = new Tileset(new Tile
+        [Fact]
+        public async Task Run_ChildFailureStillCompletesBranch_AndRemovesParent()
         {
-            Id = "root",
-            Children =
-            [
-                new Tile
-                {
-                    Id = "p",
-                    ContentUri = new Uri("https://example.com/p.glb"),
-                    Children =
-                    [
-                        new Tile
-                        {
-                            Id = "j",
-                            ContentUri = new Uri("https://example.com/nested.json")
-                        }
-                    ]
-                }
-            ]
-        });
-
-        var nestedTileset = new Tileset(
-            new Tile
+            var tileset = new Tileset(new Tile
             {
-                Id = "nestedRoot",
+                Id = "root",
                 Children =
                 [
-                    new Tile { Id = "leaf", ContentUri = new Uri("https://example.com/leaf.glb") }
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "c",
+                                ContentUri = new Uri("https://example.com/c.glb")
+                            }
+                        ]
+                    }
                 ]
             });
 
-        var client = new FakeResoniteClient();
-        var service = new TileStreamingService(
-            new FakeFetcher(
-                rootTileset,
-                new Dictionary<string, Tileset>
-                {
-                    ["https://example.com/nested.json"] = nestedTileset
-                },
-                new Dictionary<string, byte[]>
-                {
-                    ["https://example.com/p.glb"] = [1],
-                    ["https://example.com/leaf.glb"] = [2]
-                }),
-            new TileSelector(new PassThroughTransformer()),
-            new FakeExtractor(new Dictionary<byte, string>
-            {
-                [1] = "Google; RootProvider",
-                [2] = "Google; NestedProvider"
-            }),
-            new PassThroughTransformer(),
-            client,
-            new FakeGoogleAccessTokenProvider(),
-            NullLogger<TileStreamingService>.Instance);
+            var client = new FakeResoniteClient(failOnNameContains: "tile_c_m");
+            var service = new TileStreamingService(
+                new FakeFetcher(tileset),
+                new TileSelector(new PassThroughTransformer()),
+                new FakeExtractor(),
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
 
-        await service.RunAsync(
-            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
-            CancellationToken.None);
+            RunSummary summary = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
+                CancellationToken.None);
 
-        client.LicenseCredits.Should().ContainInOrder(
-            "Google Maps",
-            "Google; RootProvider",
-            "Google; RootProvider; NestedProvider",
-            "Google; NestedProvider");
-    }
+            _ = summary.FailedTiles.Should().BeGreaterThanOrEqualTo(1);
+            _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+        }
 
-    [Fact]
-    public async Task Run_AttributionParsing_PreservesCommaWithinSource_AndSeparatesBySemicolon()
-    {
-        var tileset = new Tileset(new Tile
+        [Fact]
+        public async Task Run_SetsLicenseCredit_FromGlbAssetCopyright()
         {
-            Id = "root",
-            Children =
-            [
-                new Tile { Id = "0", ContentUri = new Uri("https://example.com/sample.glb") }
-            ]
-        });
-
-        var client = new FakeResoniteClient();
-        var service = new TileStreamingService(
-            new FakeFetcher(
-                tileset,
-                tileContentByUri: new Dictionary<string, byte[]>
-                {
-                    ["https://example.com/sample.glb"] = [3]
-                }),
-            new TileSelector(new PassThroughTransformer()),
-            new FakeExtractor(new Dictionary<byte, string>
+            var tileset = new Tileset(new Tile
             {
-                [3] = "Data SIO, NOAA, U.S. Navy, NGA, GEBCO;Landsat / Copernicus"
-            }),
-            new PassThroughTransformer(),
-            client,
-            new FakeGoogleAccessTokenProvider(),
-            NullLogger<TileStreamingService>.Instance);
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") }
+                ]
+            });
 
-        await service.RunAsync(
-            new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 8, 8, 40d, false, "k"),
-            CancellationToken.None);
+            var client = new FakeResoniteClient();
+            var service = new TileStreamingService(
+                new FakeFetcher(
+                    tileset,
+                    tileContentByUri: new Dictionary<string, byte[]>
+                    {
+                        ["https://example.com/a.glb"] = [1]
+                    }),
+                new TileSelector(new PassThroughTransformer()),
+                new FakeExtractor(new Dictionary<byte, string>
+                {
+                    [1] = "Google; Maxar Technologies"
+                }),
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
 
-        client.LicenseCredits.Should().ContainInOrder(
-            "Google Maps",
-            "Data SIO, NOAA, U.S. Navy, NGA, GEBCO; Landsat / Copernicus");
-    }
+            _ = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 8, 8, 40d, false, "k"),
+                CancellationToken.None);
 
-    private sealed class PassThroughTransformer : ICoordinateTransformer
-    {
-        public Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double heightM) => new(latitudeDeg, longitudeDeg, heightM);
-        public Vector3d EcefToEnu(Vector3d ecef, GeoReference reference) => ecef;
-        public Vector3d EnuToEun(Vector3d enu) => new(enu.X, enu.Z, enu.Y);
-    }
+            _ = client.LicenseCredits.Should().ContainInOrder(
+                "Google Maps",
+                "Google; Maxar Technologies");
+        }
 
-    private sealed class FakeFetcher : ITileContentFetcher
-    {
-        private readonly Tileset _tileset;
-        private readonly IReadOnlyDictionary<string, Tileset> _nestedTilesets;
-        private readonly IReadOnlyDictionary<string, byte[]> _tileContentByUri;
+        [Fact]
+        public async Task Run_UpdatesLicenseCredit_WhenNestedTilesetAddsAttribution()
+        {
+            var rootTileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/nested.json") }
+                ]
+            });
 
-        public FakeFetcher(
+            var nestedTileset = new Tileset(
+                new Tile
+                {
+                    Id = "nestedRoot",
+                    Children =
+                    [
+                        new Tile { Id = "leaf", ContentUri = new Uri("https://example.com/leaf.glb") }
+                    ]
+                });
+
+            var client = new FakeResoniteClient();
+            var service = new TileStreamingService(
+                new FakeFetcher(
+                    rootTileset,
+                    new Dictionary<string, Tileset>
+                    {
+                        ["https://example.com/nested.json"] = nestedTileset
+                    },
+                    new Dictionary<string, byte[]>
+                    {
+                        ["https://example.com/leaf.glb"] = [2]
+                    }),
+                new TileSelector(new PassThroughTransformer()),
+                new FakeExtractor(new Dictionary<byte, string>
+                {
+                    [2] = "Google; Airbus"
+                }),
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
+
+            _ = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
+                CancellationToken.None);
+
+            _ = client.LicenseCredits.Should().ContainInOrder(
+                "Google Maps",
+                "Google; Airbus");
+        }
+
+        [Fact]
+        public async Task Run_RemovingParentTile_AlsoRemovesParentAttribution()
+        {
+            var rootTileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "j",
+                                ContentUri = new Uri("https://example.com/nested.json")
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            var nestedTileset = new Tileset(
+                new Tile
+                {
+                    Id = "nestedRoot",
+                    Children =
+                    [
+                        new Tile { Id = "leaf", ContentUri = new Uri("https://example.com/leaf.glb") }
+                    ]
+                });
+
+            var client = new FakeResoniteClient();
+            var service = new TileStreamingService(
+                new FakeFetcher(
+                    rootTileset,
+                    new Dictionary<string, Tileset>
+                    {
+                        ["https://example.com/nested.json"] = nestedTileset
+                    },
+                    new Dictionary<string, byte[]>
+                    {
+                        ["https://example.com/p.glb"] = [1],
+                        ["https://example.com/leaf.glb"] = [2]
+                    }),
+                new TileSelector(new PassThroughTransformer()),
+                new FakeExtractor(new Dictionary<byte, string>
+                {
+                    [1] = "Google; RootProvider",
+                    [2] = "Google; NestedProvider"
+                }),
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
+
+            _ = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
+                CancellationToken.None);
+
+            _ = client.LicenseCredits.Should().ContainInOrder(
+                "Google Maps",
+                "Google; RootProvider",
+                "Google; RootProvider; NestedProvider",
+                "Google; NestedProvider");
+        }
+
+        [Fact]
+        public async Task Run_AttributionParsing_PreservesCommaWithinSource_AndSeparatesBySemicolon()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/sample.glb") }
+                ]
+            });
+
+            var client = new FakeResoniteClient();
+            var service = new TileStreamingService(
+                new FakeFetcher(
+                    tileset,
+                    tileContentByUri: new Dictionary<string, byte[]>
+                    {
+                        ["https://example.com/sample.glb"] = [3]
+                    }),
+                new TileSelector(new PassThroughTransformer()),
+                new FakeExtractor(new Dictionary<byte, string>
+                {
+                    [3] = "Data SIO, NOAA, U.S. Navy, NGA, GEBCO;Landsat / Copernicus"
+                }),
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
+
+            _ = await service.RunAsync(
+                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 8, 8, 40d, false, "k"),
+                CancellationToken.None);
+
+            _ = client.LicenseCredits.Should().ContainInOrder(
+                "Google Maps",
+                "Data SIO, NOAA, U.S. Navy, NGA, GEBCO; Landsat / Copernicus");
+        }
+
+        private sealed class PassThroughTransformer : ICoordinateTransformer
+        {
+            public Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double heightM)
+            {
+                return new(latitudeDeg, longitudeDeg, heightM);
+            }
+
+            public Vector3d EcefToEnu(Vector3d ecef, GeoReference reference)
+            {
+                return ecef;
+            }
+
+            public Vector3d EnuToEun(Vector3d enu)
+            {
+                return new(enu.X, enu.Z, enu.Y);
+            }
+        }
+
+        private sealed class FakeFetcher(
             Tileset tileset,
             IReadOnlyDictionary<string, Tileset>? nestedTilesets = null,
-            IReadOnlyDictionary<string, byte[]>? tileContentByUri = null)
+            IReadOnlyDictionary<string, byte[]>? tileContentByUri = null) : ITileContentFetcher
         {
-            _tileset = tileset;
-            _nestedTilesets = nestedTilesets ?? new Dictionary<string, Tileset>();
-            _tileContentByUri = tileContentByUri ?? new Dictionary<string, byte[]>();
-        }
+            private readonly Tileset _tileset = tileset;
+            private readonly IReadOnlyDictionary<string, Tileset> _nestedTilesets = nestedTilesets ?? new Dictionary<string, Tileset>();
+            private readonly IReadOnlyDictionary<string, byte[]> _tileContentByUri = tileContentByUri ?? new Dictionary<string, byte[]>();
 
-        public Task<Tileset> FetchRootTilesetAsync(GoogleTilesAuth auth, CancellationToken cancellationToken)
-        {
-            return Task.FromResult(_tileset);
-        }
-
-        public Task<Tileset> FetchTilesetAsync(Uri tilesetUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
-        {
-            if (_nestedTilesets.TryGetValue(tilesetUri.AbsoluteUri, out var nested))
+            public Task<Tileset> FetchRootTilesetAsync(GoogleTilesAuth auth, CancellationToken cancellationToken)
             {
-                return Task.FromResult(nested);
+                return Task.FromResult(_tileset);
             }
 
-            throw new InvalidOperationException($"Unknown nested tileset URI: {tilesetUri}");
-        }
-
-        public Task<byte[]> FetchTileContentAsync(Uri contentUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
-        {
-            if (_tileContentByUri.TryGetValue(contentUri.AbsoluteUri, out var content))
+            public Task<Tileset> FetchTilesetAsync(Uri tilesetUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
             {
-                return Task.FromResult(content);
+                return _nestedTilesets.TryGetValue(tilesetUri.AbsoluteUri, out Tileset? nested)
+                    ? Task.FromResult(nested)
+                    : throw new InvalidOperationException($"Unknown nested tileset URI: {tilesetUri}");
             }
 
-            return Task.FromResult(new byte[] { 1, 2, 3, 4 });
-        }
-    }
-
-    private sealed class FakeExtractor : IGlbMeshExtractor
-    {
-        private readonly IReadOnlyDictionary<byte, string> _attributionByMarker;
-
-        public FakeExtractor(IReadOnlyDictionary<byte, string>? attributionByMarker = null)
-        {
-            _attributionByMarker = attributionByMarker ?? new Dictionary<byte, string>();
-        }
-
-        public GlbExtractResult Extract(byte[] glbBytes)
-        {
-            var marker = glbBytes.Length > 0 ? glbBytes[0] : (byte)0;
-            _ = _attributionByMarker.TryGetValue(marker, out var attribution);
-            return new GlbExtractResult(
-            [
-                new MeshData(
-                    "m",
-                    [new Vector3d(1d, 2d, 3d), new Vector3d(2d, 2d, 3d), new Vector3d(1d, 3d, 3d)],
-                    [0, 1, 2],
-                    [new Vector2d(0d, 0d), new Vector2d(1d, 0d), new Vector2d(0d, 1d)],
-                    true,
-                    Matrix4x4d.Identity,
-                    null,
-                    null)
-            ],
-            attribution);
-        }
-    }
-
-    private sealed class FakeResoniteClient : IResoniteLinkClient
-    {
-        private readonly bool _failFirstSend;
-        private readonly string? _failOnNameContains;
-
-        public FakeResoniteClient(bool failFirstSend = false, string? failOnNameContains = null)
-        {
-            _failFirstSend = failFirstSend;
-            _failOnNameContains = failOnNameContains;
-        }
-
-        public int ConnectCount { get; private set; }
-        public int DisconnectCount { get; private set; }
-        public int SendCount { get; private set; }
-        public int RemoveCount { get; private set; }
-        public List<string> LicenseCredits { get; } = new();
-        public List<TileMeshPayload> Payloads { get; } = new();
-        public List<string> RemovedSlotIds { get; } = new();
-
-        public Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
-        {
-            ConnectCount++;
-            return Task.CompletedTask;
-        }
-
-        public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
-        {
-            LicenseCredits.Add(creditString);
-            return Task.CompletedTask;
-        }
-
-        public Task<string?> SendTileMeshAsync(TileMeshPayload payload, CancellationToken cancellationToken)
-        {
-            SendCount++;
-            Payloads.Add(payload);
-            if ((_failFirstSend && SendCount == 1) ||
-                (!string.IsNullOrWhiteSpace(_failOnNameContains) &&
-                 payload.Name.Contains(_failOnNameContains, StringComparison.Ordinal)))
+            public Task<byte[]> FetchTileContentAsync(Uri contentUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
             {
-                throw new InvalidOperationException("synthetic send failure");
+                return _tileContentByUri.TryGetValue(contentUri.AbsoluteUri, out byte[]? content)
+                    ? Task.FromResult(content)
+                    : Task.FromResult(new byte[] { 1, 2, 3, 4 });
+            }
+        }
+
+        private sealed class FakeExtractor(IReadOnlyDictionary<byte, string>? attributionByMarker = null) : IGlbMeshExtractor
+        {
+            private readonly IReadOnlyDictionary<byte, string> _attributionByMarker = attributionByMarker ?? new Dictionary<byte, string>();
+
+            public GlbExtractResult Extract(byte[] glbBytes)
+            {
+                byte marker = glbBytes.Length > 0 ? glbBytes[0] : (byte)0;
+                _ = _attributionByMarker.TryGetValue(marker, out string? attribution);
+                return new GlbExtractResult(
+                [
+                    new MeshData(
+                        "m",
+                        [new Vector3d(1d, 2d, 3d), new Vector3d(2d, 2d, 3d), new Vector3d(1d, 3d, 3d)],
+                        [0, 1, 2],
+                        [new Vector2d(0d, 0d), new Vector2d(1d, 0d), new Vector2d(0d, 1d)],
+                        true,
+                        Matrix4x4d.Identity,
+                        null,
+                        null)
+                ],
+                attribution);
+            }
+        }
+
+        private sealed class FakeResoniteClient(bool failFirstSend = false, string? failOnNameContains = null) : IResoniteLinkClient
+        {
+            private readonly bool _failFirstSend = failFirstSend;
+            private readonly string? _failOnNameContains = failOnNameContains;
+
+            public int ConnectCount { get; private set; }
+            public int DisconnectCount { get; private set; }
+            public int SendCount { get; private set; }
+            public int RemoveCount { get; private set; }
+            public List<string> LicenseCredits { get; } = [];
+            public List<TileMeshPayload> Payloads { get; } = [];
+            public List<string> RemovedSlotIds { get; } = [];
+
+            public Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
+            {
+                ConnectCount++;
+                return Task.CompletedTask;
             }
 
-            return Task.FromResult<string?>($"slot_{SendCount}_{payload.Name}");
+            public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
+            {
+                LicenseCredits.Add(creditString);
+                return Task.CompletedTask;
+            }
+
+            public Task<string?> SendTileMeshAsync(TileMeshPayload payload, CancellationToken cancellationToken)
+            {
+                SendCount++;
+                Payloads.Add(payload);
+                return (_failFirstSend && SendCount == 1) ||
+                    (!string.IsNullOrWhiteSpace(_failOnNameContains) &&
+                     payload.Name.Contains(_failOnNameContains, StringComparison.Ordinal))
+                    ? throw new InvalidOperationException("synthetic send failure")
+                    : Task.FromResult<string?>($"slot_{SendCount}_{payload.Name}");
+            }
+
+            public Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken)
+            {
+                RemoveCount++;
+                RemovedSlotIds.Add(slotId);
+                return Task.CompletedTask;
+            }
+
+            public Task DisconnectAsync(CancellationToken cancellationToken)
+            {
+                DisconnectCount++;
+                return Task.CompletedTask;
+            }
         }
 
-        public Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken)
+        private sealed class FakeGoogleAccessTokenProvider : IGoogleAccessTokenProvider
         {
-            RemoveCount++;
-            RemovedSlotIds.Add(slotId);
-            return Task.CompletedTask;
+            public Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)
+            {
+                return Task.FromResult("token");
+            }
         }
-
-        public Task DisconnectAsync(CancellationToken cancellationToken)
-        {
-            DisconnectCount++;
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class FakeGoogleAccessTokenProvider : IGoogleAccessTokenProvider
-    {
-        public Task<string> GetAccessTokenAsync(CancellationToken cancellationToken) => Task.FromResult("token");
     }
 }

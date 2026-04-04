@@ -1,0 +1,40 @@
+root = true
+
+[*.cs]
+dotnet_analyzer_diagnostic.category-Style.severity = suggestion
+dotnet_analyzer_diagnostic.category-Performance.severity = warning
+dotnet_analyzer_diagnostic.category-Reliability.severity = warning
+dotnet_analyzer_diagnostic.category-Design.severity = warning
+dotnet_analyzer_diagnostic.category-Usage.severity = warning
+dotnet_analyzer_diagnostic.category-Security.severity = warning
+dotnet_analyzer_diagnostic.category-Maintainability.severity = warning
+dotnet_analyzer_diagnostic.category-Naming.severity = warning
+
+dotnet_diagnostic.IDE0005.severity = warning
+dotnet_diagnostic.IDE0008.severity = none
+dotnet_diagnostic.IDE0046.severity = none
+dotnet_diagnostic.IDE0048.severity = none
+dotnet_diagnostic.IDE0058.severity = warning
+dotnet_diagnostic.IDE0060.severity = warning
+dotnet_diagnostic.IDE0090.severity = none
+dotnet_diagnostic.IDE0290.severity = none
+dotnet_diagnostic.CA1305.severity = warning
+dotnet_diagnostic.CA1310.severity = warning
+dotnet_diagnostic.CA1860.severity = warning
+
+# TODO(staticcheck): LoggerMessage化は影響が広いため別PRで段階移行する。
+dotnet_diagnostic.CA1848.severity = none
+# TODO(staticcheck): 文字列補間の評価コスト最適化はログ戦略見直しと合わせて実施する。
+dotnet_diagnostic.CA1873.severity = none
+# TODO(staticcheck): broad catchの整理はエラー分類ポリシー策定後に実施する。
+dotnet_diagnostic.CA1031.severity = none
+# TODO(staticcheck): インターフェイス/シグネチャ最適化(CA1859/CA2225/CA1716)はAPI互換性確認後に実施する。
+dotnet_diagnostic.CA1859.severity = none
+dotnet_diagnostic.CA2225.severity = none
+dotnet_diagnostic.CA1716.severity = none
+# TODO(staticcheck): async API利用統一は依存ライブラリ側の同期制約調査後に対応する。
+dotnet_diagnostic.CA1849.severity = none
+# TODO(staticcheck): DTO配列をSpan/ReadOnlyCollectionへ変更するかはシリアライズ互換を確認してから対応する。
+dotnet_diagnostic.CA1819.severity = none
+# TODO(staticcheck): 大文字小文字正規化の規則は外部仕様確認後に統一する。
+dotnet_diagnostic.CA1308.severity = none

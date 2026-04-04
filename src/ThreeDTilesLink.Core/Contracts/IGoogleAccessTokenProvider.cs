@@ -1,6 +1,7 @@
-namespace ThreeDTilesLink.Core.Contracts;
-
-public interface IGoogleAccessTokenProvider
+namespace ThreeDTilesLink.Core.Contracts
 {
-    Task<string> GetAccessTokenAsync(CancellationToken cancellationToken);
+    public interface IGoogleAccessTokenProvider
+    {
+        Task<string> GetAccessTokenAsync(CancellationToken cancellationToken);
+    }
 }

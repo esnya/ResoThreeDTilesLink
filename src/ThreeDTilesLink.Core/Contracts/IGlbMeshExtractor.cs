@@ -1,8 +1,9 @@
 using ThreeDTilesLink.Core.Models;
 
-namespace ThreeDTilesLink.Core.Contracts;
-
-public interface IGlbMeshExtractor
+namespace ThreeDTilesLink.Core.Contracts
 {
-    GlbExtractResult Extract(byte[] glbBytes);
+    public interface IGlbMeshExtractor
+    {
+        GlbExtractResult Extract(byte[] glbBytes);
+    }
 }
