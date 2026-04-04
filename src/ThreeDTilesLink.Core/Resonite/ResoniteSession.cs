@@ -25,13 +25,20 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string UserLoginStatusUserIdMemberName = "LoggedUserId";
         private const string DynamicVariableSpaceComponentType = "[FrooxEngine]FrooxEngine.DynamicVariableSpace";
         private const string DynamicFieldStringComponentType = "[FrooxEngine]FrooxEngine.DynamicField<string>";
+        private const string DynamicFieldFloatComponentType = "[FrooxEngine]FrooxEngine.DynamicField<float>";
         private const string DynamicValueVariableFloatComponentType = "[FrooxEngine]FrooxEngine.DynamicValueVariable<float>";
         private const string DynamicValueVariableStringComponentType = "[FrooxEngine]FrooxEngine.DynamicValueVariable<string>";
         private const string DynamicValueVariableValueMemberName = "Value";
         private const string StringFieldType = "[FrooxEngine]FrooxEngine.IField<string>";
+        private const string FloatFieldType = "[FrooxEngine]FrooxEngine.IField<float>";
         private const string AssetsSlotName = "Assets";
         private const string GoogleTilesDynamicSpaceName = "Google3DTiles";
         private const string LicenseDynamicVariablePath = "World/ThreeDTilesLink.License";
+        private const string ProgressValueVariableLocalName = "Progress";
+        private const string ProgressTextVariableLocalName = "ProgressText";
+        private const string ProgressDynamicVariablePath = "World/ThreeDTilesLink.Progress";
+        private const string ProgressTextDynamicVariablePath = "World/ThreeDTilesLink.ProgressText";
+        private const string ParentDynamicSpaceNamePrefix = "ThreeDTilesLink.Parent";
         private const string DefaultGoogleMapsCreditText = "Google Maps";
         private const string MeshAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Mesh>";
         private const string MaterialAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Material>";
@@ -60,6 +67,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private readonly HashSet<string> _tempTextureFiles = new(StringComparer.OrdinalIgnoreCase);
         private readonly string _textureTempDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "textures");
         private readonly Dictionary<string, string> _assetsSlotByParentSlotId = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, SlotProgressBinding> _progressBindingsByParentSlotId = new(StringComparer.Ordinal);
 
         private bool _directClientInitialized;
         private string? _sessionRootSlotId;
@@ -73,6 +81,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private bool _avatarProtectionHasReassignUserOnPackageImport;
         private bool _avatarProtectionUnavailable;
         private string? _localUserId;
+        private bool _sessionDynamicSpaceInitialized;
 
         public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
@@ -221,6 +230,20 @@ namespace ThreeDTilesLink.Core.Resonite
                 }).ConfigureAwait(false);
             _ = EnsureSuccess(response);
             _sessionLicenseCreditText = normalized;
+        }
+
+        public async Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(progressText);
+            cancellationToken.ThrowIfCancellationRequested();
+            EnsureDirectConnection();
+
+            float normalizedProgress = System.Math.Clamp(progress01, 0f, 1f);
+            string effectiveParentSlotId = ResolveEffectiveParentSlotId(parentSlotId);
+            string normalizedText = progressText.Trim();
+            SlotProgressBinding binding = await EnsureProgressBindingAsync(effectiveParentSlotId).ConfigureAwait(false);
+            await UpdateNumericMemberAsync(binding.ProgressValueComponentId, DynamicValueVariableValueMemberName, normalizedProgress).ConfigureAwait(false);
+            await UpdateStringMemberAsync(binding.ProgressTextComponentId, DynamicValueVariableValueMemberName, normalizedText).ConfigureAwait(false);
         }
 
         public async Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
@@ -379,6 +402,7 @@ namespace ThreeDTilesLink.Core.Resonite
             }
 
             _ = _assetsSlotByParentSlotId.Remove(slotId);
+            _ = _progressBindingsByParentSlotId.Remove(slotId);
             Response response = await _linkInterface.RemoveSlot(new RemoveSlot { SlotID = slotId }).ConfigureAwait(false);
             _ = EnsureSuccess(response);
         }
@@ -553,6 +577,25 @@ namespace ThreeDTilesLink.Core.Resonite
             _ = EnsureSuccess(response);
         }
 
+        private async Task UpdateStringMemberAsync(string componentId, string memberName, string value)
+        {
+            EnsureDirectConnection();
+
+            Response response = await _linkInterface.UpdateComponent(
+                new UpdateComponent
+                {
+                    Data = new Component
+                    {
+                        ID = componentId,
+                        Members = new Dictionary<string, Member>(StringComparer.Ordinal)
+                        {
+                            [memberName] = new Field_string { Value = value }
+                        }
+                    }
+                }).ConfigureAwait(false);
+            _ = EnsureSuccess(response);
+        }
+
         private async Task<Member> ReadComponentMemberAsync(string componentId, string memberName)
         {
             EnsureDirectConnection();
@@ -652,6 +695,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private async Task AttachSessionMetadataAsync(string sessionRootSlotId, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            await EnsureSessionDynamicSpaceAsync(sessionRootSlotId).ConfigureAwait(false);
             string creditFieldId = $"t3dtile_field_{Guid.NewGuid():N}";
             string? licenseComponentId = await TryAddComponentAsync(
                 sessionRootSlotId,
@@ -677,15 +721,6 @@ namespace ThreeDTilesLink.Core.Resonite
 
             _ = await TryAddComponentAsync(
                 sessionRootSlotId,
-                DynamicVariableSpaceComponentType,
-                new Dictionary<string, Member>
-                {
-                    ["SpaceName"] = new Field_string { Value = GoogleTilesDynamicSpaceName },
-                    ["OnlyDirectBinding"] = new Field_bool { Value = true }
-                }).ConfigureAwait(false);
-
-            _ = await TryAddComponentAsync(
-                sessionRootSlotId,
                 DynamicFieldStringComponentType,
                 new Dictionary<string, Member>
                 {
@@ -693,6 +728,98 @@ namespace ThreeDTilesLink.Core.Resonite
                     ["TargetField"] = new Reference { TargetID = creditFieldId, TargetType = StringFieldType },
                     ["OverrideOnLink"] = new Field_bool { Value = true }
                 }).ConfigureAwait(false);
+        }
+
+        private async Task EnsureSessionDynamicSpaceAsync(string sessionRootSlotId)
+        {
+            if (_sessionDynamicSpaceInitialized)
+            {
+                return;
+            }
+
+            _ = await TryAddComponentAsync(
+                sessionRootSlotId,
+                DynamicVariableSpaceComponentType,
+                new Dictionary<string, Member>
+                {
+                    ["SpaceName"] = new Field_string { Value = GoogleTilesDynamicSpaceName },
+                    ["OnlyDirectBinding"] = new Field_bool { Value = true }
+                }).ConfigureAwait(false);
+            _sessionDynamicSpaceInitialized = true;
+        }
+
+        private async Task<SlotProgressBinding> EnsureProgressBindingAsync(string parentSlotId)
+        {
+            if (_progressBindingsByParentSlotId.TryGetValue(parentSlotId, out SlotProgressBinding? existingBinding))
+            {
+                return existingBinding;
+            }
+
+            _ = await TryAddComponentAsync(
+                parentSlotId,
+                DynamicVariableSpaceComponentType,
+                new Dictionary<string, Member>
+                {
+                    ["SpaceName"] = new Field_string { Value = BuildParentDynamicSpaceName(parentSlotId) },
+                    ["OnlyDirectBinding"] = new Field_bool { Value = true }
+                }).ConfigureAwait(false);
+
+            string progressValueFieldId = $"t3dtile_field_{Guid.NewGuid():N}";
+            string? progressValueComponentId = await TryAddComponentAsync(
+                parentSlotId,
+                DynamicValueVariableFloatComponentType,
+                new Dictionary<string, Member>(StringComparer.Ordinal)
+                {
+                    ["VariableName"] = new Field_string { Value = ProgressValueVariableLocalName },
+                    [DynamicValueVariableValueMemberName] = new Field_float
+                    {
+                        ID = progressValueFieldId,
+                        Value = 0f
+                    }
+                }).ConfigureAwait(false);
+
+            string progressTextFieldId = $"t3dtile_field_{Guid.NewGuid():N}";
+            string? progressTextComponentId = await TryAddComponentAsync(
+                parentSlotId,
+                DynamicValueVariableStringComponentType,
+                new Dictionary<string, Member>(StringComparer.Ordinal)
+                {
+                    ["VariableName"] = new Field_string { Value = ProgressTextVariableLocalName },
+                    [DynamicValueVariableValueMemberName] = new Field_string
+                    {
+                        ID = progressTextFieldId,
+                        Value = string.Empty
+                    }
+                }).ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(progressValueComponentId) || string.IsNullOrWhiteSpace(progressTextComponentId))
+            {
+                throw new InvalidOperationException($"Failed to create progress dynamic variable for slot {parentSlotId}.");
+            }
+
+            _ = await TryAddComponentAsync(
+                parentSlotId,
+                DynamicFieldFloatComponentType,
+                new Dictionary<string, Member>
+                {
+                    ["VariableName"] = new Field_string { Value = BuildWorldProgressPath() },
+                    ["TargetField"] = new Reference { TargetID = progressValueFieldId, TargetType = FloatFieldType },
+                    ["OverrideOnLink"] = new Field_bool { Value = true }
+                }).ConfigureAwait(false);
+
+            _ = await TryAddComponentAsync(
+                parentSlotId,
+                DynamicFieldStringComponentType,
+                new Dictionary<string, Member>
+                {
+                    ["VariableName"] = new Field_string { Value = BuildWorldProgressTextPath() },
+                    ["TargetField"] = new Reference { TargetID = progressTextFieldId, TargetType = StringFieldType },
+                    ["OverrideOnLink"] = new Field_bool { Value = true }
+                }).ConfigureAwait(false);
+
+            var binding = new SlotProgressBinding(progressValueComponentId, progressTextComponentId);
+            _progressBindingsByParentSlotId[parentSlotId] = binding;
+            return binding;
         }
 
         private async Task ResolveAvatarProtectionContextAsync()
@@ -867,6 +994,21 @@ namespace ThreeDTilesLink.Core.Resonite
             return string.IsNullOrWhiteSpace(ext) ? ".png" : ext.StartsWith('.') ? ext : $".{ext}";
         }
 
+        private static string BuildParentDynamicSpaceName(string parentSlotId)
+        {
+            return $"{ParentDynamicSpaceNamePrefix}.{parentSlotId}";
+        }
+
+        private static string BuildWorldProgressPath()
+        {
+            return ProgressDynamicVariablePath;
+        }
+
+        private static string BuildWorldProgressTextPath()
+        {
+            return ProgressTextDynamicVariablePath;
+        }
+
         private static T EnsureSuccess<T>(T response) where T : Response
         {
             return !response.Success
@@ -880,6 +1022,17 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 throw new InvalidOperationException("ResoniteLink is not connected.");
             }
+        }
+
+        private string ResolveEffectiveParentSlotId(string? parentSlotId)
+        {
+            string? effectiveParentSlotId = string.IsNullOrWhiteSpace(parentSlotId)
+                ? _sessionRootSlotId
+                : parentSlotId;
+
+            return string.IsNullOrWhiteSpace(effectiveParentSlotId)
+                ? throw new InvalidOperationException("Session root slot is not initialized.")
+                : effectiveParentSlotId;
         }
 
         private void DisposeDirectLink()
@@ -908,7 +1061,9 @@ namespace ThreeDTilesLink.Core.Resonite
                 _avatarProtectionHasReassignUserOnPackageImport = false;
                 _avatarProtectionUnavailable = false;
                 _localUserId = null;
+                _sessionDynamicSpaceInitialized = false;
                 _assetsSlotByParentSlotId.Clear();
+                _progressBindingsByParentSlotId.Clear();
 
                 foreach (string textureFile in _tempTextureFiles)
                 {
@@ -927,5 +1082,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 _tempTextureFiles.Clear();
             }
         }
+
+        private sealed record SlotProgressBinding(string ProgressValueComponentId, string ProgressTextComponentId);
     }
 }

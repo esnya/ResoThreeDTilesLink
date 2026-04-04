@@ -161,6 +161,11 @@ namespace ThreeDTilesLink.Tests
                 return Task.CompletedTask;
             }
 
+            public Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken)
+            {
+                return Task.CompletedTask;
+            }
+
             public Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
             {
                 return Task.FromResult<string?>("mesh_slot");

@@ -36,6 +36,7 @@ namespace ThreeDTilesLink.Tests
             _ = client.ConnectCount.Should().Be(0);
             _ = client.SendCount.Should().Be(0);
             _ = client.RemoveCount.Should().Be(0);
+            _ = client.ProgressUpdates.Should().BeEmpty();
         }
 
         [Fact]
@@ -63,6 +64,9 @@ namespace ThreeDTilesLink.Tests
             _ = client.ConnectCount.Should().Be(1);
             _ = client.DisconnectCount.Should().Be(1);
             _ = client.SendCount.Should().Be(2);
+            _ = client.ProgressUpdates.Should().NotBeEmpty();
+            _ = client.ProgressUpdates[^1].Progress01.Should().Be(1f);
+            _ = client.ProgressUpdates[^1].ProgressText.Should().Contain("Completed:");
         }
 
         [Fact]
@@ -85,6 +89,7 @@ namespace ThreeDTilesLink.Tests
             _ = summary.StreamedMeshes.Should().Be(1);
             _ = client.ConnectCount.Should().Be(0);
             _ = client.DisconnectCount.Should().Be(0);
+            _ = client.ProgressUpdates.Should().NotBeEmpty();
         }
 
         [Fact]
@@ -697,6 +702,7 @@ namespace ThreeDTilesLink.Tests
             public List<string> LicenseCredits { get; } = [];
             public List<PlacedMeshPayload> Payloads { get; } = [];
             public List<string> RemovedSlotIds { get; } = [];
+            public List<(string? ParentSlotId, float Progress01, string ProgressText)> ProgressUpdates { get; } = [];
 
             public Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
             {
@@ -712,6 +718,12 @@ namespace ThreeDTilesLink.Tests
             public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
             {
                 LicenseCredits.Add(creditString);
+                return Task.CompletedTask;
+            }
+
+            public Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken)
+            {
+                ProgressUpdates.Add((parentSlotId, progress01, progressText));
                 return Task.CompletedTask;
             }
 

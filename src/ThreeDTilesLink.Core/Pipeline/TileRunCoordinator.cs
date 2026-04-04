@@ -26,10 +26,6 @@ namespace ThreeDTilesLink.Core.Pipeline
             ArgumentNullException.ThrowIfNull(request);
 
             GoogleTilesAuth auth = await BuildAuthAsync(request, cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("Fetching root tileset from Google Map Tiles API.");
-            Tiles.Tileset rootTileset = await _tilesSource.FetchRootTilesetAsync(auth, cancellationToken).ConfigureAwait(false);
-            _traversalPlanner.Initialize(rootTileset, request);
-
             if (!request.Output.DryRun && request.Output.ManageConnection)
             {
                 _logger.LogInformation("Connecting to Resonite Link at {Host}:{Port}", request.Output.Host, request.Output.Port);
@@ -38,12 +34,23 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
+                _logger.LogInformation("Fetching root tileset from Google Map Tiles API.");
+                await SetProgressAsync(request, 0f, "Fetching root tileset...", cancellationToken).ConfigureAwait(false);
+                Tiles.Tileset rootTileset = await _tilesSource.FetchRootTilesetAsync(auth, cancellationToken).ConfigureAwait(false);
+                _traversalPlanner.Initialize(rootTileset, request);
+                await SetProgressAsync(request, _traversalPlanner.GetSummary(), cancellationToken).ConfigureAwait(false);
+
                 while (_traversalPlanner.TryPlanNext(out PlannerCommand? command) && command is not null)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     PlannerResult result = await ExecuteCommandAsync(command, request, auth, cancellationToken).ConfigureAwait(false);
                     _traversalPlanner.ApplyResult(result);
+                    await SetProgressAsync(request, _traversalPlanner.GetSummary(), cancellationToken).ConfigureAwait(false);
                 }
+
+                RunSummary summary = _traversalPlanner.GetSummary();
+                await SetProgressAsync(request, summary, cancellationToken, completed: true).ConfigureAwait(false);
+                return summary;
             }
             finally
             {
@@ -52,8 +59,6 @@ namespace ThreeDTilesLink.Core.Pipeline
                     await _resoniteSession.DisconnectAsync(cancellationToken).ConfigureAwait(false);
                 }
             }
-
-            return _traversalPlanner.GetSummary();
         }
 
         private async Task<PlannerResult> ExecuteCommandAsync(
@@ -194,6 +199,52 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             string token = await _googleAccessTokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
             return new GoogleTilesAuth(null, token);
+        }
+
+        private async Task SetProgressAsync(TileRunRequest request, RunSummary summary, CancellationToken cancellationToken, bool completed = false)
+        {
+            if (request.Output.DryRun)
+            {
+                return;
+            }
+
+            await _resoniteSession.SetProgressAsync(
+                request.Output.MeshParentSlotId,
+                BuildProgressValue(summary, completed),
+                BuildProgressText(summary, completed),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task SetProgressAsync(TileRunRequest request, float progress01, string progressText, CancellationToken cancellationToken)
+        {
+            if (request.Output.DryRun)
+            {
+                return;
+            }
+
+            await _resoniteSession.SetProgressAsync(request.Output.MeshParentSlotId, progress01, progressText, cancellationToken).ConfigureAwait(false);
+        }
+
+        private static float BuildProgressValue(RunSummary summary, bool completed)
+        {
+            if (completed)
+            {
+                return 1f;
+            }
+
+            if (summary.CandidateTiles <= 0)
+            {
+                return 0f;
+            }
+
+            int completedTiles = summary.ProcessedTiles + summary.FailedTiles;
+            return System.Math.Clamp((float)completedTiles / summary.CandidateTiles, 0f, 1f);
+        }
+
+        private static string BuildProgressText(RunSummary summary, bool completed)
+        {
+            string prefix = completed ? "Completed" : "Running";
+            return $"{prefix}: candidate={summary.CandidateTiles} processed={summary.ProcessedTiles} streamed={summary.StreamedMeshes} failed={summary.FailedTiles}";
         }
     }
 }
