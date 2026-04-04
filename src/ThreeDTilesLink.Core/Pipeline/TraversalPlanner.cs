@@ -124,6 +124,20 @@ namespace ThreeDTilesLink.Core.Pipeline
             return new RunSummary(_state.CandidateTiles, _state.ProcessedTiles, _state.StreamedMeshes, _state.FailedTiles);
         }
 
+        public PlannerProgress GetProgress()
+        {
+            EnsureInitialized();
+            return new PlannerProgress(
+                _state.CandidateTiles,
+                _state.ProcessedTiles,
+                _state.StreamedMeshes,
+                _state.FailedTiles,
+                _state.PendingTilesets.Count,
+                _state.PendingGlbTiles.Count,
+                _state.DeferredGlbTiles.Count,
+                _state.Outbound.Count(static command => command.Kind == PlannerCommandKind.ProcessTileContent));
+        }
+
         private void HandleNestedTilesetLoaded(NestedTilesetLoadedResult result)
         {
             TileSelectionResult tile = result.Tile;
