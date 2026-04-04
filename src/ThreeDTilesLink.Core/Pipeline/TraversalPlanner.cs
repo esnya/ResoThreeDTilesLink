@@ -84,12 +84,6 @@ namespace ThreeDTilesLink.Core.Pipeline
                 throw new ArgumentOutOfRangeException(nameof(maxCount), "Batch size must be positive.");
             }
 
-            if (_state.Outbound.Count > 0)
-            {
-                commands = DequeueNextBatch(maxCount);
-                return commands.Count > 0;
-            }
-
             if (_state.Stopped)
             {
                 commands = [];
@@ -97,8 +91,11 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             bool plannedFromEmptyQueue = false;
-            plannedFromEmptyQueue = true;
-            PlanUntilWorkAvailable();
+            if (_state.Outbound.Count == 0)
+            {
+                plannedFromEmptyQueue = true;
+                PlanUntilWorkAvailable();
+            }
 
             if (_state.Outbound.Count == 0)
             {

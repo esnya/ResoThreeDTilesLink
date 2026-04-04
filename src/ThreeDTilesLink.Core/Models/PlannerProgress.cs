@@ -8,6 +8,5 @@ namespace ThreeDTilesLink.Core.Models
         int PendingTilesets,
         int PendingGlbTiles,
         int DeferredGlbTiles,
-        int PendingTileCommands,
-        int PendingPreparedStreams = 0);
+        int PendingTileCommands);
 }
