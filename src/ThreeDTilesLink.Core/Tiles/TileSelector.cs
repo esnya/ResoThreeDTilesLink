@@ -23,16 +23,18 @@ public sealed class TileSelector : ITileSelector
         int maxTiles,
         Matrix4x4d rootParentWorld,
         string idPrefix,
-        int depthOffset)
+        int depthOffset,
+        string? parentContentTileId)
     {
+        _ = detailTargetM;
         var selectionLimit = maxTiles <= 0 ? int.MaxValue : maxTiles;
         var selected = new List<TileSelectionResult>(capacity: SMath.Max(1, SMath.Min(selectionLimit, 4096)));
-        var stack = new Stack<(Tile Tile, Matrix4x4d ParentWorld, int Depth)>();
-        stack.Push((tileset.Root, rootParentWorld, depthOffset));
+        var queue = new Queue<(Tile Tile, Matrix4x4d ParentWorld, int Depth, string? ParentContentTileId)>();
+        queue.Enqueue((tileset.Root, rootParentWorld, depthOffset, parentContentTileId));
 
-        while (stack.Count > 0 && selected.Count < selectionLimit)
+        while (queue.Count > 0 && selected.Count < selectionLimit)
         {
-            var (tile, parentWorld, depth) = stack.Pop();
+            var (tile, parentWorld, depth, parentContentId) = queue.Dequeue();
             var local = tile.Transform is { Count: 16 }
                 ? Matrix4x4d.FromCesiumColumnMajor(tile.Transform)
                 : Matrix4x4d.Identity;
@@ -45,22 +47,14 @@ public sealed class TileSelector : ITileSelector
 
             if (tile.ContentUri is not null)
             {
+                var tileId = ComposeId(idPrefix, tile.Id);
                 var hasChildren = tile.Children.Count > 0;
-                var isJson = tile.ContentUri.AbsolutePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
-                var isGlb = tile.ContentUri.AbsolutePath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase);
-                var reachedDetailTarget = isGlb &&
-                    hasChildren &&
-                    horizontalSpanM is double span &&
-                    span <= detailTargetM;
-                var shouldSelect = isJson || !hasChildren || depth >= maxDepth || reachedDetailTarget;
-
-                if (shouldSelect)
+                var kind = DetectContentKind(tile.ContentUri);
+                selected.Add(new TileSelectionResult(tileId, tile.ContentUri, world, depth, parentContentId, kind, hasChildren, horizontalSpanM));
+                parentContentId = tileId;
+                if (selected.Count >= selectionLimit)
                 {
-                    selected.Add(new TileSelectionResult(ComposeId(idPrefix, tile.Id), tile.ContentUri, world, depth, hasChildren, horizontalSpanM));
-                    if (selected.Count >= selectionLimit)
-                    {
-                        break;
-                    }
+                    break;
                 }
             }
 
@@ -69,23 +63,29 @@ public sealed class TileSelector : ITileSelector
                 continue;
             }
 
-            if (tile.ContentUri is not null &&
-                tile.ContentUri.AbsolutePath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) &&
-                tile.Children.Count > 0 &&
-                horizontalSpanM is double glbSpan &&
-                glbSpan <= detailTargetM)
+            // Breadth-first traversal: shallower tiles are discovered before deeper tiles.
+            for (var i = 0; i < tile.Children.Count; i++)
             {
-                continue;
-            }
-
-            // Depth-first traversal: deeper detail is prioritized within the same max-tiles budget.
-            for (var i = tile.Children.Count - 1; i >= 0; i--)
-            {
-                stack.Push((tile.Children[i], world, depth + 1));
+                queue.Enqueue((tile.Children[i], world, depth + 1, parentContentId));
             }
         }
 
         return selected;
+    }
+
+    private static TileContentKind DetectContentKind(Uri contentUri)
+    {
+        if (contentUri.AbsolutePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            return TileContentKind.Json;
+        }
+
+        if (contentUri.AbsolutePath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+        {
+            return TileContentKind.Glb;
+        }
+
+        return TileContentKind.Other;
     }
 
     private static string ComposeId(string prefix, string id)

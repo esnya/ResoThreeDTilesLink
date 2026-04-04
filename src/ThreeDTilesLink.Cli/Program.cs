@@ -104,6 +104,15 @@ static Dictionary<string, string?> ParseArgs(IReadOnlyList<string> args)
             continue;
         }
 
+        var equalsIndex = current.IndexOf('=');
+        if (equalsIndex > 2)
+        {
+            var key = current[..equalsIndex];
+            var value = current[(equalsIndex + 1)..];
+            result[key] = string.IsNullOrWhiteSpace(value) ? null : value;
+            continue;
+        }
+
         if (i + 1 < args.Count && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
         {
             result[current] = args[i + 1];

@@ -15,5 +15,6 @@ public interface ITileSelector
         int maxTiles,
         Matrix4x4d rootParentWorld,
         string idPrefix,
-        int depthOffset);
+        int depthOffset,
+        string? parentContentTileId);
 }

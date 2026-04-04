@@ -84,7 +84,7 @@ public sealed class ResoniteLinkClientAdapter : IResoniteLinkClient, IAsyncDispo
             cancellationToken);
     }
 
-    public async Task SendTileMeshAsync(TileMeshPayload payload, CancellationToken cancellationToken)
+    public async Task<string?> SendTileMeshAsync(TileMeshPayload payload, CancellationToken cancellationToken)
     {
         if (!_connected)
         {
@@ -93,7 +93,7 @@ public sealed class ResoniteLinkClientAdapter : IResoniteLinkClient, IAsyncDispo
 
         if (payload.Vertices.Count == 0 || payload.Indices.Count == 0)
         {
-            return;
+            return null;
         }
 
         var triangleSubmesh = new TriangleSubmeshRawData
@@ -193,6 +193,7 @@ public sealed class ResoniteLinkClientAdapter : IResoniteLinkClient, IAsyncDispo
             payload.BaseColorTextureBytes,
             payload.BaseColorTextureExtension,
             cancellationToken);
+
         var textureMemberName = await ResolveMaterialTextureMemberNameAsync(cancellationToken);
         if (textureAsset is not null && !string.IsNullOrWhiteSpace(textureMemberName))
         {
@@ -225,6 +226,25 @@ public sealed class ResoniteLinkClientAdapter : IResoniteLinkClient, IAsyncDispo
                     Elements = [new Reference { TargetType = MaterialAssetProviderType, TargetID = materialId }]
                 }
             },
+            cancellationToken);
+
+        return tileSlotId;
+    }
+
+    public async Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken)
+    {
+        if (!_connected)
+        {
+            throw new InvalidOperationException("ResoniteLink is not connected.");
+        }
+
+        if (string.IsNullOrWhiteSpace(slotId))
+        {
+            return;
+        }
+
+        await SendMessageAsync<Response>(
+            new RemoveSlot { SlotID = slotId },
             cancellationToken);
     }
 

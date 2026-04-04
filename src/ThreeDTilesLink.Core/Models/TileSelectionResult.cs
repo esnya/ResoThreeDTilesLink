@@ -7,5 +7,7 @@ public sealed record TileSelectionResult(
     Uri ContentUri,
     Matrix4x4d WorldTransform,
     int Depth,
+    string? ParentTileId,
+    TileContentKind ContentKind,
     bool HasChildren,
     double? HorizontalSpanM);

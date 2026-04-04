@@ -58,9 +58,58 @@ public sealed class TileSelectorTests
             ]
         });
 
-        var selected = selector.Select(tileset, reference, new QuerySquare(120d), maxDepth: 8, detailTargetM: 40d, maxTiles: 32, Matrix4x4d.Identity, string.Empty, 0);
+        var selected = selector.Select(tileset, reference, new QuerySquare(120d), maxDepth: 8, detailTargetM: 40d, maxTiles: 32, Matrix4x4d.Identity, string.Empty, 0, null);
 
         selected.Select(x => x.TileId).Should().Contain(new[] { "region-in", "box-in" });
         selected.Select(x => x.TileId).Should().NotContain("sphere-out");
+    }
+
+    [Fact]
+    public void Select_ReturnsAllIntersectedContentTiles_WithParentAndKindMetadata()
+    {
+        var selector = new TileSelector(new GeographicCoordinateTransformer());
+
+        var tileset = new Tileset(new Tile
+        {
+            Id = "root",
+            Children =
+            [
+                new Tile
+                {
+                    Id = "p",
+                    ContentUri = new Uri("https://example.com/p.glb"),
+                    Children =
+                    [
+                        new Tile
+                        {
+                            Id = "c",
+                            ContentUri = new Uri("https://example.com/c.glb")
+                        },
+                        new Tile
+                        {
+                            Id = "j",
+                            ContentUri = new Uri("https://example.com/nested.json")
+                        }
+                    ]
+                }
+            ]
+        });
+
+        var selected = selector.Select(
+            tileset,
+            new GeoReference(0d, 0d, 0d),
+            new QuerySquare(500d),
+            maxDepth: 16,
+            detailTargetM: 30d,
+            maxTiles: 64,
+            Matrix4x4d.Identity,
+            string.Empty,
+            0,
+            null);
+
+        selected.Select(x => x.TileId).Should().Contain(new[] { "p", "c", "j" });
+        selected.Should().ContainSingle(x => x.TileId == "p" && x.ParentTileId == null && x.ContentKind == TileContentKind.Glb);
+        selected.Should().ContainSingle(x => x.TileId == "c" && x.ParentTileId == "p" && x.ContentKind == TileContentKind.Glb);
+        selected.Should().ContainSingle(x => x.TileId == "j" && x.ParentTileId == "p" && x.ContentKind == TileContentKind.Json);
     }
 }

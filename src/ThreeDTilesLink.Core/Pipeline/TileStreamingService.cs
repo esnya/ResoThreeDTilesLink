@@ -57,14 +57,153 @@ public sealed class TileStreamingService
         var streamedTileCount = 0;
         var square = new QuerySquare(options.HalfWidthM);
         var tilesetCache = new Dictionary<string, Tileset>(StringComparer.OrdinalIgnoreCase);
+        var tileStates = new Dictionary<string, TileLifecycle>(StringComparer.Ordinal);
+        var queuedGlbTileIds = new HashSet<string>(StringComparer.Ordinal);
         var pendingTilesets = new PriorityQueue<PendingTileset, double>();
-        pendingTilesets.Enqueue(new PendingTileset(tileset, Matrix4x4d.Identity, string.Empty, 0, 0d), 0d);
+        pendingTilesets.Enqueue(new PendingTileset(tileset, Matrix4x4d.Identity, string.Empty, 0, null), 0d);
         var pendingFineGlbTiles = new PriorityQueue<TileSelectionResult, double>();
         var pendingCoarseGlbTiles = new PriorityQueue<TileSelectionResult, double>();
         var nestedTilesetFetches = 0;
         var maxNestedTilesetFetches = SMath.Max(options.MaxTiles * 64, 512);
         // Use unbounded subtree selection to avoid dropping branches in dense urban areas.
         var selectBudgetPerSubtree = 0;
+
+        TileLifecycle GetOrCreateTileState(string tileId, string? parentTileId = null, TileContentKind? contentKind = null)
+        {
+            if (!tileStates.TryGetValue(tileId, out var state))
+            {
+                state = new TileLifecycle(tileId)
+                {
+                    ParentTileId = parentTileId
+                };
+                if (contentKind.HasValue)
+                {
+                    state.ContentKind = contentKind.Value;
+                }
+
+                tileStates[tileId] = state;
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(parentTileId) && string.IsNullOrWhiteSpace(state.ParentTileId))
+                {
+                    state.ParentTileId = parentTileId;
+                }
+
+                if (contentKind.HasValue)
+                {
+                    state.ContentKind = contentKind.Value;
+                }
+            }
+
+            return state;
+        }
+
+        void RegisterTile(TileSelectionResult tile)
+        {
+            var tileState = GetOrCreateTileState(tile.TileId, tile.ParentTileId, tile.ContentKind);
+            if (string.IsNullOrWhiteSpace(tile.ParentTileId))
+            {
+                return;
+            }
+
+            var parentState = GetOrCreateTileState(tile.ParentTileId);
+            parentState.DirectChildren.Add(tile.TileId);
+            if (tileState.BranchCompleted)
+            {
+                parentState.PendingChildBranches.Remove(tile.TileId);
+            }
+            else
+            {
+                parentState.PendingChildBranches.Add(tile.TileId);
+            }
+        }
+
+        bool IsBranchCompleteForParent(TileLifecycle state)
+        {
+            return state.ContentKind switch
+            {
+                TileContentKind.Glb => state.SelfCompleted,
+                TileContentKind.Json => state.SelfCompleted && state.ChildrenDiscoveryDone && state.PendingChildBranches.Count == 0,
+                _ => state.SelfCompleted
+            };
+        }
+
+        async Task TryRemoveParentTileIfReadyAsync(TileLifecycle state)
+        {
+            if (state.Removed ||
+                state.ContentKind != TileContentKind.Glb ||
+                !state.SelfCompleted ||
+                !state.ChildrenDiscoveryDone ||
+                state.DirectChildren.Count == 0 ||
+                state.PendingChildBranches.Count > 0)
+            {
+                return;
+            }
+
+            state.Removed = true;
+            if (options.DryRun)
+            {
+                return;
+            }
+
+            foreach (var slotId in state.SlotIds)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    await _resoniteLinkClient.RemoveSlotAsync(slotId, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    failedTiles++;
+                    _logger.LogWarning(ex, "Failed to remove parent tile slot {SlotId} for tile {TileId}.", slotId, state.TileId);
+                }
+            }
+        }
+
+        async Task PropagateCompletionAsync(string tileId)
+        {
+            var queue = new Queue<string>();
+            queue.Enqueue(tileId);
+
+            while (queue.Count > 0)
+            {
+                var currentId = queue.Dequeue();
+                if (!tileStates.TryGetValue(currentId, out var state))
+                {
+                    continue;
+                }
+
+                await TryRemoveParentTileIfReadyAsync(state);
+
+                if (state.BranchCompleted || !IsBranchCompleteForParent(state))
+                {
+                    continue;
+                }
+
+                state.BranchCompleted = true;
+                if (string.IsNullOrWhiteSpace(state.ParentTileId))
+                {
+                    continue;
+                }
+
+                var parentState = GetOrCreateTileState(state.ParentTileId);
+                parentState.PendingChildBranches.Remove(state.TileId);
+                queue.Enqueue(parentState.TileId);
+            }
+        }
+
+        async Task MarkTileCompletedAsync(string tileId)
+        {
+            if (!tileStates.TryGetValue(tileId, out var state))
+            {
+                return;
+            }
+
+            state.SelfCompleted = true;
+            await PropagateCompletionAsync(tileId);
+        }
 
         async Task<bool> TryStreamNextGlbAsync(bool allowCoarse)
         {
@@ -83,6 +222,8 @@ public sealed class TileStreamingService
                 return false;
             }
 
+            var glbState = GetOrCreateTileState(glbTile.TileId, glbTile.ParentTileId, TileContentKind.Glb);
+            var streamedSlotIds = new List<string>();
             try
             {
                 candidateTiles++;
@@ -95,7 +236,11 @@ public sealed class TileStreamingService
                     var payload = ToEunPayload(mesh, glbTile.WorldTransform, options.Reference, glbTile.TileId);
                     if (!options.DryRun)
                     {
-                        await _resoniteLinkClient.SendTileMeshAsync(payload, cancellationToken);
+                        var slotId = await _resoniteLinkClient.SendTileMeshAsync(payload, cancellationToken);
+                        if (!string.IsNullOrWhiteSpace(slotId))
+                        {
+                            streamedSlotIds.Add(slotId);
+                        }
                     }
 
                     streamedMeshes++;
@@ -122,6 +267,12 @@ public sealed class TileStreamingService
                 _logger.LogWarning(ex, "Failed to process tile {TileId} from {Uri}", glbTile.TileId, glbTile.ContentUri);
             }
 
+            foreach (var slotId in streamedSlotIds)
+            {
+                glbState.SlotIds.Add(slotId);
+            }
+
+            await MarkTileCompletedAsync(glbTile.TileId);
             return true;
         }
 
@@ -142,6 +293,14 @@ public sealed class TileStreamingService
 
                     if (tilesetWork.DepthOffset > options.MaxDepth)
                     {
+                        if (!string.IsNullOrWhiteSpace(tilesetWork.OwnerTileId))
+                        {
+                            var ownerState = GetOrCreateTileState(tilesetWork.OwnerTileId);
+                            ownerState.SelfCompleted = true;
+                            ownerState.ChildrenDiscoveryDone = true;
+                            await PropagateCompletionAsync(ownerState.TileId);
+                        }
+
                         continue;
                     }
 
@@ -154,81 +313,128 @@ public sealed class TileStreamingService
                         selectBudgetPerSubtree,
                         tilesetWork.ParentWorld,
                         tilesetWork.IdPrefix,
-                        tilesetWork.DepthOffset);
+                        tilesetWork.DepthOffset,
+                        tilesetWork.OwnerTileId);
 
                     _logger.LogDebug("Selected {Count} candidate tiles from subtree '{Prefix}'.", selected.Count, tilesetWork.IdPrefix);
 
+                    foreach (var tile in selected)
+                    {
+                        RegisterTile(tile);
+                    }
+
                     foreach (var tile in selected
-                                 .OrderBy(static t => IsTilesetJson(t.ContentUri) ? 0 : 1)
+                                 .OrderBy(static t => t.ContentKind == TileContentKind.Json ? 0 : 1)
                                  .ThenBy(GetTraversalPriority))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
+                        var tileState = GetOrCreateTileState(tile.TileId, tile.ParentTileId, tile.ContentKind);
 
                         try
                         {
-                            if (IsTilesetJson(tile.ContentUri))
+                            switch (tile.ContentKind)
                             {
-                                if (tile.Depth >= options.MaxDepth)
+                                case TileContentKind.Json:
                                 {
+                                    tileState.SelfCompleted = true;
+
+                                    if (tile.Depth >= options.MaxDepth)
+                                    {
+                                        processedTiles++;
+                                        tileState.ChildrenDiscoveryDone = true;
+                                        await PropagateCompletionAsync(tile.TileId);
+                                        _logger.LogInformation("Skipped nested tileset at max depth for tile {TileId}.", tile.TileId);
+                                        continue;
+                                    }
+
+                                    tileState.ChildrenDiscoveryDone = false;
+                                    try
+                                    {
+                                        if (!tilesetCache.TryGetValue(tile.ContentUri.AbsoluteUri, out var nestedTileset))
+                                        {
+                                            nestedTileset = await _fetcher.FetchTilesetAsync(tile.ContentUri, auth, cancellationToken);
+                                            tilesetCache[tile.ContentUri.AbsoluteUri] = nestedTileset;
+                                            nestedTilesetFetches++;
+                                        }
+
+                                        var pending = new PendingTileset(
+                                            nestedTileset,
+                                            tile.WorldTransform,
+                                            tile.TileId,
+                                            tile.Depth + 1,
+                                            tile.TileId);
+
+                                        pendingTilesets.Enqueue(pending, GetTraversalPriority(tile));
+                                    }
+                                    catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                                    {
+                                        tileState.ChildrenDiscoveryDone = true;
+                                        await PropagateCompletionAsync(tile.TileId);
+                                        _logger.LogInformation("Skipped non-traversable JSON tile {TileId} ({Uri}).", tile.TileId, tile.ContentUri);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        failedTiles++;
+                                        tileState.ChildrenDiscoveryDone = true;
+                                        await PropagateCompletionAsync(tile.TileId);
+                                        _logger.LogWarning(ex, "Failed while traversing JSON tile {TileId} from {Uri}", tile.TileId, tile.ContentUri);
+                                    }
+
                                     processedTiles++;
-                                    _logger.LogInformation("Skipped nested tileset at max depth for tile {TileId}.", tile.TileId);
                                     continue;
                                 }
 
-                                try
+                                case TileContentKind.Glb:
                                 {
-                                    if (!tilesetCache.TryGetValue(tile.ContentUri.AbsoluteUri, out var nestedTileset))
+                                    if (!queuedGlbTileIds.Add(tile.TileId))
                                     {
-                                        nestedTileset = await _fetcher.FetchTilesetAsync(tile.ContentUri, auth, cancellationToken);
-                                        tilesetCache[tile.ContentUri.AbsoluteUri] = nestedTileset;
-                                        nestedTilesetFetches++;
+                                        continue;
                                     }
 
-                                    var pending = new PendingTileset(
-                                        nestedTileset,
-                                        tile.WorldTransform,
-                                        tile.TileId,
-                                        tile.Depth + 1,
-                                        tile.HorizontalSpanM ?? double.MaxValue / 4d);
+                                    var isFineTile = !tile.HorizontalSpanM.HasValue || tile.HorizontalSpanM.Value <= options.DetailTargetM;
+                                    if (isFineTile)
+                                    {
+                                        pendingFineGlbTiles.Enqueue(tile, GetTraversalPriority(tile));
+                                    }
+                                    else
+                                    {
+                                        pendingCoarseGlbTiles.Enqueue(tile, GetTraversalPriority(tile));
+                                    }
 
-                                    pendingTilesets.Enqueue(pending, GetTraversalPriority(tile));
+                                    // Stream as soon as possible; fine tiles are still prioritized when present.
+                                    if (streamedTileCount < options.MaxTiles)
+                                    {
+                                        await TryStreamNextGlbAsync(allowCoarse: true);
+                                    }
+
+                                    continue;
                                 }
-                                catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
+
+                                default:
                                 {
-                                    _logger.LogInformation("Skipped non-traversable JSON tile {TileId} ({Uri}).", tile.TileId, tile.ContentUri);
+                                    processedTiles++;
+                                    tileState.ChildrenDiscoveryDone = true;
+                                    await MarkTileCompletedAsync(tile.TileId);
+                                    _logger.LogInformation("Skipped unsupported tile content {TileId} ({Uri}).", tile.TileId, tile.ContentUri);
+                                    continue;
                                 }
-
-                                processedTiles++;
-                                continue;
-                            }
-
-                            if (!IsGlbContent(tile.ContentUri))
-                            {
-                                processedTiles++;
-                                _logger.LogInformation("Skipped unsupported tile content {TileId} ({Uri}).", tile.TileId, tile.ContentUri);
-                                continue;
-                            }
-
-                            var isFineTile = !tile.HorizontalSpanM.HasValue || tile.HorizontalSpanM.Value <= options.DetailTargetM;
-                            if (isFineTile)
-                            {
-                                pendingFineGlbTiles.Enqueue(tile, GetTraversalPriority(tile));
-                                // Start sending as soon as a detailed tile is discovered to reduce first-visible latency.
-                                if (streamedTileCount < options.MaxTiles)
-                                {
-                                    await TryStreamNextGlbAsync(allowCoarse: false);
-                                }
-                            }
-                            else
-                            {
-                                pendingCoarseGlbTiles.Enqueue(tile, GetTraversalPriority(tile));
                             }
                         }
                         catch (Exception ex)
                         {
                             failedTiles++;
+                            tileState.ChildrenDiscoveryDone = true;
+                            await MarkTileCompletedAsync(tile.TileId);
                             _logger.LogWarning(ex, "Failed while discovering tile {TileId} from {Uri}", tile.TileId, tile.ContentUri);
                         }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(tilesetWork.OwnerTileId))
+                    {
+                        var owner = GetOrCreateTileState(tilesetWork.OwnerTileId);
+                        owner.SelfCompleted = true;
+                        owner.ChildrenDiscoveryDone = true;
+                        await PropagateCompletionAsync(owner.TileId);
                     }
                 }
 
@@ -237,15 +443,10 @@ public sealed class TileStreamingService
                     break;
                 }
 
-                var canStreamFine = pendingFineGlbTiles.Count > 0;
-                var canStreamCoarse = pendingFineGlbTiles.Count == 0 &&
-                                      pendingCoarseGlbTiles.Count > 0 &&
-                                      (pendingTilesets.Count == 0 || nestedTilesetFetches >= maxNestedTilesetFetches);
-
-                if (canStreamFine || canStreamCoarse)
+                if (pendingFineGlbTiles.Count > 0 || pendingCoarseGlbTiles.Count > 0)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    await TryStreamNextGlbAsync(canStreamCoarse);
+                    await TryStreamNextGlbAsync(allowCoarse: true);
                 }
 
                 if (pendingTilesets.Count > 0 &&
@@ -453,22 +654,12 @@ public sealed class TileStreamingService
         return normalized.Length() <= 1e-9d ? fallback : normalized;
     }
 
-    private static bool IsGlbContent(Uri uri)
-    {
-        return uri.AbsolutePath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsTilesetJson(Uri uri)
-    {
-        return uri.AbsolutePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
-    }
-
     private static double GetTraversalPriority(TileSelectionResult tile)
     {
         var span = tile.HorizontalSpanM ?? 1_000_000_000d;
-        var depthBias = tile.Depth * 0.01d;
+        var depthBias = tile.Depth * 1_000_000_000_000d;
         var leafBias = tile.HasChildren ? 0d : -0.1d;
-        return span - depthBias + leafBias;
+        return depthBias + span + leafBias;
     }
 
     private async Task<GoogleTilesAuth> BuildAuthAsync(StreamerOptions options, CancellationToken cancellationToken)
@@ -487,5 +678,24 @@ public sealed class TileStreamingService
         Matrix4x4d ParentWorld,
         string IdPrefix,
         int DepthOffset,
-        double SpanM);
+        string? OwnerTileId);
+
+    private sealed class TileLifecycle
+    {
+        public TileLifecycle(string tileId)
+        {
+            TileId = tileId;
+        }
+
+        public string TileId { get; }
+        public string? ParentTileId { get; set; }
+        public TileContentKind ContentKind { get; set; } = TileContentKind.Other;
+        public bool SelfCompleted { get; set; }
+        public bool BranchCompleted { get; set; }
+        public bool ChildrenDiscoveryDone { get; set; } = true;
+        public bool Removed { get; set; }
+        public HashSet<string> DirectChildren { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> PendingChildBranches { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> SlotIds { get; } = new(StringComparer.Ordinal);
+    }
 }
