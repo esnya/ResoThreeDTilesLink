@@ -48,6 +48,7 @@ dotnet run --project src/ThreeDTilesLink.Cli -- \
 
 - `--range` is the minimum coverage range from the center point.
 - Add `--dry-run` to verify only the fetch and conversion path without sending anything to Resonite.
+- `--content-workers` controls bounded fetch/decode parallelism. Default is `8`.
 - If `GOOGLE_MAPS_API_KEY` is set, the API key is used; otherwise ADC is used.
 - If `--height-offset` is omitted, `0` is used.
 - Run `dotnet run --project src/ThreeDTilesLink.Cli -- --help` for units and defaults.
@@ -96,6 +97,8 @@ dotnet run --project src/ThreeDTilesLink.Interactive -- \
 ```
 
 Run `dotnet run --project src/ThreeDTilesLink.Interactive -- --help` for units and defaults.
+
+- `--content-workers` controls bounded fetch/decode parallelism per run. Default is `8`.
 
 ## Documentation
 

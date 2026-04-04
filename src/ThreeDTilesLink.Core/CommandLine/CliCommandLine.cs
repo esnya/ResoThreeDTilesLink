@@ -12,6 +12,7 @@ namespace ThreeDTilesLink.Core.CommandLine
         int TileLimit,
         int DepthLimit,
         double DetailTargetM,
+        int ContentWorkers,
         int TimeoutSec,
         bool DryRun,
         LogLevel LogLevel);
@@ -31,6 +32,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 new("--tile-limit", CommandOptionValueKind.WholeNumber, "Maximum number of tiles to stream.", DefaultValue: 1024, RenamedFrom: ["--max-tiles"]),
                 new("--depth-limit", CommandOptionValueKind.WholeNumber, "Maximum traversal depth.", DefaultValue: 32, RenamedFrom: ["--max-depth"]),
                 new("--detail", CommandOptionValueKind.DecimalNumber, "Target tile detail before traversal stops descending renderable GLB tiles.", DefaultValue: 30d, Unit: "m", RenamedFrom: ["--detail-target-m"]),
+                new("--content-workers", CommandOptionValueKind.WholeNumber, "Maximum number of tile content fetch/decode workers.", DefaultValue: 8),
                 new("--timeout", CommandOptionValueKind.WholeNumber, "Request timeout.", DefaultValue: 120, Unit: "sec", RenamedFrom: ["--timeout-sec"]),
                 new("--dry-run", CommandOptionValueKind.Switch, "Fetch and convert tiles without sending anything to Resonite.", DefaultValue: false),
                 new("--log-level", CommandOptionValueKind.Text, "Logging level.", DefaultValue: "Information", ValueName: "level")
@@ -63,6 +65,12 @@ namespace ThreeDTilesLink.Core.CommandLine
                     return Error($"Invalid value for --log-level: {logLevelRaw}");
                 }
 
+                int contentWorkers = (int)parsed.Values["--content-workers"]!;
+                if (contentWorkers <= 0)
+                {
+                    return Error($"Invalid value for --content-workers: {contentWorkers}");
+                }
+
                 return new CommandInvocation<CliCommandOptions>(true, new CliCommandOptions(
                     (double)parsed.Values["--latitude"]!,
                     (double)parsed.Values["--longitude"]!,
@@ -73,6 +81,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                     (int)parsed.Values["--tile-limit"]!,
                     (int)parsed.Values["--depth-limit"]!,
                     (double)parsed.Values["--detail"]!,
+                    contentWorkers,
                     (int)parsed.Values["--timeout"]!,
                     (bool)parsed.Values["--dry-run"]!,
                     logLevel), 0, string.Empty, false);

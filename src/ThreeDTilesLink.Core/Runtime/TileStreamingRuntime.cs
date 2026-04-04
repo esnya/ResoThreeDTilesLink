@@ -16,12 +16,20 @@ namespace ThreeDTilesLink.Core.Runtime
         private readonly HttpClient _httpClient;
         private bool _disposed;
 
-        public TileStreamingRuntime(ILoggerFactory loggerFactory, TimeSpan requestTimeout)
+        public TileStreamingRuntime(
+            ILoggerFactory loggerFactory,
+            TimeSpan requestTimeout,
+            int maxConcurrentTileProcessing = 8)
         {
             ArgumentNullException.ThrowIfNull(loggerFactory);
             if (requestTimeout <= TimeSpan.Zero)
             {
                 throw new ArgumentOutOfRangeException(nameof(requestTimeout), "Request timeout must be positive.");
+            }
+
+            if (maxConcurrentTileProcessing <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxConcurrentTileProcessing), "Tile content worker count must be positive.");
             }
 
             _httpClient = new HttpClient
@@ -69,7 +77,8 @@ namespace ThreeDTilesLink.Core.Runtime
                 meshPlacementService,
                 resoniteSession,
                 tokenProvider,
-                loggerFactory.CreateLogger<TileRunCoordinator>());
+                loggerFactory.CreateLogger<TileRunCoordinator>(),
+                maxConcurrentTileProcessing);
 
             InteractiveSupervisor = new InteractiveRunSupervisor(
                 RunCoordinator,

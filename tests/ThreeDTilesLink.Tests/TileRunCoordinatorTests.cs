@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Threading;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Mesh;
@@ -691,10 +692,61 @@ namespace ThreeDTilesLink.Tests
             _ = client.Payloads[0].Name.Should().Contain("tile_p_");
         }
 
+        [Fact]
+        public async Task Run_DryRun_PreparesTileContentConcurrently_WhenWorkersConfigured()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") },
+                    new Tile { Id = "1", ContentUri = new Uri("https://example.com/b.glb") },
+                    new Tile { Id = "2", ContentUri = new Uri("https://example.com/c.glb") },
+                    new Tile { Id = "3", ContentUri = new Uri("https://example.com/d.glb") }
+                ]
+            });
+
+            var tilesSource = new FakeTilesSource(tileset, contentDelay: TimeSpan.FromMilliseconds(75));
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 4);
+
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: true), CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(4);
+            _ = tilesSource.MaxConcurrentContentFetches.Should().BeGreaterThan(1);
+        }
+
+        [Fact]
+        public async Task Run_NonDryRun_KeepsStreamingSequential_WhenWorkersConfigured()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") },
+                    new Tile { Id = "1", ContentUri = new Uri("https://example.com/b.glb") },
+                    new Tile { Id = "2", ContentUri = new Uri("https://example.com/c.glb") }
+                ]
+            });
+
+            var tilesSource = new FakeTilesSource(tileset, contentDelay: TimeSpan.FromMilliseconds(40));
+            var client = new FakeResoniteSession(streamDelay: TimeSpan.FromMilliseconds(20));
+            TileRunCoordinator coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 3);
+
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(3);
+            _ = tilesSource.MaxConcurrentContentFetches.Should().BeGreaterThan(1);
+            _ = client.MaxConcurrentStreams.Should().Be(1);
+        }
+
         private static TileRunCoordinator CreateCoordinator(
             ITilesSource tilesSource,
             FakeResoniteSession session,
-            IGlbMeshExtractor? extractor = null)
+            IGlbMeshExtractor? extractor = null,
+            int maxConcurrentTileProcessing = 1)
         {
             var transformer = new PassThroughTransformer();
             return new TileRunCoordinator(
@@ -704,7 +756,8 @@ namespace ThreeDTilesLink.Tests
                 new MeshPlacementService(transformer),
                 session,
                 new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileRunCoordinator>.Instance);
+                NullLogger<TileRunCoordinator>.Instance,
+                maxConcurrentTileProcessing);
         }
 
         private static TileRunRequest CreateRequest(
@@ -762,20 +815,36 @@ namespace ThreeDTilesLink.Tests
         private sealed class FakeTilesSource(
             Tileset tileset,
             IReadOnlyDictionary<string, Tileset>? nestedTilesets = null,
-            IReadOnlyDictionary<string, byte[]>? tileContentByUri = null) : ITilesSource
+            IReadOnlyDictionary<string, byte[]>? tileContentByUri = null,
+            TimeSpan? contentDelay = null) : ITilesSource
         {
             private readonly Tileset _tileset = tileset;
             private readonly IReadOnlyDictionary<string, Tileset> _nestedTilesets = nestedTilesets ?? new Dictionary<string, Tileset>();
             private readonly IReadOnlyDictionary<string, byte[]> _tileContentByUri = tileContentByUri ?? new Dictionary<string, byte[]>();
+            private readonly TimeSpan _contentDelay = contentDelay ?? TimeSpan.Zero;
+            private int _activeContentFetches;
+            private int _maxConcurrentContentFetches;
+
+            public int MaxConcurrentContentFetches => _maxConcurrentContentFetches;
 
             public Task<Tileset> FetchRootTilesetAsync(GoogleTilesAuth auth, CancellationToken cancellationToken)
             {
                 return Task.FromResult(_tileset);
             }
 
-            public Task<FetchedNodeContent> FetchNodeContentAsync(Uri contentUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
+            public async Task<FetchedNodeContent> FetchNodeContentAsync(Uri contentUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
             {
-                return Task.FromResult<FetchedNodeContent>(
+                int current = Interlocked.Increment(ref _activeContentFetches);
+                UpdateMaxConcurrentContentFetches(current);
+
+                try
+                {
+                    if (_contentDelay > TimeSpan.Zero)
+                    {
+                        await Task.Delay(_contentDelay, cancellationToken).ConfigureAwait(false);
+                    }
+
+                    return
                     TileContentClassifier.Classify(contentUri) switch
                     {
                         TileContentKind.Json => _nestedTilesets.TryGetValue(contentUri.AbsoluteUri, out Tileset? nested)
@@ -786,7 +855,26 @@ namespace ThreeDTilesLink.Tests
                                 ? content
                                 : [1, 2, 3, 4]),
                         _ => new UnsupportedFetchedContent()
-                    });
+                    };
+                }
+                finally
+                {
+                    _ = Interlocked.Decrement(ref _activeContentFetches);
+                }
+            }
+
+            private void UpdateMaxConcurrentContentFetches(int current)
+            {
+                int observed;
+                do
+                {
+                    observed = _maxConcurrentContentFetches;
+                    if (current <= observed)
+                    {
+                        return;
+                    }
+                }
+                while (Interlocked.CompareExchange(ref _maxConcurrentContentFetches, current, observed) != observed);
             }
         }
 
@@ -814,13 +902,20 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
-        private sealed class FakeResoniteSession(bool failFirstSend = false, string? failOnNameContains = null) : IResoniteSession
+        private sealed class FakeResoniteSession(
+            bool failFirstSend = false,
+            string? failOnNameContains = null,
+            TimeSpan? streamDelay = null) : IResoniteSession
         {
             private readonly bool _failFirstSend = failFirstSend;
             private readonly string? _failOnNameContains = failOnNameContains;
+            private readonly TimeSpan _streamDelay = streamDelay ?? TimeSpan.Zero;
+            private int _activeStreams;
+            private int _maxConcurrentStreams;
 
             public int ConnectCount { get; private set; }
             public int DisconnectCount { get; private set; }
+            public int MaxConcurrentStreams => _maxConcurrentStreams;
             public int SendCount { get; private set; }
             public int RemoveCount { get; private set; }
             public List<string> LicenseCredits { get; } = [];
@@ -851,15 +946,31 @@ namespace ThreeDTilesLink.Tests
                 return Task.CompletedTask;
             }
 
-            public Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
+            public async Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
             {
+                int current = Interlocked.Increment(ref _activeStreams);
+                UpdateMaxConcurrentStreams(current);
+
                 SendCount++;
                 Payloads.Add(payload);
-                return (_failFirstSend && SendCount == 1) ||
-                    (!string.IsNullOrWhiteSpace(_failOnNameContains) &&
-                     payload.Name.Contains(_failOnNameContains, StringComparison.Ordinal))
-                    ? throw new InvalidOperationException("synthetic send failure")
-                    : Task.FromResult<string?>($"slot_{SendCount}_{payload.Name}");
+
+                try
+                {
+                    if (_streamDelay > TimeSpan.Zero)
+                    {
+                        await Task.Delay(_streamDelay, cancellationToken).ConfigureAwait(false);
+                    }
+
+                    return (_failFirstSend && SendCount == 1) ||
+                        (!string.IsNullOrWhiteSpace(_failOnNameContains) &&
+                         payload.Name.Contains(_failOnNameContains, StringComparison.Ordinal))
+                        ? throw new InvalidOperationException("synthetic send failure")
+                        : $"slot_{SendCount}_{payload.Name}";
+                }
+                finally
+                {
+                    _ = Interlocked.Decrement(ref _activeStreams);
+                }
             }
 
             public Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken)
@@ -873,6 +984,20 @@ namespace ThreeDTilesLink.Tests
             {
                 DisconnectCount++;
                 return Task.CompletedTask;
+            }
+
+            private void UpdateMaxConcurrentStreams(int current)
+            {
+                int observed;
+                do
+                {
+                    observed = _maxConcurrentStreams;
+                    if (current <= observed)
+                    {
+                        return;
+                    }
+                }
+                while (Interlocked.CompareExchange(ref _maxConcurrentStreams, current, observed) != observed);
             }
         }
 

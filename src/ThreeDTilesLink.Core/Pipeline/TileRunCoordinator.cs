@@ -11,7 +11,8 @@ namespace ThreeDTilesLink.Core.Pipeline
         IMeshPlacementService meshPlacementService,
         IResoniteSession resoniteSession,
         IGoogleAccessTokenProvider googleAccessTokenProvider,
-        ILogger<TileRunCoordinator> logger) : ITileRunCoordinator
+        ILogger<TileRunCoordinator> logger,
+        int maxConcurrentTileProcessing = 1) : ITileRunCoordinator
     {
         private readonly ITilesSource _tilesSource = tilesSource;
         private readonly TraversalPlanner _traversalPlanner = traversalPlanner;
@@ -20,6 +21,9 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly IResoniteSession _resoniteSession = resoniteSession;
         private readonly IGoogleAccessTokenProvider _googleAccessTokenProvider = googleAccessTokenProvider;
         private readonly ILogger<TileRunCoordinator> _logger = logger;
+        private readonly int _maxConcurrentTileProcessing = maxConcurrentTileProcessing > 0
+            ? maxConcurrentTileProcessing
+            : throw new ArgumentOutOfRangeException(nameof(maxConcurrentTileProcessing), "Tile content worker count must be positive.");
 
         public async Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)
         {
@@ -92,11 +96,31 @@ namespace ThreeDTilesLink.Core.Pipeline
                 _traversalPlanner.Initialize(rootTileset, request);
                 await SetProgressAsync(request, _traversalPlanner.GetProgress(), cancellationToken).ConfigureAwait(false);
 
-                while (_traversalPlanner.TryPlanNext(out PlannerCommand? command) && command is not null)
+                while (_traversalPlanner.TryPlanNextBatch(_maxConcurrentTileProcessing, out IReadOnlyList<PlannerCommand> commandBatch) &&
+                       commandBatch.Count > 0)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    PlannerResult result = await ExecuteCommandAsync(command, request, auth, interactiveContext, cancellationToken).ConfigureAwait(false);
-                    _traversalPlanner.ApplyResult(result);
+                    if (commandBatch[0] is ProcessTileContentCommand)
+                    {
+                        IReadOnlyList<PlannerResult> batchResults = await ExecuteProcessTileBatchAsync(
+                            commandBatch.Cast<ProcessTileContentCommand>().ToArray(),
+                            request,
+                            auth,
+                            interactiveContext,
+                            cancellationToken).ConfigureAwait(false);
+
+                        foreach (PlannerResult batchResult in batchResults)
+                        {
+                            _traversalPlanner.ApplyResult(batchResult);
+                            await SetProgressAsync(request, _traversalPlanner.GetProgress(), cancellationToken).ConfigureAwait(false);
+                        }
+
+                        continue;
+                    }
+
+                    PlannerCommand command = commandBatch[0];
+                    PlannerResult singleResult = await ExecuteCommandAsync(command, request, auth, interactiveContext, cancellationToken).ConfigureAwait(false);
+                    _traversalPlanner.ApplyResult(singleResult);
                     await SetProgressAsync(request, _traversalPlanner.GetProgress(), cancellationToken).ConfigureAwait(false);
                 }
 
@@ -111,6 +135,42 @@ namespace ThreeDTilesLink.Core.Pipeline
                     await _resoniteSession.DisconnectAsync(cancellationToken).ConfigureAwait(false);
                 }
             }
+        }
+
+        private async Task<IReadOnlyList<PlannerResult>> ExecuteProcessTileBatchAsync(
+            IReadOnlyList<ProcessTileContentCommand> batch,
+            TileRunRequest request,
+            GoogleTilesAuth auth,
+            InteractiveExecutionContext? interactiveContext,
+            CancellationToken cancellationToken)
+        {
+            if (batch.Count == 1)
+            {
+                return
+                [
+                    await ExecuteProcessTileContentAsync(batch[0], request, auth, interactiveContext, cancellationToken).ConfigureAwait(false)
+                ];
+            }
+
+            _logger.LogDebug("Running tile content batch with {BatchSize} workers.", batch.Count);
+
+            Task<PreparedProcessTileCommand>[] preparedTasks = batch
+                .Select(command => PrepareProcessTileContentAsync(command, auth, interactiveContext, cancellationToken))
+                .ToArray();
+
+            var results = new List<PlannerResult>(batch.Count);
+            for (int i = 0; i < preparedTasks.Length; i++)
+            {
+                PreparedProcessTileCommand prepared = await preparedTasks[i].ConfigureAwait(false);
+                PlannerResult result = await FinalizePreparedProcessTileAsync(
+                    prepared,
+                    request,
+                    interactiveContext,
+                    cancellationToken).ConfigureAwait(false);
+                results.Add(result);
+            }
+
+            return results;
         }
 
         private async Task<PlannerResult> ExecuteCommandAsync(
@@ -137,10 +197,30 @@ namespace ThreeDTilesLink.Core.Pipeline
             InteractiveExecutionContext? interactiveContext,
             CancellationToken cancellationToken)
         {
+            PreparedProcessTileCommand prepared = await PrepareProcessTileContentAsync(
+                command,
+                auth,
+                interactiveContext,
+                cancellationToken).ConfigureAwait(false);
+
+            return await FinalizePreparedProcessTileAsync(
+                prepared,
+                request,
+                interactiveContext,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task<PreparedProcessTileCommand> PrepareProcessTileContentAsync(
+            ProcessTileContentCommand command,
+            GoogleTilesAuth auth,
+            InteractiveExecutionContext? interactiveContext,
+            CancellationToken cancellationToken)
+        {
             if (interactiveContext is not null &&
                 interactiveContext.TryGetRetainedTile(command.Tile, out RetainedTileState retainedTile))
             {
-                return new RenderableContentReadyResult(command.Tile, 0, retainedTile.SlotIds, retainedTile.AssetCopyright);
+                return new PreparedPlannerResult(
+                    new RenderableContentReadyResult(command.Tile, 0, retainedTile.SlotIds, retainedTile.AssetCopyright));
             }
 
             try
@@ -148,20 +228,39 @@ namespace ThreeDTilesLink.Core.Pipeline
                 ContentProcessResult content = await _contentProcessor.ProcessAsync(command.Tile, auth, cancellationToken).ConfigureAwait(false);
                 return content switch
                 {
-                    NestedTilesetContentProcessResult nested => new NestedTilesetLoadedResult(command.Tile, nested.Tileset),
-                    RenderableContentProcessResult renderable => await ExecuteRenderableContentAsync(command.Tile, renderable, request, interactiveContext, cancellationToken).ConfigureAwait(false),
-                    SkippedContentProcessResult skipped => new ContentSkippedResult(command.Tile, skipped.Reason),
+                    NestedTilesetContentProcessResult nested => new PreparedPlannerResult(new NestedTilesetLoadedResult(command.Tile, nested.Tileset)),
+                    RenderableContentProcessResult renderable => new PreparedRenderableContent(command.Tile, renderable),
+                    SkippedContentProcessResult skipped => new PreparedPlannerResult(new ContentSkippedResult(command.Tile, skipped.Reason)),
                     _ => throw new InvalidOperationException($"Unsupported content process result: {content.GetType().Name}")
                 };
             }
             catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
             {
-                return new ContentSkippedResult(command.Tile, Error: ex);
+                return new PreparedPlannerResult(new ContentSkippedResult(command.Tile, Error: ex));
             }
             catch (Exception ex)
             {
-                return new ContentFailedResult(command.Tile, ex);
+                return new PreparedPlannerResult(new ContentFailedResult(command.Tile, ex));
             }
+        }
+
+        private async Task<PlannerResult> FinalizePreparedProcessTileAsync(
+            PreparedProcessTileCommand prepared,
+            TileRunRequest request,
+            InteractiveExecutionContext? interactiveContext,
+            CancellationToken cancellationToken)
+        {
+            return prepared switch
+            {
+                PreparedPlannerResult direct => direct.Result,
+                PreparedRenderableContent renderable => await ExecuteRenderableContentAsync(
+                    renderable.Tile,
+                    renderable.Renderable,
+                    request,
+                    interactiveContext,
+                    cancellationToken).ConfigureAwait(false),
+                _ => throw new InvalidOperationException($"Unsupported prepared tile content type: {prepared.GetType().Name}")
+            };
         }
 
         private async Task<PlannerResult> ExecuteRenderableContentAsync(
@@ -262,6 +361,28 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 return new LicenseUpdatedResult(command.CreditString, false, ex);
             }
+        }
+
+        private abstract record PreparedProcessTileCommand(TileSelectionResult Tile);
+
+        private sealed record PreparedPlannerResult(PlannerResult Result)
+            : PreparedProcessTileCommand(ResolveTile(Result));
+
+        private sealed record PreparedRenderableContent(
+            TileSelectionResult Tile,
+            RenderableContentProcessResult Renderable)
+            : PreparedProcessTileCommand(Tile);
+
+        private static TileSelectionResult ResolveTile(PlannerResult result)
+        {
+            return result switch
+            {
+                NestedTilesetLoadedResult nested => nested.Tile,
+                RenderableContentReadyResult renderable => renderable.Tile,
+                ContentSkippedResult skipped => skipped.Tile,
+                ContentFailedResult failed => failed.Tile,
+                _ => throw new InvalidOperationException($"Planner result does not carry tile context: {result.GetType().Name}")
+            };
         }
 
         private async Task<GoogleTilesAuth> BuildAuthAsync(TileRunRequest request, CancellationToken cancellationToken)

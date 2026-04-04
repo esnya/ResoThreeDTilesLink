@@ -14,6 +14,7 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.ShouldRun.Should().BeFalse();
             _ = invocation.ExitCode.Should().Be(0);
             _ = invocation.Output.Should().Contain("--poll-interval <value>");
+            _ = invocation.Output.Should().Contain("--content-workers <value>");
             _ = invocation.Output.Should().Contain("--remove-out-of-range");
             _ = invocation.Output.Should().Contain("--probe-path <path>");
             _ = invocation.Output.Should().Contain("Unit: ms.");
@@ -31,6 +32,7 @@ namespace ThreeDTilesLink.Tests
                 "--tile-limit=128",
                 "--depth-limit", "16",
                 "--detail", "25",
+                "--content-workers", "3",
                 "--timeout", "90",
                 "--poll-interval", "250",
                 "--debounce=800",
@@ -45,6 +47,7 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.ShouldRun.Should().BeTrue();
             InteractiveCommandOptions parsed = invocation.Options!;
             _ = parsed.HeightOffsetM.Should().Be(20d);
+            _ = parsed.ContentWorkers.Should().Be(3);
             _ = parsed.PollIntervalMs.Should().Be(250);
             _ = parsed.DebounceMs.Should().Be(800);
             _ = parsed.ThrottleMs.Should().Be(3000);
@@ -67,6 +70,21 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.ShouldRun.Should().BeFalse();
             _ = invocation.ExitCode.Should().Be(1);
             _ = invocation.Output.Should().Contain("--range is no longer supported in interactive mode.");
+        }
+
+        [Fact]
+        public void Parse_RejectsNonPositiveContentWorkers()
+        {
+            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
+            [
+                "--resonite-host", "127.0.0.1",
+                "--resonite-port", "12000",
+                "--content-workers", "0"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(1);
+            _ = invocation.Output.Should().Contain("Invalid value for --content-workers: 0");
         }
     }
 }

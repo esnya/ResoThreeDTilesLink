@@ -45,7 +45,10 @@ static async Task<int> RunAsync(string[] args)
         };
         Console.CancelKeyPress += cancelHandler;
 
-        var runtime = new TileStreamingRuntime(loggerFactory, TimeSpan.FromSeconds(parsed.TimeoutSec));
+        var runtime = new TileStreamingRuntime(
+            loggerFactory,
+            TimeSpan.FromSeconds(parsed.TimeoutSec),
+            parsed.ContentWorkers);
         await using (runtime.ConfigureAwait(false))
         {
             var request = new InteractiveRunRequest(

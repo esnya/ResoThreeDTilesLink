@@ -9,6 +9,7 @@ namespace ThreeDTilesLink.Core.CommandLine
         int TileLimit,
         int DepthLimit,
         double DetailTargetM,
+        int ContentWorkers,
         int TimeoutSec,
         int PollIntervalMs,
         int DebounceMs,
@@ -31,6 +32,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 new("--tile-limit", CommandOptionValueKind.WholeNumber, "Maximum number of tiles to stream per run.", DefaultValue: 1024, RenamedFrom: ["--max-tiles"]),
                 new("--depth-limit", CommandOptionValueKind.WholeNumber, "Maximum traversal depth per run.", DefaultValue: 32, RenamedFrom: ["--max-depth"]),
                 new("--detail", CommandOptionValueKind.DecimalNumber, "Target tile detail before traversal stops descending renderable GLB tiles.", DefaultValue: 30d, Unit: "m", RenamedFrom: ["--detail-target-m"]),
+                new("--content-workers", CommandOptionValueKind.WholeNumber, "Maximum number of tile content fetch/decode workers per run.", DefaultValue: 8),
                 new("--timeout", CommandOptionValueKind.WholeNumber, "Request timeout.", DefaultValue: 120, Unit: "sec", RenamedFrom: ["--timeout-sec"]),
                 new("--poll-interval", CommandOptionValueKind.WholeNumber, "Probe polling interval.", DefaultValue: 250, Unit: "ms", RenamedFrom: ["--poll-ms"]),
                 new("--debounce", CommandOptionValueKind.WholeNumber, "Delay after probe changes before starting a run.", DefaultValue: 800, Unit: "ms", RenamedFrom: ["--debounce-ms"]),
@@ -71,6 +73,12 @@ namespace ThreeDTilesLink.Core.CommandLine
                     return Error($"Invalid value for --log-level: {logLevelRaw}");
                 }
 
+                int contentWorkers = (int)parsed.Values["--content-workers"]!;
+                if (contentWorkers <= 0)
+                {
+                    return Error($"Invalid value for --content-workers: {contentWorkers}");
+                }
+
                 string probePath = NormalizeProbePath((string)parsed.Values["--probe-path"]!);
                 return new CommandInvocation<InteractiveCommandOptions>(true, new InteractiveCommandOptions(
                     (double)parsed.Values["--height-offset"]!,
@@ -79,6 +87,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                     (int)parsed.Values["--tile-limit"]!,
                     (int)parsed.Values["--depth-limit"]!,
                     (double)parsed.Values["--detail"]!,
+                    contentWorkers,
                     (int)parsed.Values["--timeout"]!,
                     (int)parsed.Values["--poll-interval"]!,
                     (int)parsed.Values["--debounce"]!,

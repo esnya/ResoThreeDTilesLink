@@ -66,27 +66,50 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public bool TryPlanNext(out PlannerCommand? command)
         {
-            EnsureInitialized();
-
-            if (_state.Stopped)
+            if (!TryPlanNextBatch(1, out IReadOnlyList<PlannerCommand> commands))
             {
                 command = null;
                 return false;
             }
 
+            command = commands[0];
+            return true;
+        }
+
+        public bool TryPlanNextBatch(int maxCount, out IReadOnlyList<PlannerCommand> commands)
+        {
+            EnsureInitialized();
+            if (maxCount <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxCount), "Batch size must be positive.");
+            }
+
+            if (_state.Stopped)
+            {
+                commands = [];
+                return false;
+            }
+
+            bool plannedFromEmptyQueue = false;
             if (_state.Outbound.Count == 0)
             {
+                plannedFromEmptyQueue = true;
                 PlanUntilWorkAvailable();
             }
 
             if (_state.Outbound.Count == 0)
             {
-                command = null;
+                commands = [];
                 return false;
             }
 
-            command = _state.Outbound.Dequeue();
-            return true;
+            if (plannedFromEmptyQueue && maxCount > 1)
+            {
+                QueueAdditionalReadyProcessCommands(maxCount);
+            }
+
+            commands = DequeueNextBatch(maxCount);
+            return commands.Count > 0;
         }
 
         public void ApplyResult(PlannerResult result)
@@ -560,6 +583,49 @@ namespace ThreeDTilesLink.Core.Pipeline
             TileSelectionResult tile = _state.PendingGlbTiles.Dequeue();
             _state.CandidateTiles++;
             _state.Outbound.Enqueue(new ProcessTileContentCommand(tile));
+        }
+
+        private void QueueAdditionalReadyProcessCommands(int maxCount)
+        {
+            if (_state.BootstrapActive)
+            {
+                return;
+            }
+
+            while (_state.Outbound.Count < maxCount &&
+                   _state.PendingGlbTiles.Count > 0 &&
+                   _state.Outbound.All(static command => command.Kind == PlannerCommandKind.ProcessTileContent))
+            {
+                ScheduleNextGlbWork();
+            }
+        }
+
+        private IReadOnlyList<PlannerCommand> DequeueNextBatch(int maxCount)
+        {
+            if (_state.Outbound.Count == 0)
+            {
+                return [];
+            }
+
+            PlannerCommand first = _state.Outbound.Dequeue();
+            if (maxCount == 1 || first.Kind != PlannerCommandKind.ProcessTileContent)
+            {
+                return [first];
+            }
+
+            var batch = new List<PlannerCommand>(maxCount)
+            {
+                first
+            };
+
+            while (batch.Count < maxCount &&
+                   _state.Outbound.Count > 0 &&
+                   _state.Outbound.Peek().Kind == PlannerCommandKind.ProcessTileContent)
+            {
+                batch.Add(_state.Outbound.Dequeue());
+            }
+
+            return batch;
         }
 
         private double GetTraversalPriority(TileSelectionResult tile)
