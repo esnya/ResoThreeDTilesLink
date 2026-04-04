@@ -4,8 +4,5 @@ namespace ThreeDTilesLink.Core.Models
         string SlotName,
         string LatitudeVariablePath,
         string LongitudeVariablePath,
-        string RangeVariablePath,
-        double InitialLatitude,
-        double InitialLongitude,
-        double InitialRangeM);
+        string RangeVariablePath);
 }

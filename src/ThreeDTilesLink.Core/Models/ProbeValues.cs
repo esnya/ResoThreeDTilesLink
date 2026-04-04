@@ -1,4 +1,4 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    public sealed record ProbeValues(double Latitude, double Longitude, double RangeM);
+    public sealed record ProbeValues(float Latitude, float Longitude, float RangeM);
 }

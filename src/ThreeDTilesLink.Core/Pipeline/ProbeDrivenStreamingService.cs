@@ -38,8 +38,9 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 probeBinding = await _resoniteLinkClient.CreateProbeAsync(options.Probe, cancellationToken).ConfigureAwait(false);
                 _logger.LogInformation(
-                    "Probe slot created: slotId={SlotId} lat={LatPath} lon={LonPath} range={RangePath}",
+                    "Probe DV attached: slotId={SlotId} ownsSlot={OwnsSlot} lat={LatPath} lon={LonPath} range={RangePath}",
                     probeBinding.SlotId,
+                    probeBinding.OwnsSlot,
                     options.Probe.LatitudeVariablePath,
                     options.Probe.LongitudeVariablePath,
                     options.Probe.RangeVariablePath);
@@ -120,7 +121,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     await TryRemoveSlotAsync(completedRunSlotId, CancellationToken.None).ConfigureAwait(false);
                 }
 
-                if (probeBinding is not null)
+                if (probeBinding is not null && probeBinding.OwnsSlot && !string.IsNullOrWhiteSpace(probeBinding.SlotId))
                 {
                     await TryRemoveSlotAsync(probeBinding.SlotId, CancellationToken.None).ConfigureAwait(false);
                 }
@@ -277,8 +278,8 @@ namespace ThreeDTilesLink.Core.Pipeline
         private static StreamerOptions BuildRunOptions(ProbeDrivenStreamerOptions options, ProbeValues probeValues, string runSlotId)
         {
             return new StreamerOptions(
-                new GeoReference(probeValues.Latitude, probeValues.Longitude, options.HeightOffsetM),
-                probeValues.RangeM,
+                new GeoReference((double)probeValues.Latitude, (double)probeValues.Longitude, options.HeightOffsetM),
+                (double)probeValues.RangeM,
                 options.LinkHost,
                 options.LinkPort,
                 options.MaxTiles,
@@ -302,9 +303,9 @@ namespace ThreeDTilesLink.Core.Pipeline
         private static bool HasMeaningfulChange(ProbeValues? previous, ProbeValues current)
         {
             return previous is null ||
-                System.Math.Abs(previous.Latitude - current.Latitude) > 1e-7d ||
-                System.Math.Abs(previous.Longitude - current.Longitude) > 1e-7d ||
-                System.Math.Abs(previous.RangeM - current.RangeM) > 0.1d;
+                System.Math.Abs(previous.Latitude - current.Latitude) > 1e-5f ||
+                System.Math.Abs(previous.Longitude - current.Longitude) > 1e-5f ||
+                System.Math.Abs(previous.RangeM - current.RangeM) > 0.1f;
         }
 
         private static void ValidateIntervals(ProbeDrivenStreamerOptions options)

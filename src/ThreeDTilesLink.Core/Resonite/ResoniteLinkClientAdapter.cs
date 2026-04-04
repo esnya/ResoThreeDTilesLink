@@ -22,11 +22,13 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string DynamicVariableSpaceComponentType = "[FrooxEngine]FrooxEngine.DynamicVariableSpace";
         // Policy: component type names are fixed from live ResoniteLink verification (no fallback guessing).
         private const string DynamicFieldStringComponentType = "[FrooxEngine]FrooxEngine.DynamicField<string>";
+        private const string DynamicValueVariableFloatComponentType = "[FrooxEngine]FrooxEngine.DynamicValueVariable<float>";
+        private const string DynamicValueVariableNameMemberName = "VariableName";
+        private const string DynamicValueVariableValueMemberName = "Value";
         private const string StringFieldType = "[FrooxEngine]FrooxEngine.IField<string>";
         private const string GoogleTilesDynamicSpaceName = "Google3DTiles";
-        private const string LicenseDynamicVariablePath = GoogleTilesDynamicSpaceName + "/License";
+        private const string LicenseDynamicVariablePath = "World/ThreeDTilesLink.License";
         private const string DefaultGoogleMapsCreditText = "Google Maps";
-        private const string DynamicValueVariableNameFragment = "DynamicValueVariable";
 
         private const string MeshAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Mesh>";
         private const string MaterialAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Material>";
@@ -61,7 +63,6 @@ namespace ThreeDTilesLink.Core.Resonite
         private string? _materialTextureFieldName;
         private bool _materialTextureFieldResolved;
         private Dictionary<string, MemberDefinition>? _materialMemberDefinitions;
-        private DynamicValueVariableDefinition? _dynamicValueVariableDoubleDefinition;
 
         public ResoniteLinkClientAdapter()
         {
@@ -321,38 +322,32 @@ namespace ThreeDTilesLink.Core.Resonite
                 throw new InvalidOperationException("Session root slot is not initialized.");
             }
 
-            DynamicValueVariableDefinition definition = await ResolveDynamicValueVariableDoubleDefinitionAsync(cancellationToken).ConfigureAwait(false);
-            string probeSlotId = await CreateSlotAsync(configuration.SlotName, _sessionRootSlotId, cancellationToken).ConfigureAwait(false);
+            string targetSlotId = _sessionRootSlotId;
 
             string latComponentId = await AddDynamicValueVariableAsync(
-                probeSlotId,
-                definition,
+                targetSlotId,
                 configuration.LatitudeVariablePath,
-                configuration.InitialLatitude,
                 cancellationToken).ConfigureAwait(false);
 
             string lonComponentId = await AddDynamicValueVariableAsync(
-                probeSlotId,
-                definition,
+                targetSlotId,
                 configuration.LongitudeVariablePath,
-                configuration.InitialLongitude,
                 cancellationToken).ConfigureAwait(false);
 
             string rangeComponentId = await AddDynamicValueVariableAsync(
-                probeSlotId,
-                definition,
+                targetSlotId,
                 configuration.RangeVariablePath,
-                configuration.InitialRangeM,
                 cancellationToken).ConfigureAwait(false);
 
             return new ProbeBinding(
-                probeSlotId,
+                targetSlotId,
+                false,
                 latComponentId,
-                definition.ValueMemberName,
+                DynamicValueVariableValueMemberName,
                 lonComponentId,
-                definition.ValueMemberName,
+                DynamicValueVariableValueMemberName,
                 rangeComponentId,
-                definition.ValueMemberName);
+                DynamicValueVariableValueMemberName);
         }
 
         public async Task<ProbeValues?> ReadProbeValuesAsync(ProbeBinding binding, CancellationToken cancellationToken)
@@ -364,11 +359,11 @@ namespace ThreeDTilesLink.Core.Resonite
                 throw new InvalidOperationException("ResoniteLink is not connected.");
             }
 
-            double lat = await ReadNumericMemberAsync(binding.LatitudeComponentId, binding.LatitudeValueMemberName, cancellationToken).ConfigureAwait(false);
-            double lon = await ReadNumericMemberAsync(binding.LongitudeComponentId, binding.LongitudeValueMemberName, cancellationToken).ConfigureAwait(false);
-            double range = await ReadNumericMemberAsync(binding.RangeComponentId, binding.RangeValueMemberName, cancellationToken).ConfigureAwait(false);
+            float lat = await ReadNumericMemberAsFloatAsync(binding.LatitudeComponentId, binding.LatitudeValueMemberName, cancellationToken).ConfigureAwait(false);
+            float lon = await ReadNumericMemberAsFloatAsync(binding.LongitudeComponentId, binding.LongitudeValueMemberName, cancellationToken).ConfigureAwait(false);
+            float range = await ReadNumericMemberAsFloatAsync(binding.RangeComponentId, binding.RangeValueMemberName, cancellationToken).ConfigureAwait(false);
 
-            if (!double.IsFinite(lat) || !double.IsFinite(lon) || !double.IsFinite(range))
+            if (!float.IsFinite(lat) || !float.IsFinite(lon) || !float.IsFinite(range))
             {
                 return null;
             }
@@ -461,27 +456,22 @@ namespace ThreeDTilesLink.Core.Resonite
 
         private async Task<string> AddDynamicValueVariableAsync(
             string slotId,
-            DynamicValueVariableDefinition definition,
             string variablePath,
-            double initialValue,
             CancellationToken cancellationToken)
         {
             var members = new Dictionary<string, Member>(StringComparer.Ordinal)
             {
-                [definition.VariableNameMemberName] = new Field_string { Value = variablePath },
-                [definition.ValueMemberName] = definition.UsesFloatValue
-                    ? new Field_float { Value = (float)initialValue }
-                    : new Field_double { Value = initialValue }
+                [DynamicValueVariableNameMemberName] = new Field_string { Value = variablePath }
             };
 
             return await AddComponentAsync(
                 slotId,
-                definition.ComponentType,
+                DynamicValueVariableFloatComponentType,
                 members,
                 cancellationToken).ConfigureAwait(false);
         }
 
-        private async Task<double> ReadNumericMemberAsync(string componentId, string memberName, CancellationToken cancellationToken)
+        private async Task<float> ReadNumericMemberAsFloatAsync(string componentId, string memberName, CancellationToken cancellationToken)
         {
             ComponentData componentData = await SendMessageAsync<ComponentData>(
                 new GetComponent { ComponentID = componentId },
@@ -495,9 +485,9 @@ namespace ThreeDTilesLink.Core.Resonite
 
             return member switch
             {
-                Field_double doubleMember => doubleMember.Value,
+                Field_double doubleMember => (float)doubleMember.Value,
                 Field_float floatMember => floatMember.Value,
-                Field_decimal decimalMember => (double)decimalMember.Value,
+                Field_decimal decimalMember => (float)decimalMember.Value,
                 _ => throw new InvalidOperationException(
                     $"Unsupported numeric member type: componentId={componentId} member={memberName} type={member.GetType().Name}")
             };
@@ -663,149 +653,6 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 return null;
             }
-        }
-
-        private async Task<DynamicValueVariableDefinition> ResolveDynamicValueVariableDoubleDefinitionAsync(CancellationToken cancellationToken)
-        {
-            if (_dynamicValueVariableDoubleDefinition is not null)
-            {
-                return _dynamicValueVariableDoubleDefinition;
-            }
-
-            string componentType = await ResolveDynamicValueVariableDoubleTypeAsync(cancellationToken).ConfigureAwait(false);
-            ComponentDefinitionData definitionData = await SendMessageAsync<ComponentDefinitionData>(
-                new GetComponentDefinition
-                {
-                    ComponentType = componentType,
-                    Flattened = true
-                },
-                cancellationToken).ConfigureAwait(false);
-
-            Dictionary<string, MemberDefinition> members = definitionData.Definition?.Members ?? new Dictionary<string, MemberDefinition>(StringComparer.Ordinal);
-            string variableNameMember = ResolveVariableNameMemberName(members);
-            (string valueMember, bool usesFloatValue) = ResolveNumericValueMemberName(members);
-
-            _dynamicValueVariableDoubleDefinition = new DynamicValueVariableDefinition(
-                componentType,
-                variableNameMember,
-                valueMember,
-                usesFloatValue);
-
-            return _dynamicValueVariableDoubleDefinition;
-        }
-
-        private async Task<string> ResolveDynamicValueVariableDoubleTypeAsync(CancellationToken cancellationToken)
-        {
-            var queue = new Queue<string>();
-            var visited = new HashSet<string>(StringComparer.Ordinal);
-            queue.Enqueue(string.Empty);
-
-            while (queue.Count > 0)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                string categoryPath = queue.Dequeue();
-                if (!visited.Add(categoryPath))
-                {
-                    continue;
-                }
-
-                ComponentTypeList list = await SendMessageAsync<ComponentTypeList>(
-                    new GetComponentTypeList
-                    {
-                        CategoryPath = categoryPath
-                    },
-                    cancellationToken).ConfigureAwait(false);
-
-                string? resolved = list.ComponentTypes.FirstOrDefault(static type =>
-                    type.Contains(DynamicValueVariableNameFragment, StringComparison.Ordinal) &&
-                    type.Contains("System.Double", StringComparison.Ordinal));
-                if (!string.IsNullOrWhiteSpace(resolved))
-                {
-                    return resolved;
-                }
-
-                foreach (string subCategory in list.SubCategories)
-                {
-                    string next = string.IsNullOrWhiteSpace(categoryPath)
-                        ? subCategory
-                        : $"{categoryPath}/{subCategory}";
-                    queue.Enqueue(next);
-                }
-            }
-
-            throw new InvalidOperationException("DynamicValueVariable<double> component type was not found via ResoniteLink.");
-        }
-
-        private static string ResolveVariableNameMemberName(IReadOnlyDictionary<string, MemberDefinition> members)
-        {
-            if (members.ContainsKey("VariableName"))
-            {
-                return "VariableName";
-            }
-
-            foreach ((string key, MemberDefinition value) in members)
-            {
-                if (value is not FieldDefinition fieldDefinition)
-                {
-                    continue;
-                }
-
-                if (fieldDefinition.ValueType?.Type?.Contains("String", StringComparison.Ordinal) == true)
-                {
-                    return key;
-                }
-            }
-
-            throw new InvalidOperationException("Failed to resolve DynamicValueVariable string member for variable path.");
-        }
-
-        private static (string MemberName, bool UsesFloat) ResolveNumericValueMemberName(IReadOnlyDictionary<string, MemberDefinition> members)
-        {
-            if (members.TryGetValue("Value", out MemberDefinition? exact) &&
-                exact is FieldDefinition exactField &&
-                IsNumericTypeReference(exactField.ValueType, out bool exactUsesFloat))
-            {
-                return ("Value", exactUsesFloat);
-            }
-
-            foreach ((string key, MemberDefinition value) in members)
-            {
-                if (value is not FieldDefinition fieldDefinition)
-                {
-                    continue;
-                }
-
-                if (IsNumericTypeReference(fieldDefinition.ValueType, out bool usesFloat))
-                {
-                    return (key, usesFloat);
-                }
-            }
-
-            throw new InvalidOperationException("Failed to resolve DynamicValueVariable numeric value member.");
-        }
-
-        private static bool IsNumericTypeReference(TypeReference? typeReference, out bool usesFloat)
-        {
-            usesFloat = false;
-            string? name = typeReference?.Type;
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return false;
-            }
-
-            if (name.Contains("Double", StringComparison.Ordinal))
-            {
-                return true;
-            }
-
-            if (name.Contains("Single", StringComparison.Ordinal) ||
-                name.Contains("Float", StringComparison.Ordinal))
-            {
-                usesFloat = true;
-                return true;
-            }
-
-            return false;
         }
 
         private async Task<Dictionary<string, MemberDefinition>> ResolveMaterialMemberDefinitionsAsync(CancellationToken cancellationToken)
@@ -1023,7 +870,6 @@ namespace ThreeDTilesLink.Core.Resonite
                 _materialTextureFieldName = null;
                 _materialTextureFieldResolved = false;
                 _materialMemberDefinitions = null;
-                _dynamicValueVariableDoubleDefinition = null;
 
                 foreach (string textureFile in _tempTextureFiles)
                 {
@@ -1043,10 +889,5 @@ namespace ThreeDTilesLink.Core.Resonite
             }
         }
 
-        private sealed record DynamicValueVariableDefinition(
-            string ComponentType,
-            string VariableNameMemberName,
-            string ValueMemberName,
-            bool UsesFloatValue);
     }
 }

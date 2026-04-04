@@ -66,24 +66,22 @@ dotnet run --project src/ThreeDTilesLink.Cli -- \
 
 At connection time, the app creates a probe slot and watches `DynamicValueVariable<T>` values under:
 
-- `World/3DTilesLink/Probe/Latitude`
-- `World/3DTilesLink/Probe/Longitude`
-- `World/3DTilesLink/Probe/Range`
+- `World/3DTilesLink.Latitude`
+- `World/3DTilesLink.Longitude`
+- `World/3DTilesLink.Range`
 
 Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and old run slots are removed.
+If probe `Range` is `0` or less, no streaming run is started.
 
 ```bash
 dotnet run --project src/ThreeDTilesLink.Interactive -- \
-  --lat 35.65858 \
-  --lon 139.745433 \
-  --half-width-m 400 \
   --height-offset-m 20 \
   --link-host 127.0.0.1 \
   --link-port 12000 \
   --poll-ms 250 \
   --debounce-ms 800 \
   --throttle-ms 3000 \
-  --probe-path-prefix World/3DTilesLink/Probe \
+  --probe-path-prefix World/3DTilesLink \
   --probe-slot-name "3DTilesLink Probe"
 ```
 

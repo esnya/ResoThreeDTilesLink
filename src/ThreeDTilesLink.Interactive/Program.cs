@@ -17,10 +17,7 @@ static async Task<int> RunAsync(string[] args)
 
         Dictionary<string, string?> parsed = ParseArgs(args);
 
-        double lat = GetRequiredDouble(parsed, "--lat");
-        double lon = GetRequiredDouble(parsed, "--lon");
         double heightM = GetOptionalDouble(parsed, "--height-offset-m", 0d);
-        double halfWidthM = GetRequiredDouble(parsed, "--half-width-m");
         string linkHost = GetRequiredString(parsed, "--link-host");
         int linkPort = GetRequiredInt(parsed, "--link-port");
 
@@ -34,7 +31,7 @@ static async Task<int> RunAsync(string[] args)
         int throttleMs = GetOptionalInt(parsed, "--throttle-ms", 3000);
         bool dryRun = parsed.ContainsKey("--dry-run");
         string probeSlotName = GetOptionalString(parsed, "--probe-slot-name", "3DTilesLink Probe");
-        string probePrefix = NormalizePathPrefix(GetOptionalString(parsed, "--probe-path-prefix", "World/3DTilesLink/Probe"));
+        string probePrefix = NormalizePathPrefix(GetOptionalString(parsed, "--probe-path-prefix", "World/3DTilesLink"));
         LogLevel logLevel = ParseLogLevel(GetOptionalString(parsed, "--log-level", "Information"));
 
         string apiKey = Environment.GetEnvironmentVariable("GOOGLE_MAPS_API_KEY") ?? string.Empty;
@@ -64,12 +61,9 @@ static async Task<int> RunAsync(string[] args)
         {
             var probeConfiguration = new ProbeConfiguration(
                 probeSlotName,
-                $"{probePrefix}/Latitude",
-                $"{probePrefix}/Longitude",
-                $"{probePrefix}/Range",
-                lat,
-                lon,
-                halfWidthM);
+                $"{probePrefix}.Latitude",
+                $"{probePrefix}.Longitude",
+                $"{probePrefix}.Range");
 
             var options = new ProbeDrivenStreamerOptions(
                 linkHost,
@@ -123,7 +117,59 @@ static string NormalizePathPrefix(string input)
         throw new InvalidOperationException("Probe path prefix cannot be empty.");
     }
 
-    return trimmed.TrimEnd('/');
+    const string worldPrefix = "World/";
+    if (!trimmed.StartsWith(worldPrefix, StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException("Probe path prefix must start with 'World/'.");
+    }
+
+    string tail = trimmed[worldPrefix.Length..].Trim().Trim('/');
+    if (string.IsNullOrWhiteSpace(tail))
+    {
+        throw new InvalidOperationException("Probe path prefix must contain a name after 'World/'.");
+    }
+
+    // Resonite dynamic variable path does not accept nested '/' after World/.
+    tail = tail.Replace('/', '.');
+    string normalizedTail = NormalizePathSegments(tail);
+    return $"{worldPrefix}{normalizedTail}";
+}
+
+static string NormalizePathSegments(string tail)
+{
+    string[] segments = tail.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    if (segments.Length == 0)
+    {
+        throw new InvalidOperationException("Probe path prefix must contain at least one valid segment.");
+    }
+
+    var normalizedSegments = new List<string>(segments.Length);
+    foreach (string segment in segments)
+    {
+        var chars = new List<char>(segment.Length);
+        foreach (char ch in segment)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                chars.Add(ch);
+            }
+        }
+
+        string cleaned = new string(chars.ToArray());
+        if (string.IsNullOrWhiteSpace(cleaned))
+        {
+            cleaned = "ThreeProbe";
+        }
+
+        if (!char.IsLetter(cleaned[0]))
+        {
+            cleaned = $"Three{cleaned}";
+        }
+
+        normalizedSegments.Add(cleaned);
+    }
+
+    return string.Join('.', normalizedSegments);
 }
 
 static Dictionary<string, string?> ParseArgs(IReadOnlyList<string> args)
@@ -166,14 +212,6 @@ static string GetRequiredString(IReadOnlyDictionary<string, string?> args, strin
     return !args.TryGetValue(key, out string? value) || string.IsNullOrWhiteSpace(value)
         ? throw new InvalidOperationException($"Missing required argument: {key}")
         : value;
-}
-
-static double GetRequiredDouble(IReadOnlyDictionary<string, string?> args, string key)
-{
-    string value = GetRequiredString(args, key);
-    return !double.TryParse(value, out double parsed)
-        ? throw new InvalidOperationException($"Invalid numeric value for {key}: {value}")
-        : parsed;
 }
 
 static int GetRequiredInt(IReadOnlyDictionary<string, string?> args, string key)
