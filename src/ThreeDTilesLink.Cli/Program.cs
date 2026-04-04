@@ -55,7 +55,9 @@ static async Task<int> RunAsync(string[] args)
 
         var transformer = new GeographicCoordinateTransformer();
         var fetcher = new HttpTileContentFetcher(httpClient);
-        var selector = new TileSelector(transformer);
+        var scheduler = new DefaultTileStreamingScheduler(
+            new TileSelector(transformer),
+            loggerFactory.CreateLogger<DefaultTileStreamingScheduler>());
         var extractor = new GlbMeshExtractor();
         var gcloudTokenProvider = new AdcAccessTokenProvider();
         var resonite = new ResoniteLinkClientAdapter();
@@ -63,7 +65,7 @@ static async Task<int> RunAsync(string[] args)
         {
             var service = new TileStreamingService(
                 fetcher,
-                selector,
+                scheduler,
                 extractor,
                 transformer,
                 resonite,
