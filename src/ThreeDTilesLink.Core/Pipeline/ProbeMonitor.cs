@@ -17,6 +17,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 return NormalizeSearchText(await _probeStore.ReadProbeSearchAsync(probeBinding, cancellationToken).ConfigureAwait(false));
             }
+            catch (Exception ex) when (ShouldRethrow(ex))
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to read probe search query.");
@@ -35,6 +39,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
 
                 return values;
+            }
+            catch (Exception ex) when (ShouldRethrow(ex))
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -79,6 +87,14 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             return input.Trim();
+        }
+
+        private static bool ShouldRethrow(Exception exception)
+        {
+            return exception is InvalidOperationException
+                {
+                    Message: "ResoniteLink is not connected."
+                };
         }
     }
 }

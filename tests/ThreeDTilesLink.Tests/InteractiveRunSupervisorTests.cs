@@ -153,6 +153,28 @@ namespace ThreeDTilesLink.Tests
             _ = coordinator.Requests[0].Traversal.RangeM.Should().Be(400d);
         }
 
+        [Fact]
+        public async Task RunAsync_Throws_WhenProbeSearchReadDetectsDisconnectedSession()
+        {
+            var session = new FakeSession();
+            var probeStore = new FakeProbeStore
+            {
+                SearchReadException = new InvalidOperationException("ResoniteLink is not connected.")
+            };
+            var supervisor = CreateSupervisor(
+                new FakeTileRunCoordinator(static () => { }),
+                session,
+                probeStore,
+                new FakeSearchResolver(),
+                new FakeClock());
+
+            Func<Task> act = () => supervisor.RunAsync(CreateRequest(apiKey: string.Empty), CancellationToken.None);
+
+            var assertion = await act.Should().ThrowAsync<InvalidOperationException>();
+            _ = assertion.WithMessage("ResoniteLink is not connected.");
+            _ = session.DisconnectCalls.Should().Be(1);
+        }
+
         private static InteractiveRunSupervisor CreateSupervisor(
             FakeTileRunCoordinator coordinator,
             FakeSession session,
@@ -224,6 +246,7 @@ namespace ThreeDTilesLink.Tests
         private sealed class FakeSession : IResoniteSession
         {
             public List<string> CreatedRunSlots { get; } = [];
+            public int DisconnectCalls { get; private set; }
 
             public Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
             {
@@ -259,6 +282,7 @@ namespace ThreeDTilesLink.Tests
 
             public Task DisconnectAsync(CancellationToken cancellationToken)
             {
+                DisconnectCalls++;
                 return Task.CompletedTask;
             }
         }
@@ -268,6 +292,8 @@ namespace ThreeDTilesLink.Tests
             public Queue<ProbeValues?> ProbeValues { get; init; } = new();
             public Queue<string?> SearchValues { get; init; } = new();
             public List<(double Latitude, double Longitude)> UpdatedCoordinates { get; } = [];
+            public Exception? ProbeValuesReadException { get; init; }
+            public Exception? SearchReadException { get; init; }
 
             public Task<ProbeBinding> CreateProbeAsync(ProbeConfiguration configuration, CancellationToken cancellationToken)
             {
@@ -276,11 +302,21 @@ namespace ThreeDTilesLink.Tests
 
             public Task<ProbeValues?> ReadProbeValuesAsync(ProbeBinding binding, CancellationToken cancellationToken)
             {
+                if (ProbeValuesReadException is not null)
+                {
+                    throw ProbeValuesReadException;
+                }
+
                 return Task.FromResult(ProbeValues.Count > 0 ? ProbeValues.Dequeue() : null);
             }
 
             public Task<string?> ReadProbeSearchAsync(ProbeBinding binding, CancellationToken cancellationToken)
             {
+                if (SearchReadException is not null)
+                {
+                    throw SearchReadException;
+                }
+
                 return Task.FromResult(SearchValues.Count > 0 ? SearchValues.Dequeue() : null);
             }
 
