@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('inspect', 'probe', 'send-json')]
+    [ValidateSet('inspect', 'probe', 'send-json', 'benchmark-send', 'cleanup-slot')]
     [string]$Command,
 
     [Parameter(Position = 1)]
@@ -17,7 +17,13 @@ param(
 
     [int]$TimeoutSec = 15,
 
-    [switch]$Compact
+    [switch]$Compact,
+
+    [int]$MeshCount = 8,
+
+    [string]$Parallelism = '1,2,4,8',
+
+    [string]$SlotId
 )
 
 Set-StrictMode -Version Latest
@@ -30,6 +36,8 @@ $projectPath = switch ($Command) {
     'inspect' { Join-Path $repoRoot 'tools/ResoniteInspect/ResoniteInspect.csproj' }
     'probe' { Join-Path $repoRoot 'tools/ResoniteProbe/ResoniteProbe.csproj' }
     'send-json' { Join-Path $repoRoot 'tools/ResoniteRawJson/ResoniteRawJson.csproj' }
+    'benchmark-send' { Join-Path $repoRoot 'tools/ResoniteSendBenchmark/ResoniteSendBenchmark.csproj' }
+    'cleanup-slot' { Join-Path $repoRoot 'tools/ResoniteSendBenchmark/ResoniteSendBenchmark.csproj' }
     default { throw "Unsupported command: $Command" }
 }
 
@@ -86,6 +94,32 @@ switch ($Command) {
         else {
             $dotnetArgs += '--pretty'
         }
+        break
+    }
+
+    'benchmark-send' {
+        $dotnetArgs += '--host'
+        $dotnetArgs += $LinkHost
+        $dotnetArgs += '--port'
+        $dotnetArgs += $Port.ToString()
+        $dotnetArgs += '--mesh-count'
+        $dotnetArgs += $MeshCount.ToString()
+        $dotnetArgs += '--parallelism'
+        $dotnetArgs += $Parallelism
+        break
+    }
+
+    'cleanup-slot' {
+        if ([string]::IsNullOrWhiteSpace($SlotId)) {
+            throw 'For cleanup-slot, specify -SlotId.'
+        }
+
+        $dotnetArgs += '--host'
+        $dotnetArgs += $LinkHost
+        $dotnetArgs += '--port'
+        $dotnetArgs += $Port.ToString()
+        $dotnetArgs += '--remove-slot-id'
+        $dotnetArgs += $SlotId
         break
     }
 

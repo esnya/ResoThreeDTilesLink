@@ -70,6 +70,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private readonly string _textureTempDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "textures");
         private readonly Dictionary<string, string> _assetsSlotByParentSlotId = new(StringComparer.Ordinal);
         private readonly Dictionary<string, SlotProgressBinding> _progressBindingsByParentSlotId = new(StringComparer.Ordinal);
+        private readonly SemaphoreSlim _streamPlacementGate = new(1, 1);
 
         private bool _directClientInitialized;
         private string? _sessionRootSlotId;
@@ -114,9 +115,7 @@ namespace ThreeDTilesLink.Core.Resonite
 
         public Task DisconnectAsync(CancellationToken cancellationToken)
         {
-            _logger.LogDebug("Closing Resonite Link session.");
-            DisposeDirectLink();
-            return Task.CompletedTask;
+            return DisconnectCoreAsync(cancellationToken);
         }
 
         public async Task<string> CreateSessionChildSlotAsync(string name, CancellationToken cancellationToken)
@@ -257,142 +256,150 @@ namespace ThreeDTilesLink.Core.Resonite
                 return null;
             }
 
-            var triangleSubmesh = new TriangleSubmeshRawData
+            await _streamPlacementGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                TriangleCount = payload.Indices.Count / 3
-            };
+                var triangleSubmesh = new TriangleSubmeshRawData
+                {
+                    TriangleCount = payload.Indices.Count / 3
+                };
 
-            var importMesh = new ImportMeshRawData
-            {
-                VertexCount = payload.Vertices.Count,
-                HasNormals = false,
-                HasTangents = false,
-                HasColors = false,
-                BoneWeightCount = 0,
-                UV_Channel_Dimensions = payload.HasUv0 ? [2] : [],
-                Submeshes = [triangleSubmesh]
-            };
+                var importMesh = new ImportMeshRawData
+                {
+                    VertexCount = payload.Vertices.Count,
+                    HasNormals = false,
+                    HasTangents = false,
+                    HasColors = false,
+                    BoneWeightCount = 0,
+                    UV_Channel_Dimensions = payload.HasUv0 ? [2] : [],
+                    Submeshes = [triangleSubmesh]
+                };
 
-            importMesh.AllocateBuffer();
+                importMesh.AllocateBuffer();
 
-            Span<float3> positionSpan = importMesh.Positions;
-            for (int i = 0; i < payload.Vertices.Count; i++)
-            {
-                Vector3 p = payload.Vertices[i];
-                positionSpan[i] = new float3 { x = p.X, y = p.Y, z = p.Z };
-            }
-
-            if (payload.HasUv0)
-            {
-                Span<float2> uvSpan = importMesh.AccessUV_2D(0);
+                Span<float3> positionSpan = importMesh.Positions;
                 for (int i = 0; i < payload.Vertices.Count; i++)
                 {
-                    Vector2 uv = i < payload.Uvs.Count ? payload.Uvs[i] : default;
-                    uvSpan[i] = new float2 { x = uv.X, y = uv.Y };
+                    Vector3 p = payload.Vertices[i];
+                    positionSpan[i] = new float3 { x = p.X, y = p.Y, z = p.Z };
                 }
-            }
 
-            Span<int> indicesSpan = triangleSubmesh.Indices;
-            for (int i = 0; i < payload.Indices.Count; i++)
-            {
-                indicesSpan[i] = payload.Indices[i];
-            }
-
-            if (_dumpMeshJson)
-            {
-                _ = Directory.CreateDirectory(_meshDumpDir);
-                byte[] dumpBytes = JsonSerializer.SerializeToUtf8Bytes(importMesh, LinkInterface.SerializationOptions);
-                string path = Path.Combine(_meshDumpDir, $"mesh_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss_fff}_{Guid.NewGuid():N}.json");
-                await File.WriteAllBytesAsync(path, dumpBytes, cancellationToken).ConfigureAwait(false);
-            }
-
-            AssetData meshAsset = EnsureSuccess(await _linkInterface.ImportMesh(importMesh).ConfigureAwait(false));
-
-            string? parentSlotId = string.IsNullOrWhiteSpace(payload.ParentSlotId)
-                ? _sessionRootSlotId
-                : payload.ParentSlotId;
-            if (string.IsNullOrWhiteSpace(parentSlotId))
-            {
-                throw new InvalidOperationException("Session root slot is not initialized.");
-            }
-
-            string assetSlotId = await CreateAssetSlotAsync(parentSlotId, payload.Name).ConfigureAwait(false);
-
-            string tileSlotId = await CreateSlotAsync(
-                payload.Name,
-                parentSlotId,
-                payload.SlotPosition,
-                payload.SlotRotation,
-                payload.SlotScale).ConfigureAwait(false);
-
-            string staticMeshId = await AddComponentAsync(
-                assetSlotId,
-                StaticMeshComponentType,
-                new Dictionary<string, Member>
+                if (payload.HasUv0)
                 {
-                    ["URL"] = new Field_Uri { Value = meshAsset.AssetURL }
-                }).ConfigureAwait(false);
-
-            _ = await AddComponentAsync(
-                tileSlotId,
-                MeshColliderComponentType,
-                new Dictionary<string, Member>
-                {
-                    ["Mesh"] = new Reference { TargetType = MeshAssetProviderType, TargetID = staticMeshId },
-                    ["CharacterCollider"] = new Field_bool { Value = true },
-                    ["Type"] = new Field_Enum
+                    Span<float2> uvSpan = importMesh.AccessUV_2D(0);
+                    for (int i = 0; i < payload.Vertices.Count; i++)
                     {
-                        EnumType = ColliderTypeEnumType,
-                        Value = "Static"
+                        Vector2 uv = i < payload.Uvs.Count ? payload.Uvs[i] : default;
+                        uvSpan[i] = new float2 { x = uv.X, y = uv.Y };
                     }
-                }).ConfigureAwait(false);
+                }
 
-            var materialMembers = new Dictionary<string, Member>();
-            Dictionary<string, MemberDefinition> materialMembersDefinition = await ResolveMaterialMemberDefinitionsAsync().ConfigureAwait(false);
-            if (materialMembersDefinition.ContainsKey("Smoothness"))
-            {
-                materialMembers["Smoothness"] = new Field_float { Value = 0f };
-            }
+                Span<int> indicesSpan = triangleSubmesh.Indices;
+                for (int i = 0; i < payload.Indices.Count; i++)
+                {
+                    indicesSpan[i] = payload.Indices[i];
+                }
 
-            AssetData? textureAsset = await ImportTextureAssetAsync(
-                payload.BaseColorTextureBytes,
-                payload.BaseColorTextureExtension,
-                cancellationToken).ConfigureAwait(false);
+                if (_dumpMeshJson)
+                {
+                    _ = Directory.CreateDirectory(_meshDumpDir);
+                    byte[] dumpBytes = JsonSerializer.SerializeToUtf8Bytes(importMesh, LinkInterface.SerializationOptions);
+                    string path = Path.Combine(_meshDumpDir, $"mesh_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss_fff}_{Guid.NewGuid():N}.json");
+                    await File.WriteAllBytesAsync(path, dumpBytes, cancellationToken).ConfigureAwait(false);
+                }
 
-            string? textureMemberName = await ResolveMaterialTextureMemberNameAsync().ConfigureAwait(false);
-            if (textureAsset is not null && !string.IsNullOrWhiteSpace(textureMemberName))
-            {
-                string staticTextureId = await AddComponentAsync(
+                AssetData meshAsset = EnsureSuccess(await _linkInterface.ImportMesh(importMesh).ConfigureAwait(false));
+
+                string? parentSlotId = string.IsNullOrWhiteSpace(payload.ParentSlotId)
+                    ? _sessionRootSlotId
+                    : payload.ParentSlotId;
+                if (string.IsNullOrWhiteSpace(parentSlotId))
+                {
+                    throw new InvalidOperationException("Session root slot is not initialized.");
+                }
+
+                string assetSlotId = await CreateAssetSlotAsync(parentSlotId, payload.Name).ConfigureAwait(false);
+
+                string tileSlotId = await CreateSlotAsync(
+                    payload.Name,
+                    parentSlotId,
+                    payload.SlotPosition,
+                    payload.SlotRotation,
+                    payload.SlotScale).ConfigureAwait(false);
+
+                string staticMeshId = await AddComponentAsync(
                     assetSlotId,
-                    StaticTextureComponentType,
+                    StaticMeshComponentType,
                     new Dictionary<string, Member>
                     {
-                        ["URL"] = new Field_Uri { Value = textureAsset.AssetURL }
+                        ["URL"] = new Field_Uri { Value = meshAsset.AssetURL }
                     }).ConfigureAwait(false);
 
-                materialMembers[textureMemberName] = new Reference
-                {
-                    TargetType = TextureAssetProviderType,
-                    TargetID = staticTextureId
-                };
-            }
-
-            string materialId = await AddComponentAsync(assetSlotId, MaterialComponentType, materialMembers).ConfigureAwait(false);
-
-            _ = await AddComponentAsync(
-                tileSlotId,
-                MeshRendererComponentType,
-                new Dictionary<string, Member>
-                {
-                    ["Mesh"] = new Reference { TargetType = MeshAssetProviderType, TargetID = staticMeshId },
-                    ["Materials"] = new SyncList
+                _ = await AddComponentAsync(
+                    tileSlotId,
+                    MeshColliderComponentType,
+                    new Dictionary<string, Member>
                     {
-                        Elements = [new Reference { TargetType = MaterialAssetProviderType, TargetID = materialId }]
-                    }
-                }).ConfigureAwait(false);
+                        ["Mesh"] = new Reference { TargetType = MeshAssetProviderType, TargetID = staticMeshId },
+                        ["CharacterCollider"] = new Field_bool { Value = true },
+                        ["Type"] = new Field_Enum
+                        {
+                            EnumType = ColliderTypeEnumType,
+                            Value = "Static"
+                        }
+                    }).ConfigureAwait(false);
 
-            await AttachAvatarProtectionAsync(tileSlotId).ConfigureAwait(false);
-            return tileSlotId;
+                var materialMembers = new Dictionary<string, Member>();
+                Dictionary<string, MemberDefinition> materialMembersDefinition = await ResolveMaterialMemberDefinitionsAsync().ConfigureAwait(false);
+                if (materialMembersDefinition.ContainsKey("Smoothness"))
+                {
+                    materialMembers["Smoothness"] = new Field_float { Value = 0f };
+                }
+
+                AssetData? textureAsset = await ImportTextureAssetAsync(
+                    payload.BaseColorTextureBytes,
+                    payload.BaseColorTextureExtension,
+                    cancellationToken).ConfigureAwait(false);
+
+                string? textureMemberName = await ResolveMaterialTextureMemberNameAsync().ConfigureAwait(false);
+                if (textureAsset is not null && !string.IsNullOrWhiteSpace(textureMemberName))
+                {
+                    string staticTextureId = await AddComponentAsync(
+                        assetSlotId,
+                        StaticTextureComponentType,
+                        new Dictionary<string, Member>
+                        {
+                            ["URL"] = new Field_Uri { Value = textureAsset.AssetURL }
+                        }).ConfigureAwait(false);
+
+                    materialMembers[textureMemberName] = new Reference
+                    {
+                        TargetType = TextureAssetProviderType,
+                        TargetID = staticTextureId
+                    };
+                }
+
+                string materialId = await AddComponentAsync(assetSlotId, MaterialComponentType, materialMembers).ConfigureAwait(false);
+
+                _ = await AddComponentAsync(
+                    tileSlotId,
+                    MeshRendererComponentType,
+                    new Dictionary<string, Member>
+                    {
+                        ["Mesh"] = new Reference { TargetType = MeshAssetProviderType, TargetID = staticMeshId },
+                        ["Materials"] = new SyncList
+                        {
+                            Elements = [new Reference { TargetType = MaterialAssetProviderType, TargetID = materialId }]
+                        }
+                    }).ConfigureAwait(false);
+
+                await AttachAvatarProtectionAsync(tileSlotId).ConfigureAwait(false);
+                return tileSlotId;
+            }
+            finally
+            {
+                _ = _streamPlacementGate.Release();
+            }
         }
 
         public async Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken)
@@ -411,8 +418,29 @@ namespace ThreeDTilesLink.Core.Resonite
 
         public async ValueTask DisposeAsync()
         {
+            await DisconnectCoreAsync(CancellationToken.None).ConfigureAwait(false);
+            _streamPlacementGate.Dispose();
+        }
+
+        private async Task DisconnectCoreAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _logger.LogDebug("Closing Resonite Link session.");
+
+            if (_linkInterface.IsConnected && !string.IsNullOrWhiteSpace(_sessionRootSlotId))
+            {
+                try
+                {
+                    Response response = await _linkInterface.RemoveSlot(new RemoveSlot { SlotID = _sessionRootSlotId }).ConfigureAwait(false);
+                    _ = EnsureSuccess(response);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to remove session root slot {SlotId} during disconnect.", _sessionRootSlotId);
+                }
+            }
+
             DisposeDirectLink();
-            await Task.CompletedTask.ConfigureAwait(false);
         }
 
         private async Task<string> CreateSlotAsync(
