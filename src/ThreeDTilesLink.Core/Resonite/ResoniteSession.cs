@@ -44,6 +44,8 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string MaterialAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Material>";
         private const string TextureAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.ITexture2D>";
         private const string ColliderTypeEnumType = "[FrooxEngine]FrooxEngine.ColliderType";
+        private const int ReadComponentMemberMaxAttempts = 3;
+        private static readonly TimeSpan ReadComponentMemberRetryDelay = TimeSpan.FromMilliseconds(25);
 
         private static readonly string[] PreferredTextureFieldNames = ["AlbedoTexture", "BaseColorTexture", "MainTexture", "Texture"];
         private static readonly string[] SimpleAvatarProtectionComponentTypeCandidates =
@@ -527,7 +529,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private async Task<float> ReadNumericMemberAsFloatAsync(string componentId, string memberName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Member member = await ReadComponentMemberAsync(componentId, memberName).ConfigureAwait(false);
+            Member member = await ReadComponentMemberAsync(componentId, memberName, cancellationToken).ConfigureAwait(false);
             return member switch
             {
                 Field_double doubleMember => (float)doubleMember.Value,
@@ -541,7 +543,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private async Task<bool> ReadBooleanMemberAsync(string componentId, string memberName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Member member = await ReadComponentMemberAsync(componentId, memberName).ConfigureAwait(false);
+            Member member = await ReadComponentMemberAsync(componentId, memberName, cancellationToken).ConfigureAwait(false);
             return member is Field_bool boolMember
                 ? boolMember.Value
                 : throw new InvalidOperationException(
@@ -551,7 +553,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private async Task<string> ReadStringMemberAsync(string componentId, string memberName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Member member = await ReadComponentMemberAsync(componentId, memberName).ConfigureAwait(false);
+            Member member = await ReadComponentMemberAsync(componentId, memberName, cancellationToken).ConfigureAwait(false);
             return member is Field_string stringMember
                 ? stringMember.Value
                 : throw new InvalidOperationException(
@@ -596,18 +598,31 @@ namespace ThreeDTilesLink.Core.Resonite
             _ = EnsureSuccess(response);
         }
 
-        private async Task<Member> ReadComponentMemberAsync(string componentId, string memberName)
+        private async Task<Member> ReadComponentMemberAsync(string componentId, string memberName, CancellationToken cancellationToken)
         {
             EnsureDirectConnection();
-            ComponentData componentData = EnsureSuccess(await _linkInterface.GetComponentData(
-                new GetComponent { ComponentID = componentId }).ConfigureAwait(false));
-
-            if (componentData.Data is null || !componentData.Data.Members.TryGetValue(memberName, out Member? member))
+            for (int attempt = 1; attempt <= ReadComponentMemberMaxAttempts; attempt++)
             {
-                throw new InvalidOperationException($"Component member not found: componentId={componentId} member={memberName}");
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    ComponentData componentData = EnsureSuccess(await _linkInterface.GetComponentData(
+                        new GetComponent { ComponentID = componentId }).ConfigureAwait(false));
+
+                    if (componentData.Data is null || !componentData.Data.Members.TryGetValue(memberName, out Member? member))
+                    {
+                        throw new InvalidOperationException($"Component member not found: componentId={componentId} member={memberName}");
+                    }
+
+                    return member;
+                }
+                catch (ResoniteLinkNoResponseException) when (attempt < ReadComponentMemberMaxAttempts)
+                {
+                    await Task.Delay(ReadComponentMemberRetryDelay, cancellationToken).ConfigureAwait(false);
+                }
             }
 
-            return member;
+            throw new ResoniteLinkNoResponseException();
         }
 
         private async Task<AssetData?> ImportTextureAssetAsync(byte[]? textureBytes, string? extension, CancellationToken cancellationToken)
@@ -1009,9 +1024,11 @@ namespace ThreeDTilesLink.Core.Resonite
             return ProgressTextDynamicVariablePath;
         }
 
-        private static T EnsureSuccess<T>(T response) where T : Response
+        private static T EnsureSuccess<T>(T? response) where T : Response
         {
-            return !response.Success
+            return response is null
+                ? throw new ResoniteLinkNoResponseException()
+                : !response.Success
                 ? throw new InvalidOperationException($"ResoniteLink request failed: {response.ErrorInfo}")
                 : response;
         }

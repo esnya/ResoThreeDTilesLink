@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
+using ThreeDTilesLink.Core.Resonite;
 
 namespace ThreeDTilesLink.Core.Pipeline
 {
@@ -20,6 +21,11 @@ namespace ThreeDTilesLink.Core.Pipeline
             catch (Exception ex) when (ShouldRethrow(ex))
             {
                 throw;
+            }
+            catch (Exception ex) when (IsTransientProbeReadFailure(ex))
+            {
+                _logger.LogDebug(ex, "Probe search query read returned no response.");
+                return null;
             }
             catch (Exception ex)
             {
@@ -43,6 +49,11 @@ namespace ThreeDTilesLink.Core.Pipeline
             catch (Exception ex) when (ShouldRethrow(ex))
             {
                 throw;
+            }
+            catch (Exception ex) when (IsTransientProbeReadFailure(ex))
+            {
+                _logger.LogDebug(ex, "Probe values read returned no response.");
+                return null;
             }
             catch (Exception ex)
             {
@@ -95,6 +106,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                 {
                     Message: "ResoniteLink is not connected."
                 };
+        }
+
+        private static bool IsTransientProbeReadFailure(Exception exception)
+        {
+            return exception is ResoniteLinkNoResponseException;
         }
     }
 }
