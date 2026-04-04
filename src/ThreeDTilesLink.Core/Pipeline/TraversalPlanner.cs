@@ -163,12 +163,29 @@ namespace ThreeDTilesLink.Core.Pipeline
                 .Where(static state => !state.Removed && state.SlotIds.Count > 0)
                 .ToDictionary(
                     static state => state.StateId,
-                    static state => new RetainedTileState(
+                    state => new RetainedTileState(
                         state.StateId,
                         state.TileId,
+                        state.ParentStateId,
+                        GetAncestorStableIds(state),
                         state.SlotIds.ToArray(),
                         state.AssetCopyright),
                     StringComparer.Ordinal);
+        }
+
+        private IReadOnlyList<string> GetAncestorStableIds(PlannerState.TileLifecycle state)
+        {
+            var ancestors = new List<string>();
+            string? currentId = state.ParentStateId;
+            while (!string.IsNullOrWhiteSpace(currentId))
+            {
+                ancestors.Add(currentId);
+                currentId = _state.TileStates.TryGetValue(currentId, out PlannerState.TileLifecycle? parentState)
+                    ? parentState.ParentStateId
+                    : null;
+            }
+
+            return ancestors;
         }
 
         public PlannerProgress GetProgress()
