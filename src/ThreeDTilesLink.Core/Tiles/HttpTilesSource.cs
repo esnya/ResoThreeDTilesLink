@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using System.Collections.Specialized;
 using System.Web;
 using ThreeDTilesLink.Core.Contracts;
@@ -10,6 +13,7 @@ namespace ThreeDTilesLink.Core.Tiles
         private static readonly Uri RootTilesetUri = new("https://tile.googleapis.com/v1/3dtiles/root.json");
 
         private readonly HttpClient _httpClient = httpClient;
+        private readonly ConcurrentDictionary<string, CachedTilesetJson> _tilesetJsonCache = new(StringComparer.Ordinal);
 
         public async Task<Tileset> FetchRootTilesetAsync(GoogleTilesAuth auth, CancellationToken cancellationToken)
         {
@@ -31,11 +35,18 @@ namespace ThreeDTilesLink.Core.Tiles
         private async Task<Tileset> FetchTilesetCoreAsync(Uri tilesetUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(auth);
+            string cacheKey = BuildTilesetCacheKey(tilesetUri, auth);
+            if (_tilesetJsonCache.TryGetValue(cacheKey, out CachedTilesetJson? cached))
+            {
+                return TilesetParser.Parse(cached.Json, cached.SourceUri);
+            }
+
             using HttpRequestMessage request = CreateRequest(tilesetUri, auth);
             using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
             await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
             string json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             Uri sourceUri = response.RequestMessage?.RequestUri ?? tilesetUri;
+            _tilesetJsonCache[cacheKey] = new CachedTilesetJson(sourceUri, json);
             return TilesetParser.Parse(json, sourceUri);
         }
 
@@ -78,6 +89,17 @@ namespace ThreeDTilesLink.Core.Tiles
             return builder.Uri;
         }
 
+        private static string BuildTilesetCacheKey(Uri tilesetUri, GoogleTilesAuth auth)
+        {
+            string authContext = !string.IsNullOrWhiteSpace(auth.ApiKey)
+                ? $"key:{auth.ApiKey}"
+                : !string.IsNullOrWhiteSpace(auth.BearerToken)
+                    ? $"bearer:{auth.BearerToken}"
+                    : "anonymous";
+            string combined = $"{tilesetUri.AbsoluteUri}|{authContext}";
+            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(combined)));
+        }
+
         private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
         {
             if (response.IsSuccessStatusCode)
@@ -91,5 +113,7 @@ namespace ThreeDTilesLink.Core.Tiles
                 null,
                 response.StatusCode);
         }
+
+        private sealed record CachedTilesetJson(Uri SourceUri, string Json);
     }
 }

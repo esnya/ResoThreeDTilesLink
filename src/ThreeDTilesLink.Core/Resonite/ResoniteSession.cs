@@ -29,6 +29,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string DynamicValueVariableStringComponentType = "[FrooxEngine]FrooxEngine.DynamicValueVariable<string>";
         private const string DynamicValueVariableValueMemberName = "Value";
         private const string StringFieldType = "[FrooxEngine]FrooxEngine.IField<string>";
+        private const string AssetsSlotName = "Assets";
         private const string GoogleTilesDynamicSpaceName = "Google3DTiles";
         private const string LicenseDynamicVariablePath = "World/ThreeDTilesLink.License";
         private const string DefaultGoogleMapsCreditText = "Google Maps";
@@ -58,6 +59,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private readonly string _meshDumpDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "mesh-json");
         private readonly HashSet<string> _tempTextureFiles = new(StringComparer.OrdinalIgnoreCase);
         private readonly string _textureTempDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "textures");
+        private readonly Dictionary<string, string> _assetsSlotByParentSlotId = new(StringComparer.Ordinal);
 
         private bool _directClientInitialized;
         private string? _sessionRootSlotId;
@@ -289,6 +291,8 @@ namespace ThreeDTilesLink.Core.Resonite
                 throw new InvalidOperationException("Session root slot is not initialized.");
             }
 
+            string assetSlotId = await CreateAssetSlotAsync(parentSlotId, payload.Name).ConfigureAwait(false);
+
             string tileSlotId = await CreateSlotAsync(
                 payload.Name,
                 parentSlotId,
@@ -297,7 +301,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 payload.SlotScale).ConfigureAwait(false);
 
             string staticMeshId = await AddComponentAsync(
-                tileSlotId,
+                assetSlotId,
                 StaticMeshComponentType,
                 new Dictionary<string, Member>
                 {
@@ -334,7 +338,7 @@ namespace ThreeDTilesLink.Core.Resonite
             if (textureAsset is not null && !string.IsNullOrWhiteSpace(textureMemberName))
             {
                 string staticTextureId = await AddComponentAsync(
-                    tileSlotId,
+                    assetSlotId,
                     StaticTextureComponentType,
                     new Dictionary<string, Member>
                     {
@@ -348,7 +352,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 };
             }
 
-            string materialId = await AddComponentAsync(tileSlotId, MaterialComponentType, materialMembers).ConfigureAwait(false);
+            string materialId = await AddComponentAsync(assetSlotId, MaterialComponentType, materialMembers).ConfigureAwait(false);
 
             _ = await AddComponentAsync(
                 tileSlotId,
@@ -374,6 +378,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 return;
             }
 
+            _ = _assetsSlotByParentSlotId.Remove(slotId);
             Response response = await _linkInterface.RemoveSlot(new RemoveSlot { SlotID = slotId }).ConfigureAwait(false);
             _ = EnsureSuccess(response);
         }
@@ -474,6 +479,25 @@ namespace ThreeDTilesLink.Core.Resonite
                 {
                     ["VariableName"] = new Field_string { Value = variablePath }
                 }).ConfigureAwait(false);
+        }
+
+        private async Task<string> CreateAssetSlotAsync(string parentSlotId, string assetName)
+        {
+            string assetsSlotId = await GetOrCreateAssetsSlotAsync(parentSlotId).ConfigureAwait(false);
+            return await CreateSlotAsync($"{assetName} Asset", assetsSlotId).ConfigureAwait(false);
+        }
+
+        private async Task<string> GetOrCreateAssetsSlotAsync(string parentSlotId)
+        {
+            if (_assetsSlotByParentSlotId.TryGetValue(parentSlotId, out string? assetsSlotId) &&
+                !string.IsNullOrWhiteSpace(assetsSlotId))
+            {
+                return assetsSlotId;
+            }
+
+            assetsSlotId = await CreateSlotAsync(AssetsSlotName, parentSlotId).ConfigureAwait(false);
+            _assetsSlotByParentSlotId[parentSlotId] = assetsSlotId;
+            return assetsSlotId;
         }
 
         private async Task<float> ReadNumericMemberAsFloatAsync(string componentId, string memberName, CancellationToken cancellationToken)
@@ -884,6 +908,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 _avatarProtectionHasReassignUserOnPackageImport = false;
                 _avatarProtectionUnavailable = false;
                 _localUserId = null;
+                _assetsSlotByParentSlotId.Clear();
 
                 foreach (string textureFile in _tempTextureFiles)
                 {
