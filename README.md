@@ -4,6 +4,8 @@ A .NET CLI tool that fetches Google Photorealistic 3D Tiles only around a specif
 
 This `README.md` is the human-facing entry point. Current operational details and AI-oriented procedures are kept separately under `docs/`.
 
+<img width="2560" height="1440" alt="2026-04-04 23 31 20" src="https://github.com/user-attachments/assets/3d52ad6c-7d7a-400e-a89a-46d1cf2d128e" />
+
 ## Prerequisites
 
 - `.NET SDK 10.0+`
