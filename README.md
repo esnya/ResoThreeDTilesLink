@@ -1,6 +1,7 @@
 # 3DTilesLink
 
 Google Photorealistic 3D Tiles を指定地点周辺だけ取得し、Resonite Link 経由で非永続に可視化する .NET CLI ツールです。
+単発 CLI (`ThreeDTilesLink.Cli`) と、Probe 監視で常駐実行するインタラクティブ版 (`ThreeDTilesLink.Interactive`) を含みます。
 
 ## Scope
 
@@ -87,4 +88,24 @@ dotnet run --project src/ThreeDTilesLink.Cli -- \
   --link-host 127.0.0.1 \
   --link-port 12000 \
   --dry-run
+```
+
+## Run (Interactive / Resident)
+
+接続時に Probe スロットを作成し、`World/3DTilesLink/Probe/{Latitude|Longitude|Range}` の `DynamicValueVariable<T>` を監視します。  
+値変更は `debounce/throttle` で平滑化し、再実行時は旧タスクをキャンセルして旧ランのスロットを削除します。
+
+```bash
+dotnet run --project src/ThreeDTilesLink.Interactive -- \
+  --lat 35.65858 \
+  --lon 139.745433 \
+  --half-width-m 400 \
+  --height-offset-m 20 \
+  --link-host 127.0.0.1 \
+  --link-port 12000 \
+  --poll-ms 250 \
+  --debounce-ms 800 \
+  --throttle-ms 3000 \
+  --probe-path-prefix World/3DTilesLink/Probe \
+  --probe-slot-name "3DTilesLink Probe"
 ```

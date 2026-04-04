@@ -461,7 +461,12 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                     foreach (MeshData mesh in meshes)
                     {
-                        TileMeshPayload payload = ToEunPayload(mesh, glbTile.WorldTransform, options.Reference, glbTile.TileId);
+                        TileMeshPayload payload = ToEunPayload(
+                            mesh,
+                            glbTile.WorldTransform,
+                            options.Reference,
+                            glbTile.TileId,
+                            options.MeshParentSlotId);
                         if (!options.DryRun)
                         {
                             string? slotId = await _resoniteLinkClient.SendTileMeshAsync(payload, cancellationToken).ConfigureAwait(false);
@@ -514,10 +519,14 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return true;
             }
 
-            if (!options.DryRun)
+            if (!options.DryRun && options.ManageResoniteConnection)
             {
                 _logger.LogInformation("Connecting to Resonite Link at {Host}:{Port}", options.LinkHost, options.LinkPort);
                 await _resoniteLinkClient.ConnectAsync(options.LinkHost, options.LinkPort, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (!options.DryRun)
+            {
                 await RefreshSessionLicenseCreditAsync().ConfigureAwait(false);
             }
 
@@ -742,7 +751,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
             finally
             {
-                if (!options.DryRun)
+                if (!options.DryRun && options.ManageResoniteConnection)
                 {
                     await _resoniteLinkClient.DisconnectAsync(cancellationToken).ConfigureAwait(false);
                 }
@@ -762,7 +771,12 @@ namespace ThreeDTilesLink.Core.Pipeline
             return new RunSummary(candidateTiles, processedTiles, streamedMeshes, failedTiles);
         }
 
-        private TileMeshPayload ToEunPayload(MeshData mesh, Matrix4x4d tileWorld, GeoReference reference, string tileId)
+        private TileMeshPayload ToEunPayload(
+            MeshData mesh,
+            Matrix4x4d tileWorld,
+            GeoReference reference,
+            string tileId,
+            string? parentSlotId)
         {
             // 3D Tiles/glTF transform chain:
             // glTF node local (Y-up) -> tiles/world frame (Z-up) -> tile world transform.
@@ -860,7 +874,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                 slotRotation,
                 slotScale,
                 mesh.BaseColorTextureBytes,
-                mesh.BaseColorTextureExtension);
+                mesh.BaseColorTextureExtension,
+                parentSlotId);
         }
 
         private static string BuildMeshSlotName(string tileId, string meshName)

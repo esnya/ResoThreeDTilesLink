@@ -12,5 +12,6 @@ namespace ThreeDTilesLink.Core.Models
         Quaternion SlotRotation,
         Vector3 SlotScale,
         byte[]? BaseColorTextureBytes,
-        string? BaseColorTextureExtension);
+        string? BaseColorTextureExtension,
+        string? ParentSlotId = null);
 }

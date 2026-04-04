@@ -10,5 +10,7 @@ namespace ThreeDTilesLink.Core.Models
         double DetailTargetM,
         bool DryRun,
         string? ApiKey,
-        double RenderStartSpanRatio = 4d);
+        double RenderStartSpanRatio = 4d,
+        bool ManageResoniteConnection = true,
+        string? MeshParentSlotId = null);
 }
