@@ -90,14 +90,14 @@ namespace ThreeDTilesLink.Core.Pipeline
                 await SetProgressAsync(request, 0f, "Fetching root tileset...", cancellationToken).ConfigureAwait(false);
                 Tiles.Tileset rootTileset = await _tilesSource.FetchRootTilesetAsync(auth, cancellationToken).ConfigureAwait(false);
                 _traversalPlanner.Initialize(rootTileset, request);
-                await SetProgressAsync(request, _traversalPlanner.GetSummary(), cancellationToken).ConfigureAwait(false);
+                await SetProgressAsync(request, _traversalPlanner.GetProgress(), cancellationToken).ConfigureAwait(false);
 
                 while (_traversalPlanner.TryPlanNext(out PlannerCommand? command) && command is not null)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     PlannerResult result = await ExecuteCommandAsync(command, request, auth, interactiveContext, cancellationToken).ConfigureAwait(false);
                     _traversalPlanner.ApplyResult(result);
-                    await SetProgressAsync(request, _traversalPlanner.GetSummary(), cancellationToken).ConfigureAwait(false);
+                    await SetProgressAsync(request, _traversalPlanner.GetProgress(), cancellationToken).ConfigureAwait(false);
                 }
 
                 RunSummary summary = _traversalPlanner.GetSummary();
@@ -422,6 +422,20 @@ namespace ThreeDTilesLink.Core.Pipeline
                 cancellationToken).ConfigureAwait(false);
         }
 
+        private async Task SetProgressAsync(TileRunRequest request, PlannerProgress progress, CancellationToken cancellationToken)
+        {
+            if (request.Output.DryRun)
+            {
+                return;
+            }
+
+            await _resoniteSession.SetProgressAsync(
+                request.Output.MeshParentSlotId,
+                BuildProgressValue(progress),
+                BuildProgressText(progress),
+                cancellationToken).ConfigureAwait(false);
+        }
+
         private async Task SetProgressAsync(TileRunRequest request, float progress01, string progressText, CancellationToken cancellationToken)
         {
             if (request.Output.DryRun)
@@ -448,10 +462,33 @@ namespace ThreeDTilesLink.Core.Pipeline
             return System.Math.Clamp((float)completedTiles / summary.CandidateTiles, 0f, 1f);
         }
 
+        private static float BuildProgressValue(PlannerProgress progress)
+        {
+            int completedUnits = progress.ProcessedTiles + progress.FailedTiles;
+            int pendingUnits =
+                progress.PendingTilesets +
+                progress.PendingGlbTiles +
+                progress.DeferredGlbTiles +
+                progress.PendingTileCommands;
+            int totalUnits = completedUnits + pendingUnits;
+
+            if (totalUnits <= 0)
+            {
+                return 0f;
+            }
+
+            return System.Math.Clamp((float)completedUnits / totalUnits, 0f, 1f);
+        }
+
         private static string BuildProgressText(RunSummary summary, bool completed)
         {
             string prefix = completed ? "Completed" : "Running";
             return $"{prefix}: candidate={summary.CandidateTiles} processed={summary.ProcessedTiles} streamed={summary.StreamedMeshes} failed={summary.FailedTiles}";
+        }
+
+        private static string BuildProgressText(PlannerProgress progress)
+        {
+            return $"Running: candidate={progress.CandidateTiles} processed={progress.ProcessedTiles} streamed={progress.StreamedMeshes} failed={progress.FailedTiles}";
         }
 
         private static string ResolveStableId(TileSelectionResult tile)
