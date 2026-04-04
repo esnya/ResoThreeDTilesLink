@@ -123,12 +123,8 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             switch (result)
             {
-                case FetchNestedTilesetWorkResult fetchResult:
-                    HandleFetchResult(fetchResult);
-                    break;
-
-                case StreamGlbTileWorkResult streamResult:
-                    HandleStreamResult(streamResult);
+                case ProcessNodeContentWorkResult processResult:
+                    HandleProcessResult(processResult);
                     break;
 
                 case RemoveParentTileSlotsWorkResult removeResult:
@@ -150,115 +146,117 @@ namespace ThreeDTilesLink.Core.Pipeline
             return new RunSummary(_candidateTiles, _processedTiles, _streamedMeshes, _failedTiles);
         }
 
-        private void HandleFetchResult(FetchNestedTilesetWorkResult result)
+        private void HandleProcessResult(ProcessNodeContentWorkResult result)
         {
             TileSelectionResult tile = result.Tile;
             string tileStateId = ResolveStableId(tile);
-            TileLifecycle tileState = GetOrCreateTileState(tileStateId, tile.TileId, ResolveParentStableId(tile), TileContentKind.Json);
-            _processedTiles++;
-
-            if (result.Succeeded && result.Tileset is not null)
-            {
-                if (!_tilesetCache.ContainsKey(tile.ContentUri.AbsoluteUri))
-                {
-                    _tilesetCache[tile.ContentUri.AbsoluteUri] = result.Tileset;
-                    _nestedTilesetFetches++;
-                }
-
-                var pending = new PendingTileset(
-                    result.Tileset,
-                tile.WorldTransform,
-                tile.TileId,
-                tile.Depth + 1,
-                tile.TileId,
-                ResolveStableId(tile));
-
-                _pendingTilesets.Enqueue(pending, GetTraversalPriority(tile));
-                return;
-            }
-
-            tileState.ChildrenDiscoveryDone = true;
-            MarkTileCompleted(tileStateId);
-
-            if (result.IsBadRequest)
-            {
-                _logger.LogInformation("Skipped non-traversable JSON tile {TileId} ({Uri}).", tile.TileId, tile.ContentUri);
-                return;
-            }
-
-            _failedTiles++;
-            if (result.Error is not null)
-            {
-                _logger.LogWarning(result.Error, "Failed while traversing JSON tile {TileId} from {Uri}", tile.TileId, tile.ContentUri);
-            }
-            else
-            {
-                _logger.LogWarning("Failed while traversing JSON tile {TileId} from {Uri}", tile.TileId, tile.ContentUri);
-            }
-        }
-
-        private void HandleStreamResult(StreamGlbTileWorkResult result)
-        {
-            TileSelectionResult tile = result.Tile;
-            string tileStateId = ResolveStableId(tile);
-            TileLifecycle tileState = GetOrCreateTileState(tileStateId, tile.TileId, ResolveParentStableId(tile), TileContentKind.Glb);
-
-            tileState.AttributionOwners = ParseAttributionOwners(
-                string.IsNullOrWhiteSpace(result.AssetCopyright)
-                    ? []
-                    : [result.AssetCopyright!]);
-            RegisterAttributionOrder(tileState.AttributionOwners);
-
-            foreach (string slotId in result.SlotIds)
-            {
-                _ = tileState.SlotIds.Add(slotId);
-            }
-
-            if (result.SlotIds.Count > 0)
-            {
-                MarkBranchVisible(tileStateId);
-            }
-
-            if (!Options.DryRun && result.SlotIds.Count > 0 && TryActivateAttributions(tileState))
-            {
-                QueueLicenseCreditUpdate();
-            }
-
-            _streamedMeshes += result.StreamedMeshCount;
+            TileLifecycle tileState = GetOrCreateTileState(tileStateId, tile.TileId, ResolveParentStableId(tile), tile.ContentKind);
 
             switch (result.Outcome)
             {
-                case StreamGlbOutcome.Success:
+                case NestedTilesetContentOutcome nested:
+                    _processedTiles++;
+                    if (!_tilesetCache.ContainsKey(tile.ContentUri.AbsoluteUri))
+                    {
+                        _tilesetCache[tile.ContentUri.AbsoluteUri] = nested.Tileset;
+                        _nestedTilesetFetches++;
+                    }
+
+                    _pendingTilesets.Enqueue(
+                        new PendingTileset(
+                            nested.Tileset,
+                            tile.WorldTransform,
+                            tile.TileId,
+                            tile.Depth + 1,
+                            tile.TileId,
+                            ResolveStableId(tile)),
+                        GetTraversalPriority(tile));
+                    break;
+
+                case StreamedRenderableContentOutcome streamed:
+                    ApplyRenderableContentResult(tileStateId, tileState, streamed.StreamedMeshCount, streamed.SlotIds, streamed.AssetCopyright);
                     _streamedTileCount++;
                     _processedTiles++;
                     _logger.LogInformation(
                         "Processed tile {TileId} with {MeshCount} meshes (span={Span}m depth={Depth}).",
                         tile.TileId,
-                        result.StreamedMeshCount,
+                        streamed.StreamedMeshCount,
                         tile.HorizontalSpanM?.ToString("F1", CultureInfo.InvariantCulture) ?? "n/a",
                         tile.Depth);
+                    MarkTileCompleted(tileStateId);
                     break;
 
-                case StreamGlbOutcome.BadRequest:
+                case UnavailableContentOutcome unavailable:
                     _processedTiles++;
-                    _logger.LogInformation("Skipped unavailable tile content {TileId} ({Uri}).", tile.TileId, tile.ContentUri);
-                    break;
-
-                case StreamGlbOutcome.Failed:
-                    _failedTiles++;
-                    if (result.Error is not null)
+                    tileState.ChildrenDiscoveryDone = true;
+                    MarkTileCompleted(tileStateId);
+                    if (tile.ContentKind == TileContentKind.Json)
                     {
-                        _logger.LogWarning(result.Error, "Failed to process tile {TileId} from {Uri}", tile.TileId, tile.ContentUri);
+                        _logger.LogInformation("Skipped non-traversable JSON tile {TileId} ({Uri}).", tile.TileId, tile.ContentUri);
                     }
                     else
                     {
-                        _logger.LogWarning("Failed to process tile {TileId} from {Uri}", tile.TileId, tile.ContentUri);
+                        _logger.LogInformation("Skipped unavailable tile content {TileId} ({Uri}).", tile.TileId, tile.ContentUri);
+                    }
+                    break;
+
+                case UnsupportedContentOutcome unsupported:
+                    _processedTiles++;
+                    tileState.ChildrenDiscoveryDone = true;
+                    MarkTileCompleted(tileStateId);
+                    _logger.LogInformation(
+                        "Skipped unsupported tile content {TileId} ({Uri}){ReasonSuffix}",
+                        tile.TileId,
+                        tile.ContentUri,
+                        string.IsNullOrWhiteSpace(unsupported.Reason) ? "." : $": {unsupported.Reason}");
+                    break;
+
+                case FailedContentOutcome failed:
+                    tileState.ChildrenDiscoveryDone = true;
+                    if (tile.ContentKind == TileContentKind.Glb)
+                    {
+                        ApplyRenderableContentResult(tileStateId, tileState, failed.StreamedMeshCount, failed.SlotIds ?? [], failed.AssetCopyright);
                     }
 
+                    MarkTileCompleted(tileStateId);
+                    _failedTiles++;
+                    _logger.LogWarning(failed.Error, "Failed to process tile {TileId} from {Uri}", tile.TileId, tile.ContentUri);
                     break;
+
+                default:
+                    throw new InvalidOperationException($"Unsupported node content outcome type: {result.Outcome.GetType().Name}");
+            }
+        }
+
+        private void ApplyRenderableContentResult(
+            string tileStateId,
+            TileLifecycle tileState,
+            int streamedMeshCount,
+            IReadOnlyList<string> slotIds,
+            string? assetCopyright)
+        {
+            tileState.AttributionOwners = ParseAttributionOwners(
+                string.IsNullOrWhiteSpace(assetCopyright)
+                    ? []
+                    : [assetCopyright]);
+            RegisterAttributionOrder(tileState.AttributionOwners);
+
+            foreach (string slotId in slotIds)
+            {
+                _ = tileState.SlotIds.Add(slotId);
             }
 
-            MarkTileCompleted(tileStateId);
+            if (slotIds.Count > 0)
+            {
+                MarkBranchVisible(tileStateId);
+            }
+
+            if (!Options.DryRun && slotIds.Count > 0 && TryActivateAttributions(tileState))
+            {
+                QueueLicenseCreditUpdate();
+            }
+
+            _streamedMeshes += streamedMeshCount;
         }
 
         private void HandleRemoveResult(RemoveParentTileSlotsWorkResult result)
@@ -458,7 +456,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                                 }
                                 else
                                 {
-                                    _outbound.Enqueue(new FetchNestedTilesetWorkItem(tile));
+                                    _outbound.Enqueue(new ProcessNodeContentWorkItem(tile));
                                 }
 
                                 continue;
@@ -543,7 +541,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             TileSelectionResult tile = _pendingGlbTiles.Dequeue();
             _candidateTiles++;
-            _outbound.Enqueue(new StreamGlbTileWorkItem(tile));
+            _outbound.Enqueue(new ProcessNodeContentWorkItem(tile));
         }
 
         private double GetTraversalPriority(TileSelectionResult tile)

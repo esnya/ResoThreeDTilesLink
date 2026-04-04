@@ -789,18 +789,20 @@ namespace ThreeDTilesLink.Tests
                 return Task.FromResult(_tileset);
             }
 
-            public Task<Tileset> FetchTilesetAsync(Uri tilesetUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
+            public Task<FetchedNodeContent> FetchNodeContentAsync(Uri contentUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
             {
-                return _nestedTilesets.TryGetValue(tilesetUri.AbsoluteUri, out Tileset? nested)
-                    ? Task.FromResult(nested)
-                    : throw new InvalidOperationException($"Unknown nested tileset URI: {tilesetUri}");
-            }
-
-            public Task<byte[]> FetchTileContentAsync(Uri contentUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
-            {
-                return _tileContentByUri.TryGetValue(contentUri.AbsoluteUri, out byte[]? content)
-                    ? Task.FromResult(content)
-                    : Task.FromResult(new byte[] { 1, 2, 3, 4 });
+                return Task.FromResult<FetchedNodeContent>(
+                    TileContentClassifier.Classify(contentUri) switch
+                    {
+                        TileContentKind.Json => _nestedTilesets.TryGetValue(contentUri.AbsoluteUri, out Tileset? nested)
+                            ? new NestedTilesetFetchedContent(nested)
+                            : throw new InvalidOperationException($"Unknown nested tileset URI: {contentUri}"),
+                        TileContentKind.Glb => new GlbFetchedContent(
+                            _tileContentByUri.TryGetValue(contentUri.AbsoluteUri, out byte[]? content)
+                                ? content
+                                : [1, 2, 3, 4]),
+                        _ => new UnsupportedFetchedContent()
+                    });
             }
         }
 

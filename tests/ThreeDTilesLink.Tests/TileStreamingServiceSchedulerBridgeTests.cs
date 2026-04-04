@@ -36,8 +36,8 @@ namespace ThreeDTilesLink.Tests
                 []);
 
             var scheduler = new FakeScheduler([
-                new FetchNestedTilesetWorkItem(jsonTile),
-                new StreamGlbTileWorkItem(glbTile),
+                new ProcessNodeContentWorkItem(jsonTile),
+                new ProcessNodeContentWorkItem(glbTile),
                 new RemoveParentTileSlotsWorkItem("state_p", "p", ["slot_to_remove"]),
                 new UpdateLicenseCreditWorkItem("Google; TestProvider")
             ]);
@@ -57,8 +57,10 @@ namespace ThreeDTilesLink.Tests
 
             _ = summary.Should().Be(new RunSummary(9, 8, 7, 6));
             _ = scheduler.Results.Should().HaveCount(4);
-            _ = scheduler.Results[0].Should().BeOfType<FetchNestedTilesetWorkResult>();
-            _ = scheduler.Results[1].Should().BeOfType<StreamGlbTileWorkResult>();
+            ProcessNodeContentWorkResult nested = scheduler.Results[0].Should().BeOfType<ProcessNodeContentWorkResult>().Subject;
+            _ = nested.Outcome.Should().BeOfType<NestedTilesetContentOutcome>();
+            ProcessNodeContentWorkResult streamed = scheduler.Results[1].Should().BeOfType<ProcessNodeContentWorkResult>().Subject;
+            _ = streamed.Outcome.Should().BeOfType<StreamedRenderableContentOutcome>();
             _ = scheduler.Results[2].Should().BeOfType<RemoveParentTileSlotsWorkResult>();
             _ = scheduler.Results[3].Should().BeOfType<UpdateLicenseCreditWorkResult>();
         }
@@ -103,14 +105,15 @@ namespace ThreeDTilesLink.Tests
                 return Task.FromResult(new Tileset(new Tile { Id = "root" }));
             }
 
-            public Task<Tileset> FetchTilesetAsync(Uri tilesetUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
+            public Task<FetchedNodeContent> FetchNodeContentAsync(Uri contentUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
             {
-                return Task.FromResult(new Tileset(new Tile { Id = "nestedRoot" }));
-            }
-
-            public Task<byte[]> FetchTileContentAsync(Uri contentUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
-            {
-                return Task.FromResult(new byte[] { 42 });
+                return Task.FromResult<FetchedNodeContent>(
+                    TileContentClassifier.Classify(contentUri) switch
+                    {
+                        TileContentKind.Json => new NestedTilesetFetchedContent(new Tileset(new Tile { Id = "nestedRoot" })),
+                        TileContentKind.Glb => new GlbFetchedContent([42]),
+                        _ => new UnsupportedFetchedContent()
+                    });
             }
         }
 

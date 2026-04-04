@@ -48,7 +48,7 @@ namespace ThreeDTilesLink.Core.Tiles
                     string tileId = ComposeId(idPrefix, tile.Id);
                     string stableId = ComposeStableId(idPrefix, tile.Id);
                     bool hasChildren = tile.Children.Count > 0;
-                    TileContentKind kind = DetectContentKind(tile.ContentUri);
+                    TileContentKind kind = TileContentClassifier.Classify(tile.ContentUri);
                     selected.Add(new TileSelectionResult(
                         tileId,
                         tile.ContentUri,
@@ -96,15 +96,8 @@ namespace ThreeDTilesLink.Core.Tiles
                 return false;
             }
 
-            // JSON tiles are relay nodes; keep traversing so descendants can provide renderable GLBs.
-            return DetectContentKind(tile.ContentUri) != TileContentKind.Json;
-        }
-
-        private static TileContentKind DetectContentKind(Uri contentUri)
-        {
-            return contentUri.AbsolutePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
-                ? TileContentKind.Json
-                : contentUri.AbsolutePath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) ? TileContentKind.Glb : TileContentKind.Other;
+            // Relay nodes should keep descending so descendants can provide renderable content.
+            return TileContentClassifier.Classify(tile.ContentUri) != TileContentKind.Json;
         }
 
         private static string ComposeId(string prefix, string id)

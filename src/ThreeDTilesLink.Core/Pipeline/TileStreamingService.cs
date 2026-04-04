@@ -76,38 +76,15 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             return workItem switch
             {
-                FetchNestedTilesetWorkItem fetchWork => await ExecuteFetchNestedTilesetAsync(fetchWork, auth, cancellationToken).ConfigureAwait(false),
-                StreamGlbTileWorkItem streamWork => await ExecuteStreamGlbTileAsync(streamWork, options, auth, cancellationToken).ConfigureAwait(false),
+                ProcessNodeContentWorkItem processWork => await ExecuteProcessNodeContentAsync(processWork, options, auth, cancellationToken).ConfigureAwait(false),
                 RemoveParentTileSlotsWorkItem removeWork => await ExecuteRemoveParentTileSlotsAsync(removeWork, cancellationToken).ConfigureAwait(false),
                 UpdateLicenseCreditWorkItem updateWork => await ExecuteUpdateLicenseCreditAsync(updateWork, cancellationToken).ConfigureAwait(false),
                 _ => throw new InvalidOperationException($"Unsupported scheduler work item type: {workItem.GetType().Name}")
             };
         }
 
-        private async Task<FetchNestedTilesetWorkResult> ExecuteFetchNestedTilesetAsync(
-            FetchNestedTilesetWorkItem workItem,
-            GoogleTilesAuth auth,
-            CancellationToken cancellationToken)
-        {
-            try
-            {
-                Tileset nestedTileset = await _fetcher
-                    .FetchTilesetAsync(workItem.Tile.ContentUri, auth, cancellationToken)
-                    .ConfigureAwait(false);
-                return new FetchNestedTilesetWorkResult(workItem.Tile, true, nestedTileset, false, null);
-            }
-            catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.BadRequest)
-            {
-                return new FetchNestedTilesetWorkResult(workItem.Tile, false, null, true, ex);
-            }
-            catch (Exception ex)
-            {
-                return new FetchNestedTilesetWorkResult(workItem.Tile, false, null, false, ex);
-            }
-        }
-
-        private async Task<StreamGlbTileWorkResult> ExecuteStreamGlbTileAsync(
-            StreamGlbTileWorkItem workItem,
+        private async Task<ProcessNodeContentWorkResult> ExecuteProcessNodeContentAsync(
+            ProcessNodeContentWorkItem workItem,
             StreamerOptions options,
             GoogleTilesAuth auth,
             CancellationToken cancellationToken)
@@ -118,58 +95,75 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                byte[] glb = await _fetcher.FetchTileContentAsync(workItem.Tile.ContentUri, auth, cancellationToken).ConfigureAwait(false);
-                GlbExtractResult extracted = _glbMeshExtractor.Extract(glb);
-                assetCopyright = extracted.AssetCopyright;
-                IReadOnlyList<MeshData> meshes = extracted.Meshes;
+                FetchedNodeContent content = await _fetcher
+                    .FetchNodeContentAsync(workItem.Tile.ContentUri, auth, cancellationToken)
+                    .ConfigureAwait(false);
 
-                foreach (MeshData mesh in meshes)
+                switch (content)
                 {
-                    TileMeshPayload payload = ToEunPayload(
-                        mesh,
-                        workItem.Tile.WorldTransform,
-                        options.Reference,
-                        workItem.Tile.TileId,
-                        options.MeshParentSlotId);
-                    if (!options.DryRun)
-                    {
-                        string? slotId = await _resoniteLinkClient.SendTileMeshAsync(payload, cancellationToken).ConfigureAwait(false);
-                        if (!string.IsNullOrWhiteSpace(slotId))
+                    case NestedTilesetFetchedContent nested:
+                        return new ProcessNodeContentWorkResult(
+                            workItem.Tile,
+                            new NestedTilesetContentOutcome(nested.Tileset));
+
+                    case GlbFetchedContent glb:
                         {
-                            streamedSlotIds.Add(slotId);
+                            GlbExtractResult extracted = _glbMeshExtractor.Extract(glb.GlbBytes);
+                            assetCopyright = extracted.AssetCopyright;
+                            IReadOnlyList<MeshData> meshes = extracted.Meshes;
+
+                            foreach (MeshData mesh in meshes)
+                            {
+                                TileMeshPayload payload = ToEunPayload(
+                                    mesh,
+                                    workItem.Tile.WorldTransform,
+                                    options.Reference,
+                                    workItem.Tile.TileId,
+                                    options.MeshParentSlotId);
+                                if (!options.DryRun)
+                                {
+                                    string? slotId = await _resoniteLinkClient.SendTileMeshAsync(payload, cancellationToken).ConfigureAwait(false);
+                                    if (!string.IsNullOrWhiteSpace(slotId))
+                                    {
+                                        streamedSlotIds.Add(slotId);
+                                    }
+                                }
+
+                                streamedMeshCount++;
+                            }
+
+                            return new ProcessNodeContentWorkResult(
+                                workItem.Tile,
+                                new StreamedRenderableContentOutcome(
+                                    streamedMeshCount,
+                                    streamedSlotIds,
+                                    assetCopyright));
                         }
-                    }
 
-                    streamedMeshCount++;
+                    case UnsupportedFetchedContent unsupported:
+                        return new ProcessNodeContentWorkResult(
+                            workItem.Tile,
+                            new UnsupportedContentOutcome(unsupported.Reason));
+
+                    default:
+                        throw new InvalidOperationException($"Unsupported fetched content type: {content.GetType().Name}");
                 }
-
-                return new StreamGlbTileWorkResult(
-                    workItem.Tile,
-                    StreamGlbOutcome.Success,
-                    streamedMeshCount,
-                    streamedSlotIds,
-                    assetCopyright,
-                    null);
             }
             catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.BadRequest)
             {
-                return new StreamGlbTileWorkResult(
+                return new ProcessNodeContentWorkResult(
                     workItem.Tile,
-                    StreamGlbOutcome.BadRequest,
-                    streamedMeshCount,
-                    streamedSlotIds,
-                    assetCopyright,
-                    ex);
+                    new UnavailableContentOutcome(ex));
             }
             catch (Exception ex)
             {
-                return new StreamGlbTileWorkResult(
+                return new ProcessNodeContentWorkResult(
                     workItem.Tile,
-                    StreamGlbOutcome.Failed,
-                    streamedMeshCount,
-                    streamedSlotIds,
-                    assetCopyright,
-                    ex);
+                    new FailedContentOutcome(
+                        ex,
+                        streamedMeshCount,
+                        streamedSlotIds,
+                        assetCopyright));
             }
         }
 

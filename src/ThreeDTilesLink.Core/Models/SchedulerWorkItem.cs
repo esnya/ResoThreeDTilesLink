@@ -2,11 +2,8 @@ namespace ThreeDTilesLink.Core.Models
 {
     public abstract record SchedulerWorkItem(SchedulerWorkKind Kind);
 
-    public sealed record FetchNestedTilesetWorkItem(TileSelectionResult Tile)
-        : SchedulerWorkItem(SchedulerWorkKind.FetchNestedTileset);
-
-    public sealed record StreamGlbTileWorkItem(TileSelectionResult Tile)
-        : SchedulerWorkItem(SchedulerWorkKind.StreamGlbTile);
+    public sealed record ProcessNodeContentWorkItem(TileSelectionResult Tile)
+        : SchedulerWorkItem(SchedulerWorkKind.ProcessNodeContent);
 
     public sealed record RemoveParentTileSlotsWorkItem(string StateId, string TileId, IReadOnlyList<string> SlotIds)
         : SchedulerWorkItem(SchedulerWorkKind.RemoveParentTileSlots);

@@ -4,29 +4,34 @@ namespace ThreeDTilesLink.Core.Models
 {
     public abstract record SchedulerWorkResult(SchedulerWorkKind Kind);
 
-    public sealed record FetchNestedTilesetWorkResult(
+    public sealed record ProcessNodeContentWorkResult(
         TileSelectionResult Tile,
-        bool Succeeded,
-        Tileset? Tileset,
-        bool IsBadRequest,
-        Exception? Error)
-        : SchedulerWorkResult(SchedulerWorkKind.FetchNestedTileset);
+        ProcessNodeContentOutcome Outcome)
+        : SchedulerWorkResult(SchedulerWorkKind.ProcessNodeContent);
 
-    public enum StreamGlbOutcome
-    {
-        Success = 0,
-        BadRequest = 1,
-        Failed = 2
-    }
+    public abstract record ProcessNodeContentOutcome;
 
-    public sealed record StreamGlbTileWorkResult(
-        TileSelectionResult Tile,
-        StreamGlbOutcome Outcome,
+    public sealed record NestedTilesetContentOutcome(Tileset Tileset)
+        : ProcessNodeContentOutcome;
+
+    public sealed record StreamedRenderableContentOutcome(
         int StreamedMeshCount,
         IReadOnlyList<string> SlotIds,
-        string? AssetCopyright,
-        Exception? Error)
-        : SchedulerWorkResult(SchedulerWorkKind.StreamGlbTile);
+        string? AssetCopyright)
+        : ProcessNodeContentOutcome;
+
+    public sealed record UnavailableContentOutcome(Exception? Error = null)
+        : ProcessNodeContentOutcome;
+
+    public sealed record UnsupportedContentOutcome(string? Reason = null)
+        : ProcessNodeContentOutcome;
+
+    public sealed record FailedContentOutcome(
+        Exception Error,
+        int StreamedMeshCount = 0,
+        IReadOnlyList<string>? SlotIds = null,
+        string? AssetCopyright = null)
+        : ProcessNodeContentOutcome;
 
     public sealed record RemoveParentTileSlotsWorkResult(
         string StateId,

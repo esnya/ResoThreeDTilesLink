@@ -24,7 +24,7 @@ namespace ThreeDTilesLink.Tests
             bool hasItem = scheduler.TryDequeueWorkItem(out SchedulerWorkItem? workItem);
 
             _ = hasItem.Should().BeTrue();
-            StreamGlbTileWorkItem stream = workItem.Should().BeOfType<StreamGlbTileWorkItem>().Subject;
+            ProcessNodeContentWorkItem stream = workItem.Should().BeOfType<ProcessNodeContentWorkItem>().Subject;
             _ = stream.Tile.TileId.Should().Be("c");
         }
 
@@ -41,7 +41,7 @@ namespace ThreeDTilesLink.Tests
             bool hasItem = scheduler.TryDequeueWorkItem(out SchedulerWorkItem? workItem);
 
             _ = hasItem.Should().BeTrue();
-            StreamGlbTileWorkItem stream = workItem.Should().BeOfType<StreamGlbTileWorkItem>().Subject;
+            ProcessNodeContentWorkItem stream = workItem.Should().BeOfType<ProcessNodeContentWorkItem>().Subject;
             _ = stream.Tile.TileId.Should().Be("p");
         }
 
@@ -62,28 +62,26 @@ namespace ThreeDTilesLink.Tests
             scheduler.HandleResult(new UpdateLicenseCreditWorkResult(initialUpdate.CreditString, true, null));
 
             _ = scheduler.TryDequeueWorkItem(out SchedulerWorkItem? parentItem);
-            StreamGlbTileWorkItem parentStream = parentItem.Should().BeOfType<StreamGlbTileWorkItem>().Subject;
-            scheduler.HandleResult(new StreamGlbTileWorkResult(
+            ProcessNodeContentWorkItem parentStream = parentItem.Should().BeOfType<ProcessNodeContentWorkItem>().Subject;
+            scheduler.HandleResult(new ProcessNodeContentWorkResult(
                 parentStream.Tile,
-                StreamGlbOutcome.Success,
-                1,
-                ["slot_parent"],
-                "Google; Parent",
-                null));
+                new StreamedRenderableContentOutcome(
+                    1,
+                    ["slot_parent"],
+                    "Google; Parent")));
 
             _ = scheduler.TryDequeueWorkItem(out SchedulerWorkItem? parentCreditItem);
             UpdateLicenseCreditWorkItem parentCredit = parentCreditItem.Should().BeOfType<UpdateLicenseCreditWorkItem>().Subject;
             scheduler.HandleResult(new UpdateLicenseCreditWorkResult(parentCredit.CreditString, true, null));
 
             _ = scheduler.TryDequeueWorkItem(out SchedulerWorkItem? childItem);
-            StreamGlbTileWorkItem childStream = childItem.Should().BeOfType<StreamGlbTileWorkItem>().Subject;
-            scheduler.HandleResult(new StreamGlbTileWorkResult(
+            ProcessNodeContentWorkItem childStream = childItem.Should().BeOfType<ProcessNodeContentWorkItem>().Subject;
+            scheduler.HandleResult(new ProcessNodeContentWorkResult(
                 childStream.Tile,
-                StreamGlbOutcome.Success,
-                1,
-                ["slot_child"],
-                "Google; Child",
-                null));
+                new StreamedRenderableContentOutcome(
+                    1,
+                    ["slot_child"],
+                    "Google; Child")));
 
             _ = scheduler.TryDequeueWorkItem(out SchedulerWorkItem? childCreditItem);
             UpdateLicenseCreditWorkItem childCredit = childCreditItem.Should().BeOfType<UpdateLicenseCreditWorkItem>().Subject;
@@ -111,14 +109,13 @@ namespace ThreeDTilesLink.Tests
             scheduler.HandleResult(new UpdateLicenseCreditWorkResult(initialCredit.CreditString, true, null));
 
             _ = scheduler.TryDequeueWorkItem(out SchedulerWorkItem? streamItem);
-            StreamGlbTileWorkItem stream = streamItem.Should().BeOfType<StreamGlbTileWorkItem>().Subject;
-            scheduler.HandleResult(new StreamGlbTileWorkResult(
+            ProcessNodeContentWorkItem stream = streamItem.Should().BeOfType<ProcessNodeContentWorkItem>().Subject;
+            scheduler.HandleResult(new ProcessNodeContentWorkResult(
                 stream.Tile,
-                StreamGlbOutcome.Success,
-                1,
-                ["slot_1"],
-                "Google; Airbus",
-                null));
+                new StreamedRenderableContentOutcome(
+                    1,
+                    ["slot_1"],
+                    "Google; Airbus")));
 
             _ = scheduler.TryDequeueWorkItem(out SchedulerWorkItem? secondItem);
             UpdateLicenseCreditWorkItem secondCredit = secondItem.Should().BeOfType<UpdateLicenseCreditWorkItem>().Subject;
@@ -137,14 +134,13 @@ namespace ThreeDTilesLink.Tests
             scheduler.Initialize(CreateRootTileset(), CreateOptions(dryRun: true, maxTiles: 1));
 
             _ = scheduler.TryDequeueWorkItem(out SchedulerWorkItem? firstItem).Should().BeTrue();
-            StreamGlbTileWorkItem stream = firstItem.Should().BeOfType<StreamGlbTileWorkItem>().Subject;
-            scheduler.HandleResult(new StreamGlbTileWorkResult(
+            ProcessNodeContentWorkItem stream = firstItem.Should().BeOfType<ProcessNodeContentWorkItem>().Subject;
+            scheduler.HandleResult(new ProcessNodeContentWorkResult(
                 stream.Tile,
-                StreamGlbOutcome.Success,
-                1,
-                [],
-                null,
-                null));
+                new StreamedRenderableContentOutcome(
+                    1,
+                    [],
+                    null)));
 
             _ = scheduler.TryDequeueWorkItem(out _).Should().BeFalse();
 

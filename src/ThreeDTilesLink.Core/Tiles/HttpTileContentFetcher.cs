@@ -13,10 +13,22 @@ namespace ThreeDTilesLink.Core.Tiles
 
         public async Task<Tileset> FetchRootTilesetAsync(GoogleTilesAuth auth, CancellationToken cancellationToken)
         {
-            return await FetchTilesetAsync(RootTilesetUri, auth, cancellationToken).ConfigureAwait(false);
+            return await FetchTilesetCoreAsync(RootTilesetUri, auth, cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task<Tileset> FetchTilesetAsync(Uri tilesetUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
+        public async Task<FetchedNodeContent> FetchNodeContentAsync(Uri contentUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
+        {
+            return TileContentClassifier.Classify(contentUri) switch
+            {
+                TileContentKind.Json => new NestedTilesetFetchedContent(
+                    await FetchTilesetCoreAsync(contentUri, auth, cancellationToken).ConfigureAwait(false)),
+                TileContentKind.Glb => new GlbFetchedContent(
+                    await FetchBinaryContentAsync(contentUri, auth, cancellationToken).ConfigureAwait(false)),
+                _ => new UnsupportedFetchedContent($"Unsupported tile content URI: {contentUri}")
+            };
+        }
+
+        private async Task<Tileset> FetchTilesetCoreAsync(Uri tilesetUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(auth);
             using HttpRequestMessage request = CreateRequest(tilesetUri, auth);
@@ -27,7 +39,7 @@ namespace ThreeDTilesLink.Core.Tiles
             return TilesetParser.Parse(json, sourceUri);
         }
 
-        public async Task<byte[]> FetchTileContentAsync(Uri contentUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
+        private async Task<byte[]> FetchBinaryContentAsync(Uri contentUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(auth);
             using HttpRequestMessage request = CreateRequest(contentUri, auth);
