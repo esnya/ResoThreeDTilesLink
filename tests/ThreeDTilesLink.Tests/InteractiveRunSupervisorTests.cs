@@ -5,6 +5,7 @@ using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
+using ThreeDTilesLink.Core.Tiles;
 
 namespace ThreeDTilesLink.Tests
 {
@@ -124,7 +125,7 @@ namespace ThreeDTilesLink.Tests
                         clock.RequestCancellation();
                     }
                 },
-                interactiveHandler: async (callIndex, _, retainedTiles, cancellationToken) =>
+                interactiveHandler: async (callIndex, _, interactive, cancellationToken) =>
                 {
                     if (callIndex == 1)
                     {
@@ -132,13 +133,16 @@ namespace ThreeDTilesLink.Tests
                         return new InteractiveTileRunResult(
                             new RunSummary(1, 1, 1, 0),
                             partialVisibleTiles,
-                            new HashSet<string>([partialStableId], StringComparer.Ordinal));
+                            new HashSet<string>([partialStableId], StringComparer.Ordinal),
+                            new InteractiveRunCheckpoint(
+                                new Dictionary<string, Tileset>(StringComparer.OrdinalIgnoreCase)));
                     }
 
                     return new InteractiveTileRunResult(
                         new RunSummary(1, 1, 1, 0),
-                        new Dictionary<string, RetainedTileState>(retainedTiles, StringComparer.Ordinal),
-                        new HashSet<string>(retainedTiles.Keys, StringComparer.Ordinal));
+                        new Dictionary<string, RetainedTileState>(interactive.RetainedTiles, StringComparer.Ordinal),
+                        new HashSet<string>(interactive.RetainedTiles.Keys, StringComparer.Ordinal),
+                        null);
                 });
             var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
 
@@ -150,6 +154,7 @@ namespace ThreeDTilesLink.Tests
             _ = coordinator.Requests.Should().HaveCount(2);
             _ = coordinator.RetainedTileInputs.Should().HaveCount(2);
             _ = coordinator.RetainedTileInputs[1].Should().ContainKey(partialStableId);
+            _ = coordinator.CheckpointInputs[1].Should().NotBeNull();
         }
 
         [Fact]
@@ -289,14 +294,15 @@ namespace ThreeDTilesLink.Tests
 
         private sealed class FakeTileRunCoordinator(
             Action<int> onRunStarted,
-            Func<int, TileRunRequest, IReadOnlyDictionary<string, RetainedTileState>, CancellationToken, Task<InteractiveTileRunResult>>? interactiveHandler = null) : ITileRunCoordinator
+            Func<int, TileRunRequest, InteractiveRunInput, CancellationToken, Task<InteractiveTileRunResult>>? interactiveHandler = null) : ITileRunCoordinator
         {
             private readonly Action<int> _onRunStarted = onRunStarted;
-            private readonly Func<int, TileRunRequest, IReadOnlyDictionary<string, RetainedTileState>, CancellationToken, Task<InteractiveTileRunResult>>? _interactiveHandler = interactiveHandler;
+            private readonly Func<int, TileRunRequest, InteractiveRunInput, CancellationToken, Task<InteractiveTileRunResult>>? _interactiveHandler = interactiveHandler;
             private int _interactiveRunCount;
 
             public List<TileRunRequest> Requests { get; } = [];
             public List<Dictionary<string, RetainedTileState>> RetainedTileInputs { get; } = [];
+            public List<InteractiveRunCheckpoint?> CheckpointInputs { get; } = [];
 
             public Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)
             {
@@ -307,24 +313,25 @@ namespace ThreeDTilesLink.Tests
 
             public Task<InteractiveTileRunResult> RunInteractiveAsync(
                 TileRunRequest request,
-                IReadOnlyDictionary<string, RetainedTileState> retainedTiles,
-                bool removeOutOfRangeTiles,
+                InteractiveRunInput interactive,
                 CancellationToken cancellationToken)
             {
                 Requests.Add(request);
-                RetainedTileInputs.Add(new Dictionary<string, RetainedTileState>(retainedTiles, StringComparer.Ordinal));
+                RetainedTileInputs.Add(new Dictionary<string, RetainedTileState>(interactive.RetainedTiles, StringComparer.Ordinal));
+                CheckpointInputs.Add(interactive.Checkpoint);
                 int callIndex = ++_interactiveRunCount;
                 _onRunStarted(callIndex);
 
                 if (_interactiveHandler is not null)
                 {
-                    return _interactiveHandler(callIndex, request, retainedTiles, cancellationToken);
+                    return _interactiveHandler(callIndex, request, interactive, cancellationToken);
                 }
 
                 return Task.FromResult(new InteractiveTileRunResult(
                     new RunSummary(1, 1, 1, 0),
-                    new Dictionary<string, RetainedTileState>(retainedTiles, StringComparer.Ordinal),
-                    new HashSet<string>(StringComparer.Ordinal)));
+                    new Dictionary<string, RetainedTileState>(interactive.RetainedTiles, StringComparer.Ordinal),
+                    new HashSet<string>(StringComparer.Ordinal),
+                    interactive.Checkpoint));
             }
         }
 

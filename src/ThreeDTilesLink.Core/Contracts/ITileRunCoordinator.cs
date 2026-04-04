@@ -7,8 +7,7 @@ namespace ThreeDTilesLink.Core.Contracts
         Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken);
         Task<InteractiveTileRunResult> RunInteractiveAsync(
             TileRunRequest request,
-            IReadOnlyDictionary<string, RetainedTileState> retainedTiles,
-            bool removeOutOfRangeTiles,
+            InteractiveRunInput interactive,
             CancellationToken cancellationToken);
     }
 }
