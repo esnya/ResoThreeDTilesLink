@@ -2,13 +2,14 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Math;
+using ThreeDTilesLink.Core.Mesh;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
 using ThreeDTilesLink.Core.Tiles;
 
 namespace ThreeDTilesLink.Tests
 {
-    public sealed class TileStreamingServiceTests
+    public sealed class TileRunCoordinatorTests
     {
         [Fact]
         public async Task Run_DryRun_ProcessesTilesWithoutSending()
@@ -23,23 +24,10 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var fetcher = new FakeFetcher(tileset);
-            var scheduler = CreateScheduler();
-            var extractor = new FakeExtractor();
-            var client = new FakeResoniteClient();
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            var service = new TileStreamingService(
-                fetcher,
-                scheduler,
-                extractor,
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
-
-            RunSummary summary = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, true, "k"),
-                CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: true), CancellationToken.None);
 
             _ = summary.CandidateTiles.Should().Be(2);
             _ = summary.ProcessedTiles.Should().Be(2);
@@ -63,23 +51,10 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var fetcher = new FakeFetcher(tileset);
-            var scheduler = CreateScheduler();
-            var extractor = new FakeExtractor();
-            var client = new FakeResoniteClient(failFirstSend: true);
+            var client = new FakeResoniteSession(failFirstSend: true);
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            var service = new TileStreamingService(
-                fetcher,
-                scheduler,
-                extractor,
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
-
-            RunSummary summary = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
-                CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = summary.CandidateTiles.Should().Be(2);
             _ = summary.ProcessedTiles.Should().Be(1);
@@ -102,33 +77,10 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var fetcher = new FakeFetcher(tileset);
-            var scheduler = CreateScheduler();
-            var extractor = new FakeExtractor();
-            var client = new FakeResoniteClient();
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            var service = new TileStreamingService(
-                fetcher,
-                scheduler,
-                extractor,
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
-
-            RunSummary summary = await service.RunAsync(
-                new StreamerOptions(
-                    new GeoReference(0d, 0d, 0d),
-                    500d,
-                    "127.0.0.1",
-                    12345,
-                    16,
-                    8,
-                    40d,
-                    false,
-                    "k",
-                    ManageResoniteConnection: false),
-                CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, manageConnection: false), CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(1);
             _ = client.ConnectCount.Should().Be(0);
@@ -156,26 +108,14 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var fetcher = new FakeFetcher(rootTileset, new Dictionary<string, Tileset>
-            {
-                ["https://example.com/nested.json"] = nestedTileset
-            });
-            var scheduler = CreateScheduler();
-            var extractor = new FakeExtractor();
-            var client = new FakeResoniteClient();
+            TileRunCoordinator coordinator = CreateCoordinator(
+                new FakeTilesSource(rootTileset, new Dictionary<string, Tileset>
+                {
+                    ["https://example.com/nested.json"] = nestedTileset
+                }),
+                new FakeResoniteSession());
 
-            var service = new TileStreamingService(
-                fetcher,
-                scheduler,
-                extractor,
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
-
-            RunSummary summary = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, true, "k"),
-                CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: true), CancellationToken.None);
 
             _ = summary.CandidateTiles.Should().Be(1);
             _ = summary.ProcessedTiles.Should().Be(2);
@@ -195,23 +135,10 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var fetcher = new FakeFetcher(tileset);
-            var scheduler = CreateScheduler();
-            var extractor = new FakeExtractor();
-            var client = new FakeResoniteClient();
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            var service = new TileStreamingService(
-                fetcher,
-                scheduler,
-                extractor,
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
-
-            RunSummary summary = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 8, 8, 40d, false, "k"),
-                CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 8), CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(1);
             _ = client.Payloads.Should().HaveCount(1);
@@ -233,23 +160,10 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var fetcher = new FakeFetcher(tileset);
-            var scheduler = CreateScheduler();
-            var extractor = new FakeExtractor();
-            var client = new FakeResoniteClient();
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            var service = new TileStreamingService(
-                fetcher,
-                scheduler,
-                extractor,
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
-
-            RunSummary summary = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 8, 8, 40d, false, "k"),
-                CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 8), CancellationToken.None);
 
             _ = summary.CandidateTiles.Should().Be(2);
             _ = summary.ProcessedTiles.Should().Be(2);
@@ -280,26 +194,15 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var fetcher = new FakeFetcher(rootTileset, new Dictionary<string, Tileset>
-            {
-                ["https://example.com/nested.json"] = nestedTileset
-            });
-            var scheduler = CreateScheduler();
-            var extractor = new FakeExtractor();
-            var client = new FakeResoniteClient();
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(
+                new FakeTilesSource(rootTileset, new Dictionary<string, Tileset>
+                {
+                    ["https://example.com/nested.json"] = nestedTileset
+                }),
+                client);
 
-            var service = new TileStreamingService(
-                fetcher,
-                scheduler,
-                extractor,
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
-
-            RunSummary summary = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
-                CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(2);
             _ = client.Payloads.Should().HaveCount(2);
@@ -330,19 +233,10 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var client = new FakeResoniteClient();
-            var service = new TileStreamingService(
-                new FakeFetcher(tileset),
-                CreateScheduler(),
-                new FakeExtractor(),
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            RunSummary summary = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
-                CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = summary.FailedTiles.Should().Be(0);
             _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
@@ -382,22 +276,15 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var client = new FakeResoniteClient();
-            var service = new TileStreamingService(
-                new FakeFetcher(rootTileset, new Dictionary<string, Tileset>
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(
+                new FakeTilesSource(rootTileset, new Dictionary<string, Tileset>
                 {
                     ["https://example.com/nested.json"] = nestedTileset
                 }),
-                CreateScheduler(),
-                new FakeExtractor(),
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
+                client);
 
-            RunSummary summary = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
-                CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = summary.FailedTiles.Should().Be(0);
             _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
@@ -427,19 +314,10 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var client = new FakeResoniteClient(failOnNameContains: "tile_c_m");
-            var service = new TileStreamingService(
-                new FakeFetcher(tileset),
-                CreateScheduler(),
-                new FakeExtractor(),
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
+            var client = new FakeResoniteSession(failOnNameContains: "tile_c_m");
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            RunSummary summary = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
-                CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = summary.FailedTiles.Should().BeGreaterThanOrEqualTo(1);
             _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
@@ -457,31 +335,23 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var client = new FakeResoniteClient();
-            var service = new TileStreamingService(
-                new FakeFetcher(
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(
+                new FakeTilesSource(
                     tileset,
                     tileContentByUri: new Dictionary<string, byte[]>
                     {
                         ["https://example.com/a.glb"] = [1]
                     }),
-                CreateScheduler(),
+                client,
                 new FakeExtractor(new Dictionary<byte, string>
                 {
                     [1] = "Google; Maxar Technologies"
-                }),
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
+                }));
 
-            _ = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 8, 8, 40d, false, "k"),
-                CancellationToken.None);
+            _ = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 8), CancellationToken.None);
 
-            _ = client.LicenseCredits.Should().ContainInOrder(
-                "Google Maps",
-                "Google; Maxar Technologies");
+            _ = client.LicenseCredits.Should().ContainInOrder("Google Maps", "Google; Maxar Technologies");
         }
 
         [Fact]
@@ -506,9 +376,9 @@ namespace ThreeDTilesLink.Tests
                     ]
                 });
 
-            var client = new FakeResoniteClient();
-            var service = new TileStreamingService(
-                new FakeFetcher(
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(
+                new FakeTilesSource(
                     rootTileset,
                     new Dictionary<string, Tileset>
                     {
@@ -518,23 +388,15 @@ namespace ThreeDTilesLink.Tests
                     {
                         ["https://example.com/leaf.glb"] = [2]
                     }),
-                CreateScheduler(),
+                client,
                 new FakeExtractor(new Dictionary<byte, string>
                 {
                     [2] = "Google; Airbus"
-                }),
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
+                }));
 
-            _ = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
-                CancellationToken.None);
+            _ = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
-            _ = client.LicenseCredits.Should().ContainInOrder(
-                "Google Maps",
-                "Google; Airbus");
+            _ = client.LicenseCredits.Should().ContainInOrder("Google Maps", "Google; Airbus");
         }
 
         [Fact]
@@ -571,9 +433,9 @@ namespace ThreeDTilesLink.Tests
                     ]
                 });
 
-            var client = new FakeResoniteClient();
-            var service = new TileStreamingService(
-                new FakeFetcher(
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(
+                new FakeTilesSource(
                     rootTileset,
                     new Dictionary<string, Tileset>
                     {
@@ -584,20 +446,14 @@ namespace ThreeDTilesLink.Tests
                         ["https://example.com/p.glb"] = [1],
                         ["https://example.com/leaf.glb"] = [2]
                     }),
-                CreateScheduler(),
+                client,
                 new FakeExtractor(new Dictionary<byte, string>
                 {
                     [1] = "Google; RootProvider",
                     [2] = "Google; NestedProvider"
-                }),
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
+                }));
 
-            _ = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 8, 40d, false, "k"),
-                CancellationToken.None);
+            _ = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = client.LicenseCredits.Should().ContainInOrder(
                 "Google Maps",
@@ -618,27 +474,21 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var client = new FakeResoniteClient();
-            var service = new TileStreamingService(
-                new FakeFetcher(
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(
+                new FakeTilesSource(
                     tileset,
                     tileContentByUri: new Dictionary<string, byte[]>
                     {
                         ["https://example.com/sample.glb"] = [3]
                     }),
-                CreateScheduler(),
+                client,
                 new FakeExtractor(new Dictionary<byte, string>
                 {
                     [3] = "Data SIO, NOAA, U.S. Navy, NGA, GEBCO;Landsat / Copernicus"
-                }),
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
+                }));
 
-            _ = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 8, 8, 40d, false, "k"),
-                CancellationToken.None);
+            _ = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 8), CancellationToken.None);
 
             _ = client.LicenseCredits.Should().ContainInOrder(
                 "Google Maps",
@@ -671,19 +521,10 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var client = new FakeResoniteClient();
-            var service = new TileStreamingService(
-                new FakeFetcher(tileset),
-                CreateScheduler(),
-                new FakeExtractor(),
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            RunSummary summary = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 16, 40d, false, "k", 0.5d),
-                CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxDepth: 16, bootstrapRangeMultiplier: 0.5d), CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(1);
             _ = client.Payloads.Should().HaveCount(1);
@@ -717,23 +558,44 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var client = new FakeResoniteClient();
-            var service = new TileStreamingService(
-                new FakeFetcher(tileset),
-                CreateScheduler(),
-                new FakeExtractor(),
-                new PassThroughTransformer(),
-                client,
-                new FakeGoogleAccessTokenProvider(),
-                NullLogger<TileStreamingService>.Instance);
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            RunSummary summary = await service.RunAsync(
-                new StreamerOptions(new GeoReference(0d, 0d, 0d), 500d, "127.0.0.1", 12345, 16, 16, 40d, false, "k", 0.5d),
-                CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxDepth: 16, bootstrapRangeMultiplier: 0.5d), CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(1);
             _ = client.Payloads.Should().HaveCount(1);
             _ = client.Payloads[0].Name.Should().Contain("tile_p_");
+        }
+
+        private static TileRunCoordinator CreateCoordinator(
+            ITilesSource tilesSource,
+            FakeResoniteSession session,
+            IGlbMeshExtractor? extractor = null)
+        {
+            var transformer = new PassThroughTransformer();
+            return new TileRunCoordinator(
+                tilesSource,
+                new TraversalPlanner(new TileSelector(transformer), NullLogger<TraversalPlanner>.Instance),
+                new TileContentProcessor(tilesSource, extractor ?? new FakeExtractor()),
+                new MeshPlacementService(transformer),
+                session,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileRunCoordinator>.Instance);
+        }
+
+        private static TileRunRequest CreateRequest(
+            bool dryRun,
+            int maxTiles = 16,
+            int maxDepth = 8,
+            double bootstrapRangeMultiplier = 4d,
+            bool manageConnection = true)
+        {
+            return new TileRunRequest(
+                new GeoReference(0d, 0d, 0d),
+                new TraversalOptions(500d, maxTiles, maxDepth, 40d, bootstrapRangeMultiplier),
+                new ResoniteOutputOptions("127.0.0.1", 12345, dryRun, manageConnection),
+                "k");
         }
 
         private static BoundingVolume CreateBox(double cx, double cy, double cz, double halfExtent)
@@ -748,13 +610,6 @@ namespace ThreeDTilesLink.Tests
                     0d, 0d, halfExtent
                 ]
             };
-        }
-
-        private static ITileStreamingScheduler CreateScheduler()
-        {
-            return new DefaultTileStreamingScheduler(
-                new TileSelector(new PassThroughTransformer()),
-                NullLogger<DefaultTileStreamingScheduler>.Instance);
         }
 
         private sealed class PassThroughTransformer : ICoordinateTransformer
@@ -775,10 +630,10 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
-        private sealed class FakeFetcher(
+        private sealed class FakeTilesSource(
             Tileset tileset,
             IReadOnlyDictionary<string, Tileset>? nestedTilesets = null,
-            IReadOnlyDictionary<string, byte[]>? tileContentByUri = null) : ITileContentFetcher
+            IReadOnlyDictionary<string, byte[]>? tileContentByUri = null) : ITilesSource
         {
             private readonly Tileset _tileset = tileset;
             private readonly IReadOnlyDictionary<string, Tileset> _nestedTilesets = nestedTilesets ?? new Dictionary<string, Tileset>();
@@ -830,7 +685,7 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
-        private sealed class FakeResoniteClient(bool failFirstSend = false, string? failOnNameContains = null) : IResoniteLinkClient
+        private sealed class FakeResoniteSession(bool failFirstSend = false, string? failOnNameContains = null) : IResoniteSession
         {
             private readonly bool _failFirstSend = failFirstSend;
             private readonly string? _failOnNameContains = failOnNameContains;
@@ -840,7 +695,7 @@ namespace ThreeDTilesLink.Tests
             public int SendCount { get; private set; }
             public int RemoveCount { get; private set; }
             public List<string> LicenseCredits { get; } = [];
-            public List<TileMeshPayload> Payloads { get; } = [];
+            public List<PlacedMeshPayload> Payloads { get; } = [];
             public List<string> RemovedSlotIds { get; } = [];
 
             public Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
@@ -849,13 +704,18 @@ namespace ThreeDTilesLink.Tests
                 return Task.CompletedTask;
             }
 
+            public Task<string> CreateSessionChildSlotAsync(string name, CancellationToken cancellationToken)
+            {
+                return Task.FromResult($"session_{name}");
+            }
+
             public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
             {
                 LicenseCredits.Add(creditString);
                 return Task.CompletedTask;
             }
 
-            public Task<string?> SendTileMeshAsync(TileMeshPayload payload, CancellationToken cancellationToken)
+            public Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
             {
                 SendCount++;
                 Payloads.Add(payload);

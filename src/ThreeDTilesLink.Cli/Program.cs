@@ -39,18 +39,20 @@ static async Task<int> RunAsync(string[] args)
         var runtime = new TileStreamingRuntime(loggerFactory, TimeSpan.FromSeconds(parsed.TimeoutSec));
         await using (runtime.ConfigureAwait(false))
         {
-            var options = new StreamerOptions(
+            var request = new TileRunRequest(
                 new GeoReference(parsed.Latitude, parsed.Longitude, parsed.HeightOffsetM),
-                parsed.RangeM,
-                parsed.ResoniteHost,
-                parsed.ResonitePort,
-                parsed.TileLimit,
-                parsed.DepthLimit,
-                parsed.DetailTargetM,
-                parsed.DryRun,
+                new TraversalOptions(
+                    parsed.RangeM,
+                    parsed.TileLimit,
+                    parsed.DepthLimit,
+                    parsed.DetailTargetM),
+                new ResoniteOutputOptions(
+                    parsed.ResoniteHost,
+                    parsed.ResonitePort,
+                    parsed.DryRun),
                 apiKey);
 
-            RunSummary summary = await runtime.RunAsync(options, CancellationToken.None).ConfigureAwait(false);
+            RunSummary summary = await runtime.RunAsync(request, CancellationToken.None).ConfigureAwait(false);
 
             Console.WriteLine($"CandidateTiles={summary.CandidateTiles} ProcessedTiles={summary.ProcessedTiles} StreamedMeshes={summary.StreamedMeshes} FailedTiles={summary.FailedTiles}");
             return 0;

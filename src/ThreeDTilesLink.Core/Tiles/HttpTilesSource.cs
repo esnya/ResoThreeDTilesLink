@@ -5,7 +5,7 @@ using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Tiles
 {
-    public sealed class HttpTileContentFetcher(HttpClient httpClient) : ITileContentFetcher
+    public sealed class HttpTilesSource(HttpClient httpClient) : ITilesSource
     {
         private static readonly Uri RootTilesetUri = new("https://tile.googleapis.com/v1/3dtiles/root.json");
 

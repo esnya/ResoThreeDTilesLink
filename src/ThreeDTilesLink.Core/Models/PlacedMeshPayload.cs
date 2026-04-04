@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace ThreeDTilesLink.Core.Models
 {
-    public sealed record TileMeshPayload(
+    public sealed record PlacedMeshPayload(
         string Name,
         IReadOnlyList<Vector3> Vertices,
         IReadOnlyList<int> Indices,

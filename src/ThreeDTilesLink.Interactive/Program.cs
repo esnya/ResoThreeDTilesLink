@@ -2,7 +2,6 @@ using DotNetEnv;
 using Microsoft.Extensions.Logging;
 using ThreeDTilesLink.Core.CommandLine;
 using ThreeDTilesLink.Core.Models;
-using ThreeDTilesLink.Core.Pipeline;
 using ThreeDTilesLink.Core.Runtime;
 
 int exitCode = await RunAsync(args).ConfigureAwait(false);
@@ -49,36 +48,31 @@ static async Task<int> RunAsync(string[] args)
         var runtime = new TileStreamingRuntime(loggerFactory, TimeSpan.FromSeconds(parsed.TimeoutSec));
         await using (runtime.ConfigureAwait(false))
         {
-            var probeConfiguration = new ProbeConfiguration(
-                parsed.ProbeName,
-                $"{parsed.ProbePath}.Latitude",
-                $"{parsed.ProbePath}.Longitude",
-                $"{parsed.ProbePath}.Range",
-                $"{parsed.ProbePath}.Search");
-
-            var options = new ProbeDrivenStreamerOptions(
+            var request = new InteractiveRunRequest(
                 parsed.ResoniteHost,
                 parsed.ResonitePort,
                 parsed.HeightOffsetM,
-                parsed.TileLimit,
-                parsed.DepthLimit,
-                parsed.DetailTargetM,
+                new TraversalOptions(
+                    RangeM: 0d,
+                    parsed.TileLimit,
+                    parsed.DepthLimit,
+                    parsed.DetailTargetM),
                 parsed.DryRun,
                 apiKey,
-                4d,
-                TimeSpan.FromMilliseconds(parsed.PollIntervalMs),
-                TimeSpan.FromMilliseconds(parsed.DebounceMs),
-                TimeSpan.FromMilliseconds(parsed.ThrottleMs),
-                probeConfiguration);
-
-            var service = new ProbeDrivenStreamingService(
-                runtime.StreamingService,
-                runtime.GeocodingClient,
-                loggerFactory.CreateLogger<ProbeDrivenStreamingService>());
+                new ProbeWatchOptions(
+                    TimeSpan.FromMilliseconds(parsed.PollIntervalMs),
+                    TimeSpan.FromMilliseconds(parsed.DebounceMs),
+                    TimeSpan.FromMilliseconds(parsed.ThrottleMs),
+                    new ProbeConfiguration(
+                        parsed.ProbeName,
+                        $"{parsed.ProbePath}.Latitude",
+                        $"{parsed.ProbePath}.Longitude",
+                        $"{parsed.ProbePath}.Range",
+                        $"{parsed.ProbePath}.Search")));
 
             Console.WriteLine(
                 $"Interactive mode started. Probe={parsed.ProbePath} (lat/lon/range/search). Poll={parsed.PollIntervalMs}ms Debounce={parsed.DebounceMs}ms Throttle={parsed.ThrottleMs}ms. Press Ctrl+C to stop.");
-            await service.RunAsync(options, appCts.Token).ConfigureAwait(false);
+            await runtime.InteractiveSupervisor.RunAsync(request, appCts.Token).ConfigureAwait(false);
             return 0;
         }
     }

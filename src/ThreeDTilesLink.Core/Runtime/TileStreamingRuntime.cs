@@ -6,6 +6,7 @@ using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Mesh;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
+using ThreeDTilesLink.Core.Resonite;
 using ThreeDTilesLink.Core.Tiles;
 
 namespace ThreeDTilesLink.Core.Runtime
@@ -29,32 +30,68 @@ namespace ThreeDTilesLink.Core.Runtime
             };
 
             var transformer = new GeographicCoordinateTransformer();
-            var fetcher = new HttpTileContentFetcher(_httpClient);
+            var tilesSource = new HttpTilesSource(_httpClient);
             var selector = new TileSelector(transformer);
-            var scheduler = new DefaultTileStreamingScheduler(
+            var traversalPlanner = new TraversalPlanner(
                 selector,
-                loggerFactory.CreateLogger<DefaultTileStreamingScheduler>());
+                loggerFactory.CreateLogger<TraversalPlanner>());
             var extractor = new GlbMeshExtractor();
+            var contentProcessor = new TileContentProcessor(tilesSource, extractor);
+            var meshPlacementService = new MeshPlacementService(transformer);
             var tokenProvider = new AdcAccessTokenProvider();
-            GeocodingClient = new GoogleGeocodingClient(_httpClient);
+            var geocodingClient = new GoogleGeocodingClient(_httpClient);
+            var searchResolver = new SearchResolver(geocodingClient);
+            LinkInterface? linkInterface = null;
+            ResoniteSession resoniteSession;
+            try
+            {
+#pragma warning disable CA2000
+                linkInterface = new LinkInterface();
+#pragma warning restore CA2000
+                resoniteSession = new ResoniteSession(
+                    linkInterface,
+                    loggerFactory.CreateLogger<ResoniteSession>());
+            }
+            catch
+            {
+                linkInterface?.Dispose();
+                throw;
+            }
 
-            StreamingService = new TileStreamingService(
-                fetcher,
-                scheduler,
-                extractor,
-                transformer,
-                new LinkInterface(),
+            var probeMonitor = new ProbeMonitor(
+                resoniteSession,
+                loggerFactory.CreateLogger<ProbeMonitor>());
+
+            RunCoordinator = new TileRunCoordinator(
+                tilesSource,
+                traversalPlanner,
+                contentProcessor,
+                meshPlacementService,
+                resoniteSession,
                 tokenProvider,
-                loggerFactory.CreateLogger<TileStreamingService>());
+                loggerFactory.CreateLogger<TileRunCoordinator>());
+
+            InteractiveSupervisor = new InteractiveRunSupervisor(
+                RunCoordinator,
+                resoniteSession,
+                resoniteSession,
+                searchResolver,
+                new SystemClock(),
+                probeMonitor,
+                loggerFactory.CreateLogger<InteractiveRunSupervisor>());
+
+            Session = resoniteSession;
         }
 
-        public TileStreamingService StreamingService { get; }
+        public TileRunCoordinator RunCoordinator { get; }
 
-        public GoogleGeocodingClient GeocodingClient { get; }
+        public InteractiveRunSupervisor InteractiveSupervisor { get; }
 
-        public Task<RunSummary> RunAsync(StreamerOptions options, CancellationToken cancellationToken)
+        public ResoniteSession Session { get; }
+
+        public Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)
         {
-            return StreamingService.RunAsync(options, cancellationToken);
+            return RunCoordinator.RunAsync(request, cancellationToken);
         }
 
         public async ValueTask DisposeAsync()
@@ -65,7 +102,7 @@ namespace ThreeDTilesLink.Core.Runtime
             }
 
             _disposed = true;
-            await StreamingService.DisposeAsync().ConfigureAwait(false);
+            await Session.DisposeAsync().ConfigureAwait(false);
             _httpClient.Dispose();
         }
     }
