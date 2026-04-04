@@ -1,6 +1,7 @@
 # 3DTilesLink
 
-A .NET CLI tool that fetches Google Photorealistic 3D Tiles only around a specified location and visualizes them non-persistently through Resonite Link.
+A .NET toolset that fetches Google Photorealistic 3D Tiles around a specified area and visualizes them non-persistently through Resonite Link.
+It includes both single-shot CLI mode (`ThreeDTilesLink.Cli`) and resident interactive mode (`ThreeDTilesLink.Interactive`).
 
 This `README.md` is the human-facing entry point. Current operational details and AI-oriented procedures are kept separately under `docs/`.
 
@@ -28,7 +29,7 @@ dotnet build ThreeDTilesLink.slnx
 dotnet test ThreeDTilesLink.slnx
 ```
 
-## Usage
+## Usage (CLI)
 
 ```bash
 dotnet run --project src/ThreeDTilesLink.Cli -- \
@@ -59,6 +60,31 @@ dotnet run --project src/ThreeDTilesLink.Cli -- \
   --link-host 127.0.0.1 \
   --link-port 12000 \
   --dry-run
+```
+
+## Usage (Interactive / Resident)
+
+At connection time, the app creates a probe slot and watches `DynamicValueVariable<T>` values under:
+
+- `World/3DTilesLink/Probe/Latitude`
+- `World/3DTilesLink/Probe/Longitude`
+- `World/3DTilesLink/Probe/Range`
+
+Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and old run slots are removed.
+
+```bash
+dotnet run --project src/ThreeDTilesLink.Interactive -- \
+  --lat 35.65858 \
+  --lon 139.745433 \
+  --half-width-m 400 \
+  --height-offset-m 20 \
+  --link-host 127.0.0.1 \
+  --link-port 12000 \
+  --poll-ms 250 \
+  --debounce-ms 800 \
+  --throttle-ms 3000 \
+  --probe-path-prefix World/3DTilesLink/Probe \
+  --probe-slot-name "3DTilesLink Probe"
 ```
 
 ## Documentation

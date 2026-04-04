@@ -91,6 +91,51 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task Run_ManageResoniteConnectionFalse_DoesNotConnectOrDisconnect()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") }
+                ]
+            });
+
+            var fetcher = new FakeFetcher(tileset);
+            var scheduler = CreateScheduler();
+            var extractor = new FakeExtractor();
+            var client = new FakeResoniteClient();
+
+            var service = new TileStreamingService(
+                fetcher,
+                scheduler,
+                extractor,
+                new PassThroughTransformer(),
+                client,
+                new FakeGoogleAccessTokenProvider(),
+                NullLogger<TileStreamingService>.Instance);
+
+            RunSummary summary = await service.RunAsync(
+                new StreamerOptions(
+                    new GeoReference(0d, 0d, 0d),
+                    500d,
+                    "127.0.0.1",
+                    12345,
+                    16,
+                    8,
+                    40d,
+                    false,
+                    "k",
+                    ManageResoniteConnection: false),
+                CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(1);
+            _ = client.ConnectCount.Should().Be(0);
+            _ = client.DisconnectCount.Should().Be(0);
+        }
+
+        [Fact]
         public async Task Run_NestedJsonTileset_TraversesAndStreamsLeafGlb()
         {
             var rootTileset = new Tileset(new Tile

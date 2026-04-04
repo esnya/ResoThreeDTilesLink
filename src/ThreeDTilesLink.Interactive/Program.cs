@@ -1,6 +1,7 @@
 using DotNetEnv;
 using Microsoft.Extensions.Logging;
 using ThreeDTilesLink.Core.Models;
+using ThreeDTilesLink.Core.Pipeline;
 using ThreeDTilesLink.Core.Runtime;
 
 int exitCode = await RunAsync(args).ConfigureAwait(false);
@@ -8,6 +9,8 @@ return exitCode;
 
 static async Task<int> RunAsync(string[] args)
 {
+    ConsoleCancelEventHandler? cancelHandler = null;
+
     try
     {
         _ = Env.TraversePath().NoClobber().Load();
@@ -26,7 +29,12 @@ static async Task<int> RunAsync(string[] args)
         double detailTargetM = GetOptionalDouble(parsed, "--detail-target-m", 30d);
         double renderStartSpanRatio = GetOptionalDouble(parsed, "--render-start-span-ratio", 4d);
         int timeoutSec = GetOptionalInt(parsed, "--timeout-sec", 120);
+        int pollMs = GetOptionalInt(parsed, "--poll-ms", 250);
+        int debounceMs = GetOptionalInt(parsed, "--debounce-ms", 800);
+        int throttleMs = GetOptionalInt(parsed, "--throttle-ms", 3000);
         bool dryRun = parsed.ContainsKey("--dry-run");
+        string probeSlotName = GetOptionalString(parsed, "--probe-slot-name", "3DTilesLink Probe");
+        string probePrefix = NormalizePathPrefix(GetOptionalString(parsed, "--probe-path-prefix", "World/3DTilesLink/Probe"));
         LogLevel logLevel = ParseLogLevel(GetOptionalString(parsed, "--log-level", "Information"));
 
         string apiKey = Environment.GetEnvironmentVariable("GOOGLE_MAPS_API_KEY") ?? string.Empty;
@@ -43,32 +51,79 @@ static async Task<int> RunAsync(string[] args)
                 });
         });
 
+        using var appCts = new CancellationTokenSource();
+        cancelHandler = (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            appCts.Cancel();
+        };
+        Console.CancelKeyPress += cancelHandler;
+
         var runtime = new TileStreamingRuntime(loggerFactory, TimeSpan.FromSeconds(timeoutSec));
         await using (runtime.ConfigureAwait(false))
         {
-            var options = new StreamerOptions(
-                new GeoReference(lat, lon, heightM),
-                halfWidthM,
+            var probeConfiguration = new ProbeConfiguration(
+                probeSlotName,
+                $"{probePrefix}/Latitude",
+                $"{probePrefix}/Longitude",
+                $"{probePrefix}/Range",
+                lat,
+                lon,
+                halfWidthM);
+
+            var options = new ProbeDrivenStreamerOptions(
                 linkHost,
                 linkPort,
+                heightM,
                 maxTiles,
                 maxDepth,
                 detailTargetM,
                 dryRun,
                 apiKey,
-                renderStartSpanRatio);
+                renderStartSpanRatio,
+                TimeSpan.FromMilliseconds(pollMs),
+                TimeSpan.FromMilliseconds(debounceMs),
+                TimeSpan.FromMilliseconds(throttleMs),
+                probeConfiguration);
 
-            RunSummary summary = await runtime.RunAsync(options, CancellationToken.None).ConfigureAwait(false);
+            var service = new ProbeDrivenStreamingService(
+                runtime.StreamingService,
+                runtime.ResoniteLinkClient,
+                loggerFactory.CreateLogger<ProbeDrivenStreamingService>());
 
-            Console.WriteLine($"CandidateTiles={summary.CandidateTiles} ProcessedTiles={summary.ProcessedTiles} StreamedMeshes={summary.StreamedMeshes} FailedTiles={summary.FailedTiles}");
+            Console.WriteLine(
+                $"Interactive mode started. Probe={probePrefix} (lat/lon/range). Poll={pollMs}ms Debounce={debounceMs}ms Throttle={throttleMs}ms. Press Ctrl+C to stop.");
+            await service.RunAsync(options, appCts.Token).ConfigureAwait(false);
             return 0;
         }
+    }
+    catch (OperationCanceledException)
+    {
+        return 0;
     }
     catch (Exception ex)
     {
         Console.Error.WriteLine(ex.Message);
         return 1;
     }
+    finally
+    {
+        if (cancelHandler is not null)
+        {
+            Console.CancelKeyPress -= cancelHandler;
+        }
+    }
+}
+
+static string NormalizePathPrefix(string input)
+{
+    string trimmed = input.Trim();
+    if (string.IsNullOrWhiteSpace(trimmed))
+    {
+        throw new InvalidOperationException("Probe path prefix cannot be empty.");
+    }
+
+    return trimmed.TrimEnd('/');
 }
 
 static Dictionary<string, string?> ParseArgs(IReadOnlyList<string> args)
