@@ -1,10 +1,11 @@
 using Microsoft.Extensions.Logging;
+using ResoniteLink;
 using ThreeDTilesLink.Core.Auth;
 using ThreeDTilesLink.Core.Geo;
+using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Mesh;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
-using ThreeDTilesLink.Core.Resonite;
 using ThreeDTilesLink.Core.Tiles;
 
 namespace ThreeDTilesLink.Core.Runtime
@@ -35,22 +36,21 @@ namespace ThreeDTilesLink.Core.Runtime
                 loggerFactory.CreateLogger<DefaultTileStreamingScheduler>());
             var extractor = new GlbMeshExtractor();
             var tokenProvider = new AdcAccessTokenProvider();
-            var resoniteClient = new ResoniteLinkClientAdapter();
+            GeocodingClient = new GoogleGeocodingClient(_httpClient);
 
-            ResoniteLinkClient = resoniteClient;
             StreamingService = new TileStreamingService(
                 fetcher,
                 scheduler,
                 extractor,
                 transformer,
-                resoniteClient,
+                new LinkInterface(),
                 tokenProvider,
                 loggerFactory.CreateLogger<TileStreamingService>());
         }
 
-        public ResoniteLinkClientAdapter ResoniteLinkClient { get; }
-
         public TileStreamingService StreamingService { get; }
+
+        public GoogleGeocodingClient GeocodingClient { get; }
 
         public Task<RunSummary> RunAsync(StreamerOptions options, CancellationToken cancellationToken)
         {
@@ -65,7 +65,7 @@ namespace ThreeDTilesLink.Core.Runtime
             }
 
             _disposed = true;
-            await ResoniteLinkClient.DisposeAsync().ConfigureAwait(false);
+            await StreamingService.DisposeAsync().ConfigureAwait(false);
             _httpClient.Dispose();
         }
     }

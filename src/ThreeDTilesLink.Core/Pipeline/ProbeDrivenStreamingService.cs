@@ -1,17 +1,14 @@
 using Microsoft.Extensions.Logging;
 using System.Globalization;
 using ThreeDTilesLink.Core.Models;
-using ThreeDTilesLink.Core.Resonite;
 
 namespace ThreeDTilesLink.Core.Pipeline
 {
     public sealed class ProbeDrivenStreamingService(
         TileStreamingService tileStreamingService,
-        ResoniteLinkClientAdapter resoniteLinkClient,
         ILogger<ProbeDrivenStreamingService> logger)
     {
         private readonly TileStreamingService _tileStreamingService = tileStreamingService;
-        private readonly ResoniteLinkClientAdapter _resoniteLinkClient = resoniteLinkClient;
         private readonly ILogger<ProbeDrivenStreamingService> _logger = logger;
 
         public async Task RunAsync(ProbeDrivenStreamerOptions options, CancellationToken cancellationToken)
@@ -33,10 +30,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             try
             {
                 _logger.LogInformation("Connecting to Resonite Link at {Host}:{Port}", options.ResoniteHost, options.ResonitePort);
-                await _resoniteLinkClient.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
+                await _tileStreamingService.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
                 connected = true;
 
-                probeBinding = await _resoniteLinkClient.CreateProbeAsync(options.Probe, cancellationToken).ConfigureAwait(false);
+                probeBinding = await _tileStreamingService.CreateProbeAsync(options.Probe, cancellationToken).ConfigureAwait(false);
                 _logger.LogInformation(
                     "Probe DV attached: slotId={SlotId} ownsSlot={OwnsSlot} lat={LatPath} lon={LonPath} range={RangePath}",
                     probeBinding.SlotId,
@@ -84,7 +81,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                             completedRunSlotId = await RemoveOldCompletedRunAsync(completedRunSlotId, cancellationToken).ConfigureAwait(false);
 
                             string runSlotName = BuildRunSlotName(pendingProbeValues);
-                            activeRunSlotId = await _resoniteLinkClient.CreateSessionChildSlotAsync(runSlotName, cancellationToken).ConfigureAwait(false);
+                            activeRunSlotId = await _tileStreamingService.CreateSessionChildSlotAsync(runSlotName, cancellationToken).ConfigureAwait(false);
                             activeRunCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                             StreamerOptions runOptions = BuildRunOptions(options, pendingProbeValues, activeRunSlotId);
 
@@ -130,7 +127,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 {
                     try
                     {
-                        await _resoniteLinkClient.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                        await _tileStreamingService.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -248,7 +245,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             try
             {
-                await _resoniteLinkClient.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
+                await _tileStreamingService.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -260,7 +257,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             try
             {
-                ProbeValues? values = await _resoniteLinkClient.ReadProbeValuesAsync(probeBinding, cancellationToken).ConfigureAwait(false);
+                ProbeValues? values = await _tileStreamingService.ReadProbeValuesAsync(probeBinding, cancellationToken).ConfigureAwait(false);
                 if (values is null || values.RangeM <= 0d)
                 {
                     return null;

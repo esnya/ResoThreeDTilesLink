@@ -72,7 +72,6 @@ static async Task<int> RunAsync(string[] args)
 
             var service = new ProbeDrivenStreamingService(
                 runtime.StreamingService,
-                runtime.ResoniteLinkClient,
                 loggerFactory.CreateLogger<ProbeDrivenStreamingService>());
 
             Console.WriteLine(
