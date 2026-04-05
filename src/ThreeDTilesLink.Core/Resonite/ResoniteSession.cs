@@ -320,8 +320,6 @@ namespace ThreeDTilesLink.Core.Resonite
                 cancellationToken).ConfigureAwait(false);
 
             return new WatchBinding(
-                _sessionRootSlotId,
-                false,
                 latBinding.ComponentId,
                 DynamicValueVariableValueMemberName,
                 latAliasBinding.ComponentId,

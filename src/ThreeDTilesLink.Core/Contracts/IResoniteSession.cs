@@ -5,7 +5,6 @@ namespace ThreeDTilesLink.Core.Contracts
     internal interface IResoniteSession
     {
         Task ConnectAsync(string host, int port, CancellationToken cancellationToken);
-        Task<string> CreateSessionChildSlotAsync(string name, CancellationToken cancellationToken);
         Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken);
         Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken);
         Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken);

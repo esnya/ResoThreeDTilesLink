@@ -44,8 +44,6 @@ namespace ThreeDTilesLink.Tests
         private static WatchBinding CreateBinding()
         {
             return new WatchBinding(
-                "watch",
-                false,
                 "lat",
                 "Value",
                 "lat_alias",

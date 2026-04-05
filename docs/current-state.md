@@ -55,6 +55,15 @@ This document contains only current operational information that is difficult to
 - When `send-json` uses `-JsonFile` from WSL, pass a Windows path. A Linux path such as `/tmp/...` is not readable from the host-side `dotnet.exe`.
 - In worktree-based host runs, MinVer may warn that a project directory is not a valid Git working directory. Treat that warning as non-blocking unless version calculation itself is the subject of the verification.
 - For live mesh transmission and removal behavior, prefer the application entry points such as `stream` or `interactive`. Use `send-json` mainly for connection checks and focused message inspection.
+- When `dotnet run` is needed from WSL for live verification, prefer host-side execution such as `cmd.exe /c dotnet.exe run ...` or a host-side PowerShell wrapper instead of Linux-side `dotnet`.
+- Do not record a Resonite Link port in documentation or scripts as a stable value. Treat it as live session input only.
+
+## Live Verification Focus
+
+- For stream verification, prefer a small area around Tokyo Tower, for example `--latitude 35.65858 --longitude 139.745433 --range 60`.
+- In stream verification, check that refinement preserves visible coverage while converging from coarse to fine tiles.
+- In stream verification logs, review the ordering of `Streamed tile ...` and `Removed tile ...` carefully. Removal must not get ahead of the additions required to preserve coverage.
+- A single `stream` run can still emit `Removed tile ...` during refinement. Do not assume removal only happens in `interactive`.
 
 Example:
 

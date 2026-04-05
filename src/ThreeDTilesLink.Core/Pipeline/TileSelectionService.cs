@@ -264,7 +264,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                             desiredView,
                             progress,
                             request.Output.DryRun,
-                            allowRemoval: discoveryTasks.Count == 0);
+                            allowRemoval: true);
                         if (writerCommand is not null)
                         {
                             MarkWriterInFlight(writerState, writerCommand);

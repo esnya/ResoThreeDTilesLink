@@ -174,10 +174,10 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             PlanningTree tree = BuildPlanningTree(facts, writerState);
             DateTimeOffset currentTime = now ?? DateTimeOffset.UtcNow;
-            HashSet<string> candidateStableIds = desiredView.CandidateStableIds is HashSet<string> hashSet
+            HashSet<string> selectionStableIds = desiredView.SelectedStableIds is HashSet<string> hashSet
                 ? hashSet
-                : desiredView.CandidateStableIds.ToHashSet(StringComparer.Ordinal);
-            var branchHasCandidatesMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
+                : desiredView.SelectedStableIds.ToHashSet(StringComparer.Ordinal);
+            var branchHasSelectionMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
             var replacementReadyAtMemo = new Dictionary<string, DateTimeOffset?>(StringComparer.Ordinal);
 
             if (writerState.InFlightSendStableId is not null ||
@@ -201,8 +201,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                             tile.StableId,
                             tree,
                             writerState,
-                            candidateStableIds,
-                            branchHasCandidatesMemo,
+                            selectionStableIds,
+                            branchHasSelectionMemo,
                             replacementReadyAtMemo)
                     })
                     .Where(entry => entry.ReadyAt is not null)
@@ -1049,7 +1049,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             HashSet<string> candidateStableIds = desiredView.CandidateStableIds is HashSet<string> hashSet
                 ? hashSet
                 : desiredView.CandidateStableIds.ToHashSet(StringComparer.Ordinal);
-            var branchHasCandidatesMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
+            HashSet<string> selectionStableIds = desiredView.SelectedStableIds is HashSet<string> selectedHashSet
+                ? selectedHashSet
+                : desiredView.SelectedStableIds.ToHashSet(StringComparer.Ordinal);
+            var branchHasSelectionMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
             var replacementReadyAtMemo = new Dictionary<string, DateTimeOffset?>(StringComparer.Ordinal);
 
             return writerState.VisibleTiles.Values.Count(tile =>
@@ -1060,8 +1063,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                     tile.StableId,
                     tree,
                     writerState,
-                    candidateStableIds,
-                    branchHasCandidatesMemo,
+                    selectionStableIds,
+                    branchHasSelectionMemo,
                     replacementReadyAtMemo) is not null);
         }
 
@@ -1069,8 +1072,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             string stableId,
             PlanningTree tree,
             WriterState writerState,
-            HashSet<string> candidateStableIds,
-            Dictionary<string, bool> branchHasCandidatesMemo,
+            HashSet<string> selectionStableIds,
+            Dictionary<string, bool> branchHasSelectionMemo,
             Dictionary<string, DateTimeOffset?> memo)
         {
             if (!tree.Nodes.TryGetValue(stableId, out PlanningNode? node) ||
@@ -1084,7 +1087,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             foreach (PlanningNode child in node.Children)
             {
-                if (!BranchHasCandidate(child, candidateStableIds, branchHasCandidatesMemo))
+                if (!BranchHasSelectedTile(child, selectionStableIds, branchHasSelectionMemo))
                 {
                     continue;
                 }
@@ -1094,8 +1097,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                     child,
                     tree,
                     writerState,
-                    candidateStableIds,
-                    branchHasCandidatesMemo,
+                    selectionStableIds,
+                    branchHasSelectionMemo,
                     memo);
                 if (childReadyAt is null)
                 {
@@ -1115,8 +1118,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             PlanningNode node,
             PlanningTree tree,
             WriterState writerState,
-            HashSet<string> candidateStableIds,
-            Dictionary<string, bool> branchHasCandidatesMemo,
+            HashSet<string> selectionStableIds,
+            Dictionary<string, bool> branchHasSelectionMemo,
             Dictionary<string, DateTimeOffset?> memo)
         {
             if (memo.TryGetValue(node.StableId, out DateTimeOffset? cached))
@@ -1142,7 +1145,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             foreach (PlanningNode child in node.Children)
             {
-                if (!BranchHasCandidate(child, candidateStableIds, branchHasCandidatesMemo))
+                if (!BranchHasSelectedTile(child, selectionStableIds, branchHasSelectionMemo))
                 {
                     continue;
                 }
@@ -1152,8 +1155,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                     child,
                     tree,
                     writerState,
-                    candidateStableIds,
-                    branchHasCandidatesMemo,
+                    selectionStableIds,
+                    branchHasSelectionMemo,
                     memo);
                 if (childReadyAt is null)
                 {
@@ -1179,6 +1182,35 @@ namespace ThreeDTilesLink.Core.Pipeline
             return visibleSince == DateTimeOffset.MinValue
                 ? DateTimeOffset.MinValue
                 : visibleSince + VisibleReplacementGrace;
+        }
+
+        private static bool BranchHasSelectedTile(
+            PlanningNode node,
+            HashSet<string> selectionStableIds,
+            Dictionary<string, bool> memo)
+        {
+            if (memo.TryGetValue(node.StableId, out bool cached))
+            {
+                return cached;
+            }
+
+            if (selectionStableIds.Contains(node.StableId))
+            {
+                memo[node.StableId] = true;
+                return true;
+            }
+
+            foreach (PlanningNode child in node.Children)
+            {
+                if (BranchHasSelectedTile(child, selectionStableIds, memo))
+                {
+                    memo[node.StableId] = true;
+                    return true;
+                }
+            }
+
+            memo[node.StableId] = false;
+            return false;
         }
 
         private static bool ShouldPrioritizeCoverage(TileRunRequest request, TileSelectionResult tile)

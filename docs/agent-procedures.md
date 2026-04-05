@@ -18,8 +18,10 @@ This document contains procedures for AI and coding agents. It keeps only decisi
 
 1. Do not guess type names or member names.
 2. Confirm required values from the live Resonite Link.
-3. Use the official ResoniteLink REPL via `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` for live inspection and member confirmation.
-4. If real-environment verification was not possible, state that assumption explicitly in the change description.
+3. From WSL, prefer host-side execution for live verification, including `cmd.exe /c dotnet.exe run ...` or `pwsh.exe` wrappers.
+4. Use `stream` to confirm live send and remove ordering.
+5. Use the official ResoniteLink REPL via `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` for live inspection and member confirmation when raw JSON inspection is insufficient.
+6. If real-environment verification was not possible, state that assumption explicitly in the change description.
 
 ## Documentation Update Rules
 

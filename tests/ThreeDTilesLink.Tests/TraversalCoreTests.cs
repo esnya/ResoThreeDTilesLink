@@ -449,6 +449,46 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void PlanWriterCommand_DoesNotRemoveVisibleParent_WhenCandidateSetMissesRequiredSelectedBranch()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p", "https://example.com/p.glb", depth: 0, parentTileId: null, hasChildren: true, span: 120d),
+                CreateTile("c0", "https://example.com/c0.glb", depth: 1, parentTileId: "p", hasChildren: true, span: 60d),
+                CreateTile("c1", "https://example.com/c1.glb", depth: 1, parentTileId: "p", hasChildren: true, span: 60d),
+                CreateTile("g0", "https://example.com/g0.glb", depth: 2, parentTileId: "c0", hasChildren: false, span: 30d, stableId: StableId("g0"), parentStableId: StableId("c0")),
+                CreateTile("g1", "https://example.com/g1.glb", depth: 2, parentTileId: "c1", hasChildren: false, span: 30d, stableId: StableId("g1"), parentStableId: StableId("c1"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: true), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent"),
+                [StableId("g0")] = new(StableId("g0"), "g0", StableId("c0"), [StableId("p"), StableId("c0")], ["slot_g0"], "Google; Grandchild 0")
+            });
+            MarkPrepared(
+                facts,
+                "g1",
+                CreatePreparedContent("g1", parentTileId: "c1", stableId: StableId("g1"), parentStableId: StableId("c1")),
+                order: 0,
+                stableId: StableId("g1"));
+
+            DesiredView desired = new(
+                new HashSet<string>([StableId("g0"), StableId("g1")], StringComparer.Ordinal),
+                new HashSet<string>([StableId("p"), StableId("c0"), StableId("c1"), StableId("g0"), StableId("g1")], StringComparer.Ordinal),
+                new HashSet<string>([StableId("p"), StableId("g0")], StringComparer.Ordinal));
+            WriterCommand? writerCommand = core.PlanWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(5, 2, 1, 0),
+                dryRun: true);
+
+            _ = writerCommand.Should().BeOfType<SendTileWriterCommand>()
+                .Which.Content.Tile.TileId.Should().Be("g1");
+        }
+
+        [Fact]
         public void Initialize_CachedNestedTileset_ExpandsRelayBranch()
         {
             TraversalCore core = CreateCore(prefix => prefix switch

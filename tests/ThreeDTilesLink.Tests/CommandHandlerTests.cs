@@ -58,7 +58,6 @@ namespace ThreeDTilesLink.Tests
                 3000,
                 true,
                 true,
-                "3DTilesLink Watch",
                 "World/ThreeDTilesLink.Watch",
                 LogLevel.Trace);
 
@@ -77,7 +76,6 @@ namespace ThreeDTilesLink.Tests
             _ = request.Watch.PollInterval.Should().Be(TimeSpan.FromMilliseconds(250));
             _ = request.Watch.Debounce.Should().Be(TimeSpan.FromMilliseconds(800));
             _ = request.Watch.Throttle.Should().Be(TimeSpan.FromMilliseconds(3000));
-            _ = request.Watch.Configuration.SlotName.Should().Be("3DTilesLink Watch");
             _ = request.Watch.Configuration.LatitudeVariablePath.Should().Be("World/ThreeDTilesLink.Watch.Latitude");
             _ = request.Watch.Configuration.LongitudeVariablePath.Should().Be("World/ThreeDTilesLink.Watch.Longitude");
             _ = request.Watch.Configuration.RangeVariablePath.Should().Be("World/ThreeDTilesLink.Watch.Range");

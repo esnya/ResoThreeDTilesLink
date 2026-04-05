@@ -12,7 +12,6 @@ namespace ThreeDTilesLink.Core.Pipeline
         double RangeM);
 
     internal sealed record InteractiveLoopState(
-        string? SessionSlotId,
         GeoReference? PlacementReference,
         InteractiveRangeFootprint? LastRequestedFootprint,
         InteractiveActiveRun? ActiveRun,
@@ -33,7 +32,6 @@ namespace ThreeDTilesLink.Core.Pipeline
         internal static InteractiveLoopState CreateInitial()
         {
             return new InteractiveLoopState(
-                SessionSlotId: null,
                 PlacementReference: null,
                 LastRequestedFootprint: null,
                 ActiveRun: null,

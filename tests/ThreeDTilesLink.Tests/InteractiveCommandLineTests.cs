@@ -42,7 +42,6 @@ namespace ThreeDTilesLink.Tests
                 "--throttle", "3000",
                 "--remove-out-of-range",
                 "--watch-path", "World/ThreeDTilesLink/Watch/",
-                "--watch-name", "3DTilesLink Watch",
                 "--dry-run",
                 "--log-level", "Trace"
             ]);
@@ -56,7 +55,6 @@ namespace ThreeDTilesLink.Tests
             _ = parsed.ThrottleMs.Should().Be(3000);
             _ = parsed.RemoveOutOfRange.Should().BeTrue();
             _ = parsed.WatchPath.Should().Be("World/ThreeDTilesLink.Watch");
-            _ = parsed.WatchName.Should().Be("3DTilesLink Watch");
             _ = parsed.LogLevel.Should().Be(LogLevel.Trace);
         }
 

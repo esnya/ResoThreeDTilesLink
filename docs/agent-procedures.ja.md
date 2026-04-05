@@ -18,8 +18,10 @@
 
 1. 型名やメンバー名を推測しない
 2. 必要な値は live の Resonite Link から確認する
-3. live 確認とメンバー確認には `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` 経由で公式 ResoniteLink REPL を使う
-4. 実機確認ができない場合は、その前提を差分説明に明記する
+3. WSL から live 検証するときは、`cmd.exe /c dotnet.exe run ...` や `pwsh.exe` ラッパなど host 側実行を優先する
+4. `stream` で live の send/remove 順序を確認する
+5. raw JSON だけで足りない場合は、`tools/Invoke-ResoniteLinkCommand.ps1 repl ...` 経由で公式 ResoniteLink REPL を使って live 確認とメンバー確認を行う
+6. 実機確認ができない場合は、その前提を差分説明に明記する
 
 ## ドキュメント更新ルール
 

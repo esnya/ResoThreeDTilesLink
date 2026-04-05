@@ -1074,6 +1074,81 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task Run_Bootstrap_RemovesReadyParent_BeforeUnrelatedDiscoveryCompletes()
+        {
+            var rootTileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 1200d),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "c",
+                                ContentUri = new Uri("https://example.com/c.glb"),
+                                BoundingVolume = CreateBox(0d, 0d, 0d, 120d)
+                            }
+                        ]
+                    },
+                    new Tile
+                    {
+                        Id = "j",
+                        ContentUri = new Uri("https://example.com/nested.json"),
+                        BoundingVolume = CreateBox(350d, 0d, 0d, 120d)
+                    }
+                ]
+            });
+
+            var nestedTileset = new Tileset(new Tile
+            {
+                Id = "nestedRoot",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "leaf",
+                        ContentUri = new Uri("https://example.com/leaf.glb"),
+                        BoundingVolume = CreateBox(350d, 0d, 0d, 60d)
+                    }
+                ]
+            });
+
+            var events = new List<string>();
+            var tilesSource = new FakeTilesSource(
+                rootTileset,
+                new Dictionary<string, Tileset>
+                {
+                    ["https://example.com/nested.json"] = nestedTileset
+                },
+                contentDelayByUri: new Dictionary<string, TimeSpan>
+                {
+                    ["https://example.com/leaf.glb"] = TimeSpan.FromSeconds(2)
+                },
+                onContentFetched: uri => events.Add($"fetch:{uri.AbsoluteUri}"));
+            var client = new FakeResoniteSession(
+                onRemoveCompleted: slotId => events.Add($"remove:{slotId}"));
+            TileRunCoordinator coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 2);
+
+            RunSummary summary = await coordinator.RunAsync(
+                CreateRequest(dryRun: false, maxDepth: 16, bootstrapRangeMultiplier: 0.5d),
+                CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(3);
+            int removeIndex = events.FindIndex(entry => entry.Contains("remove:", StringComparison.Ordinal) &&
+                entry.Contains("tile_p_m", StringComparison.Ordinal));
+            int unrelatedFetchIndex = events.FindIndex(entry => entry == "fetch:https://example.com/leaf.glb");
+            _ = removeIndex.Should().BeGreaterThanOrEqualTo(0);
+            _ = unrelatedFetchIndex.Should().BeGreaterThanOrEqualTo(0);
+            _ = removeIndex.Should().BeLessThan(unrelatedFetchIndex);
+        }
+
+        [Fact]
         public async Task Run_DeferredCoarseTile_DoesNotStreamParent_WhenNoChildBranchSelected()
         {
             var tileset = new Tileset(new Tile
@@ -1367,13 +1442,17 @@ namespace ThreeDTilesLink.Tests
             IReadOnlyDictionary<string, Tileset>? nestedTilesets = null,
             IReadOnlyDictionary<string, byte[]>? tileContentByUri = null,
             TimeSpan? contentDelay = null,
-            bool ignoreCancellationDuringContent = false) : ITilesSource
+            bool ignoreCancellationDuringContent = false,
+            IReadOnlyDictionary<string, TimeSpan>? contentDelayByUri = null,
+            Action<Uri>? onContentFetched = null) : ITilesSource
         {
             private readonly Tileset _tileset = tileset;
             private readonly IReadOnlyDictionary<string, Tileset> _nestedTilesets = nestedTilesets ?? new Dictionary<string, Tileset>();
             private readonly IReadOnlyDictionary<string, byte[]> _tileContentByUri = tileContentByUri ?? new Dictionary<string, byte[]>();
             private readonly TimeSpan _contentDelay = contentDelay ?? TimeSpan.Zero;
             private readonly bool _ignoreCancellationDuringContent = ignoreCancellationDuringContent;
+            private readonly IReadOnlyDictionary<string, TimeSpan> _contentDelayByUri = contentDelayByUri ?? new Dictionary<string, TimeSpan>();
+            private readonly Action<Uri>? _onContentFetched = onContentFetched;
             private int _activeContentFetches;
             private int _maxConcurrentContentFetches;
 
@@ -1394,14 +1473,17 @@ namespace ThreeDTilesLink.Tests
 
                 try
                 {
-                    if (_contentDelay > TimeSpan.Zero)
+                    TimeSpan effectiveDelay = _contentDelayByUri.TryGetValue(contentUri.AbsoluteUri, out TimeSpan overriddenDelay)
+                        ? overriddenDelay
+                        : _contentDelay;
+                    if (effectiveDelay > TimeSpan.Zero)
                     {
                         await Task.Delay(
-                            _contentDelay,
+                            effectiveDelay,
                             _ignoreCancellationDuringContent ? CancellationToken.None : cancellationToken).ConfigureAwait(false);
                     }
 
-                    return
+                    FetchedNodeContent fetchedContent =
                     TileContentClassifier.Classify(contentUri) switch
                     {
                         TileContentKind.Json => _nestedTilesets.TryGetValue(contentUri.AbsoluteUri, out Tileset? nested)
@@ -1413,6 +1495,8 @@ namespace ThreeDTilesLink.Tests
                                 : [1, 2, 3, 4]),
                         _ => new UnsupportedFetchedContent()
                     };
+                    _onContentFetched?.Invoke(contentUri);
+                    return fetchedContent;
                 }
                 finally
                 {
@@ -1471,6 +1555,7 @@ namespace ThreeDTilesLink.Tests
             string? failOnNameContains = null,
             TimeSpan? streamDelay = null,
             Action<PlacedMeshPayload, int>? onStreamCompleted = null,
+            Action<string>? onRemoveCompleted = null,
             int? failOnSendNumber = null,
             bool ignoreCancellationDuringStream = false,
             string? failOnRemoveContains = null,
@@ -1481,6 +1566,7 @@ namespace ThreeDTilesLink.Tests
             private readonly string? _failOnNameContains = failOnNameContains;
             private readonly TimeSpan _streamDelay = streamDelay ?? TimeSpan.Zero;
             private readonly Action<PlacedMeshPayload, int>? _onStreamCompleted = onStreamCompleted;
+            private readonly Action<string>? _onRemoveCompleted = onRemoveCompleted;
             private readonly int? _failOnSendNumber = failOnSendNumber;
             private readonly bool _ignoreCancellationDuringStream = ignoreCancellationDuringStream;
             private readonly string? _failOnRemoveContains = failOnRemoveContains;
@@ -1571,6 +1657,7 @@ namespace ThreeDTilesLink.Tests
 
                 RemoveCount++;
                 RemovedSlotIds.Add(slotId);
+                _onRemoveCompleted?.Invoke(slotId);
                 return Task.CompletedTask;
             }
 

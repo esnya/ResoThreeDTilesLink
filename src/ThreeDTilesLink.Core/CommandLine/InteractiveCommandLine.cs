@@ -17,7 +17,6 @@ namespace ThreeDTilesLink.Core.CommandLine
         int ThrottleMs,
         bool RemoveOutOfRange,
         bool DryRun,
-        string WatchName,
         string WatchPath,
         LogLevel LogLevel) : ICommandRuntimeOptions;
 
@@ -40,7 +39,6 @@ namespace ThreeDTilesLink.Core.CommandLine
                 new("--throttle", CommandOptionValueKind.WholeNumber, "Minimum time between run starts.", DefaultValue: 3000, Unit: "ms", RenamedFrom: ["--throttle-ms"]),
                 new("--remove-out-of-range", CommandOptionValueKind.Switch, "During overlapping updates, remove retained tiles that fall outside the latest range.", DefaultValue: false),
                 new("--watch-path", CommandOptionValueKind.Text, "Watch variable path prefix.", DefaultValue: "World/ThreeDTilesLink", ValueName: "path"),
-                new("--watch-name", CommandOptionValueKind.Text, "Watch slot name.", DefaultValue: "3DTilesLink Watch", ValueName: "name"),
                 CommonCommandOptions.DryRun(),
                 CommonCommandOptions.LogLevelOption()
             ],
@@ -83,7 +81,6 @@ namespace ThreeDTilesLink.Core.CommandLine
                 !CommandInvocationBuilder.TryGetValue(parsed, "--throttle", out int throttleMs) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--remove-out-of-range", out bool removeOutOfRange) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--dry-run", out bool dryRun) ||
-                !CommandInvocationBuilder.TryGetValue(parsed, "--watch-name", out string? watchName) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--watch-path", out string? watchPath))
             {
                 return CommandInvocationBuilder.Error<InteractiveCommandOptions>("Invalid command values.", RenderHelp);
@@ -92,11 +89,6 @@ namespace ThreeDTilesLink.Core.CommandLine
             if (string.IsNullOrWhiteSpace(resoniteHost))
             {
                 return CommandInvocationBuilder.Error<InteractiveCommandOptions>("Invalid value for --resonite-host.", RenderHelp);
-            }
-
-            if (string.IsNullOrWhiteSpace(watchName))
-            {
-                return CommandInvocationBuilder.Error<InteractiveCommandOptions>("Invalid value for --watch-name.", RenderHelp);
             }
 
             if (string.IsNullOrWhiteSpace(watchPath))
@@ -130,7 +122,6 @@ namespace ThreeDTilesLink.Core.CommandLine
                     throttleMs,
                     removeOutOfRange,
                     dryRun,
-                    watchName,
                     normalizedWatchPath,
                     logLevel),
                 0,

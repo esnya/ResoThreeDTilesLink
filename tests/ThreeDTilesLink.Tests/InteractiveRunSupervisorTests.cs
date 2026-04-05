@@ -30,14 +30,13 @@ namespace ThreeDTilesLink.Tests
             await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
 
             _ = coordinator.Requests.Should().ContainSingle();
-            _ = session.CreatedRunSlots.Should().ContainSingle();
             _ = coordinator.Requests[0].Traversal.RangeM.Should().Be(400d);
             _ = coordinator.Requests[0].Output.ManageConnection.Should().BeFalse();
-            _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().Be(session.CreatedRunSlots[0]);
+            _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().BeNull();
         }
 
         [Fact]
-        public async Task RunAsync_ReusesSessionSlot_AndPlacementReference_WhenRangesOverlap()
+        public async Task RunAsync_KeepsPlacementReference_WhenRangesOverlap()
         {
             var session = new FakeSession();
             var watchStore = new FakeWatchStore
@@ -60,8 +59,8 @@ namespace ThreeDTilesLink.Tests
             await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
 
             _ = coordinator.Requests.Should().HaveCount(2);
-            _ = session.CreatedRunSlots.Should().ContainSingle();
             _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().Be(coordinator.Requests[1].Output.MeshParentSlotId);
+            _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().BeNull();
             _ = coordinator.Requests[1].SelectionReference.Latitude.Should().Be(36d);
             _ = coordinator.Requests[1].SelectionReference.Longitude.Should().Be(140d);
             _ = coordinator.Requests[1].PlacementReference.Latitude.Should().Be(35d);
@@ -69,7 +68,7 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task RunAsync_RecreatesSessionSlot_WhenRangesDoNotOverlap()
+        public async Task RunAsync_ResetsPlacementReference_WhenRangesDoNotOverlap()
         {
             var session = new FakeSession();
             var watchStore = new FakeWatchStore
@@ -92,15 +91,15 @@ namespace ThreeDTilesLink.Tests
             await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
 
             _ = coordinator.Requests.Should().HaveCount(2);
-            _ = session.CreatedRunSlots.Should().HaveCount(2);
-            _ = session.RemovedSlotIds.Should().ContainSingle().Which.Should().Be(session.CreatedRunSlots[0]);
-            _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().NotBe(coordinator.Requests[1].Output.MeshParentSlotId);
+            _ = session.RemovedSlotIds.Should().BeEmpty();
+            _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().BeNull();
+            _ = coordinator.Requests[1].Output.MeshParentSlotId.Should().BeNull();
             _ = coordinator.Requests[1].PlacementReference.Latitude.Should().Be(2000d);
             _ = coordinator.Requests[1].PlacementReference.Longitude.Should().Be(2000d);
         }
 
         [Fact]
-        public async Task RunAsync_CancellationKeepsCurrentSessionSlot()
+        public async Task RunAsync_CancellationDoesNotRemoveAnySlots()
         {
             var session = new FakeSession();
             var watchStore = new FakeWatchStore
@@ -116,7 +115,6 @@ namespace ThreeDTilesLink.Tests
 
             await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
 
-            _ = session.CreatedRunSlots.Should().ContainSingle();
             _ = session.RemovedSlotIds.Should().BeEmpty();
         }
 
@@ -178,6 +176,55 @@ namespace ThreeDTilesLink.Tests
             _ = coordinator.RetainedTileInputs.Should().HaveCount(2);
             _ = coordinator.RetainedTileInputs[1].Should().ContainKey(partialStableId);
             _ = coordinator.CheckpointInputs[1].Should().NotBeNull();
+        }
+
+        [Fact]
+        public async Task RunAsync_DropsRetainedTilesAndCheckpoint_WhenRangesDoNotOverlap()
+        {
+            var session = new FakeSession();
+            var watchStore = new FakeWatchStore
+            {
+                SelectionInputValues = new Queue<SelectionInputValues?>(
+                [
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(2000f, 2000f, 400f),
+                    new SelectionInputValues(2000f, 2000f, 400f)
+                ])
+            };
+            string partialStableId = "partial";
+            var partialVisibleTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [partialStableId] = new(partialStableId, "partial-tile", null, [], ["slot_partial"], "Google; Airbus")
+            };
+            var checkpoint = new InteractiveRunCheckpoint(new Dictionary<string, Tileset>(StringComparer.OrdinalIgnoreCase));
+            var coordinator = new FakeTileRunCoordinator(
+                onRunStarted: _ => { },
+                interactiveHandler: (callIndex, _, interactive, _) => Task.FromResult(
+                    callIndex == 1
+                        ? new InteractiveTileRunResult(
+                            new RunSummary(1, 1, 1, 0),
+                            partialVisibleTiles,
+                            new HashSet<string>([partialStableId], StringComparer.Ordinal),
+                            checkpoint)
+                        : new InteractiveTileRunResult(
+                            new RunSummary(1, 1, 1, 0),
+                            new Dictionary<string, RetainedTileState>(interactive.RetainedTiles, StringComparer.Ordinal),
+                            new HashSet<string>(interactive.RetainedTiles.Keys, StringComparer.Ordinal),
+                            interactive.Checkpoint)));
+            var clock = new FakeClock { CancelAfterDelayCalls = 4 };
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock);
+
+            using var cts = new CancellationTokenSource();
+            clock.CancellationSource = cts;
+
+            await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
+
+            _ = coordinator.Requests.Should().HaveCount(2);
+            _ = coordinator.RetainedTileInputs.Should().HaveCount(2);
+            _ = coordinator.RetainedTileInputs[1].Should().BeEmpty();
+            _ = coordinator.CheckpointInputs[1].Should().BeNull();
+            _ = session.RemovedSlotIds.Should().Contain("slot_partial");
         }
 
         [Fact]
@@ -314,7 +361,6 @@ namespace ThreeDTilesLink.Tests
                     TimeSpan.FromMilliseconds(10),
                     TimeSpan.Zero,
                     new WatchConfiguration(
-                        "Watch",
                         "World/ThreeDTilesLink.Latitude",
                         "World/ThreeDTilesLink.Longitude",
                         "World/ThreeDTilesLink.Range",
@@ -382,20 +428,12 @@ namespace ThreeDTilesLink.Tests
 
         private sealed class FakeSession : IResoniteSession
         {
-            public List<string> CreatedRunSlots { get; } = [];
             public List<string> RemovedSlotIds { get; } = [];
             public int DisconnectCalls { get; private set; }
 
             public Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
             {
                 return Task.CompletedTask;
-            }
-
-            public Task<string> CreateSessionChildSlotAsync(string name, CancellationToken cancellationToken)
-            {
-                string slotId = $"slot_{CreatedRunSlots.Count + 1}";
-                CreatedRunSlots.Add(slotId);
-                return Task.FromResult(slotId);
             }
 
             public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
@@ -437,8 +475,6 @@ namespace ThreeDTilesLink.Tests
             public Task<WatchBinding> CreateWatchAsync(WatchConfiguration configuration, CancellationToken cancellationToken)
             {
                 return Task.FromResult(new WatchBinding(
-                    "watch",
-                    false,
                     "lat",
                     "Value",
                     "lat_alias",

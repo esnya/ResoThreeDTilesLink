@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Diagnostics.CodeAnalysis;
@@ -18,6 +17,12 @@ namespace ThreeDTilesLink.Core.Pipeline
         ICoordinateTransformer coordinateTransformer,
         ILogger<InteractiveRunSupervisor> logger)
     {
+        private static readonly Action<ILogger, string, string, Exception?> s_retainedSlotClearFailed =
+            LoggerMessage.Define<string, string>(
+                LogLevel.Warning,
+                new EventId(18, "RetainedSlotClearFailed"),
+                "Failed to clear retained slot {SlotId} for tile {TileId} before non-overlap interactive rerun.");
+
         private readonly ITileSelectionService _tileRunCoordinator = tileRunCoordinator;
         private readonly IResoniteSession _resoniteSession = resoniteSession;
         private readonly IWatchStore _watchStore = watchStore;
@@ -87,9 +92,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 {
                     ResolveSearchAction resolve => await ResolveSearchAsync(state, options, resolve, cancellationToken).ConfigureAwait(false),
                     CancelActiveRunAction => await CancelActiveRunAsync(state).ConfigureAwait(false),
-                    RemoveSessionSlotAction remove => await RemoveSessionSlotAsync(state, remove.SlotId, cancellationToken).ConfigureAwait(false),
-                    CreateSessionSlotAction create => await CreateSessionSlotAsync(state, options, create.Values, cancellationToken).ConfigureAwait(false),
-                    StartRunAction start => StartRun(state, options, start, cancellationToken),
+                    StartRunAction start => await StartRunAsync(state, options, start, cancellationToken).ConfigureAwait(false),
                     _ => state
                 };
             }
@@ -99,19 +102,9 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         internal async Task<InteractiveLoopState> DisconnectAsync(
             InteractiveLoopState state,
-            CancellationToken cancellationToken)
+            CancellationToken _)
         {
             state = await CancelActiveRunAsync(state).ConfigureAwait(false);
-
-            if (!string.IsNullOrWhiteSpace(state.SessionSlotId) && !cancellationToken.IsCancellationRequested)
-            {
-                await ObserveCompletionAsync(_resoniteSession.RemoveSlotAsync(state.SessionSlotId, CancellationToken.None)).ConfigureAwait(false);
-            }
-
-            if (state.WatchBinding is not null && state.WatchBinding.OwnsSlot && !string.IsNullOrWhiteSpace(state.WatchBinding.SlotId))
-            {
-                await ObserveCompletionAsync(_resoniteSession.RemoveSlotAsync(state.WatchBinding.SlotId, CancellationToken.None)).ConfigureAwait(false);
-            }
 
             if (state.Connected)
             {
@@ -245,76 +238,46 @@ namespace ThreeDTilesLink.Core.Pipeline
             return state with { ActiveRun = null };
         }
 
-        private async Task<InteractiveLoopState> RemoveSessionSlotAsync(
-            InteractiveLoopState state,
-            string slotId,
-            CancellationToken cancellationToken)
-        {
-            Task removeTask = _resoniteSession.RemoveSlotAsync(slotId, cancellationToken);
-            await ObserveCompletionAsync(removeTask).ConfigureAwait(false);
-
-            if (TryGetNonCancellationFailure(removeTask) is { } removeFailure)
-            {
-                InteractiveRunSupervisor.Log.SlotRemovalFailed(_logger, removeFailure, slotId);
-            }
-
-            return state with
-            {
-                SessionSlotId = null,
-                PlacementReference = null
-            };
-        }
-
-        private async Task<InteractiveLoopState> CreateSessionSlotAsync(
-            InteractiveLoopState state,
-            InteractiveRunRequest options,
-            SelectionInputValues values,
-            CancellationToken cancellationToken)
-        {
-            string sessionSlotId = await _resoniteSession.CreateSessionChildSlotAsync(
-                BuildRunSlotName(values),
-                cancellationToken).ConfigureAwait(false);
-            GeoReference placementReference = new(values.Latitude, values.Longitude, options.HeightOffsetM);
-            return state with
-            {
-                SessionSlotId = sessionSlotId,
-                PlacementReference = placementReference,
-                RetainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal),
-                Checkpoint = null
-            };
-        }
-
         [SuppressMessage(
             "Reliability",
             "CA2000:Dispose objects before losing scope",
             Justification = "The linked cancellation source is owned by InteractiveActiveRun and disposed when the run completes or is superseded.")]
-        private InteractiveLoopState StartRun(
+        private async Task<InteractiveLoopState> StartRunAsync(
             InteractiveLoopState state,
             InteractiveRunRequest options,
             StartRunAction action,
             CancellationToken cancellationToken)
         {
             GeoReference selectionReference = new(action.Values.Latitude, action.Values.Longitude, options.HeightOffsetM);
-            GeoReference placementReference = state.PlacementReference ?? selectionReference;
+            GeoReference placementReference = action.Overlaps && state.PlacementReference is not null
+                ? state.PlacementReference
+                : selectionReference;
+            if (!action.Overlaps)
+            {
+                await ClearRetainedTilesAsync(state.RetainedTiles, cancellationToken).ConfigureAwait(false);
+            }
+
+            Dictionary<string, RetainedTileState> retainedTiles = action.Overlaps
+                ? state.RetainedTiles
+                : new Dictionary<string, RetainedTileState>(StringComparer.Ordinal);
+            InteractiveRunCheckpoint? checkpoint = action.Overlaps ? state.Checkpoint : null;
             TileRunRequest runRequest = BuildRunRequest(
                 options,
                 selectionReference,
                 placementReference,
-                action.Values.RangeM,
-                state.SessionSlotId!);
+                action.Values.RangeM);
 
             var activeRunCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             Task<InteractiveTileRunResult> activeRunTask = _tileRunCoordinator.RunInteractiveAsync(
                 runRequest,
                 new InteractiveRunInput(
-                    state.RetainedTiles,
+                    retainedTiles,
                     action.Overlaps && options.RemoveOutOfRange,
-                    action.Overlaps ? state.Checkpoint : null),
+                    checkpoint),
                 activeRunCts.Token);
 
             InteractiveRunSupervisor.Log.RunStarted(
                 _logger,
-                state.SessionSlotId!,
                 action.Values.Latitude,
                 action.Values.Longitude,
                 placementReference.Latitude,
@@ -325,16 +288,45 @@ namespace ThreeDTilesLink.Core.Pipeline
             return state with
             {
                 PlacementReference = placementReference,
+                RetainedTiles = retainedTiles,
+                Checkpoint = checkpoint,
                 ActiveRun = new InteractiveActiveRun(activeRunTask, activeRunCts)
             };
+        }
+
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "Non-overlap interactive reruns should continue even if some retained slots fail to clear.")]
+        private async Task ClearRetainedTilesAsync(
+            IReadOnlyDictionary<string, RetainedTileState> retainedTiles,
+            CancellationToken cancellationToken)
+        {
+            foreach (RetainedTileState retainedTile in retainedTiles.Values)
+            {
+                foreach (string slotId in retainedTile.SlotIds)
+                {
+                    try
+                    {
+                        await _resoniteSession.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        s_retainedSlotClearFailed(_logger, slotId, retainedTile.TileId, ex);
+                    }
+                }
+            }
         }
 
         private static TileRunRequest BuildRunRequest(
             InteractiveRunRequest options,
             GeoReference selectionReference,
             GeoReference placementReference,
-            double rangeM,
-            string runSlotId)
+            double rangeM)
         {
             return new TileRunRequest(
                 selectionReference,
@@ -349,17 +341,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                     options.ResoniteHost,
                     options.ResonitePort,
                     options.DryRun,
-                    ManageConnection: false,
-                    MeshParentSlotId: runSlotId),
+                    ManageConnection: false),
                 options.ApiKey);
-        }
-
-        private static string BuildRunSlotName(SelectionInputValues values)
-        {
-            string lat = values.Latitude.ToString("F5", CultureInfo.InvariantCulture);
-            string lon = values.Longitude.ToString("F5", CultureInfo.InvariantCulture);
-            string range = values.RangeM.ToString("F0", CultureInfo.InvariantCulture);
-            return $"Run {lat}, {lon}, {range}m";
         }
 
         private static Exception? TryGetNonCancellationFailure(Task task)

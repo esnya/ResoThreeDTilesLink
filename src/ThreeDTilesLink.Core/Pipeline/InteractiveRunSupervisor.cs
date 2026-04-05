@@ -55,8 +55,6 @@ namespace ThreeDTilesLink.Core.Pipeline
                 state = state with { WatchBinding = watchBinding };
                 Log.WatchBindingAttached(
                     _logger,
-                    watchBinding.SlotId,
-                    watchBinding.OwnsSlot,
                     options.Watch.Configuration.LatitudeVariablePath,
                     options.Watch.Configuration.LongitudeVariablePath,
                     options.Watch.Configuration.RangeVariablePath,
@@ -128,8 +126,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             [LoggerMessage(
                 EventId = 2,
                 Level = LogLevel.Information,
-                Message = "Watch attached: slotId={SlotId} ownsSlot={OwnsSlot} lat={LatPath} lon={LonPath} range={RangePath} search={SearchPath}")]
-            public static partial void WatchBindingAttached(ILogger logger, string slotId, bool ownsSlot, string latPath, string lonPath, string rangePath, string searchPath);
+                Message = "Watch attached: lat={LatPath} lon={LonPath} range={RangePath} search={SearchPath}")]
+            public static partial void WatchBindingAttached(ILogger logger, string latPath, string lonPath, string rangePath, string searchPath);
 
             [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Search query changed: {Query}")]
             public static partial void SearchQueryChanged(ILogger logger, string query);
@@ -149,10 +147,9 @@ namespace ThreeDTilesLink.Core.Pipeline
             [LoggerMessage(
                 EventId = 7,
                 Level = LogLevel.Information,
-                Message = "Run started: slot={SlotId} selectionLat={Lat:F7} selectionLon={Lon:F7} placementLat={PlacementLat:F7} placementLon={PlacementLon:F7} range={Range:F1}m overlap={Overlap}")]
+                Message = "Run started: selectionLat={Lat:F7} selectionLon={Lon:F7} placementLat={PlacementLat:F7} placementLon={PlacementLon:F7} range={Range:F1}m overlap={Overlap}")]
             public static partial void RunStarted(
                 ILogger logger,
-                string slotId,
                 double lat,
                 double lon,
                 double placementLat,
@@ -177,9 +174,6 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             [LoggerMessage(EventId = 10, Level = LogLevel.Warning, Message = "Run finished with error while superseding.")]
             public static partial void RunSupersededFailed(ILogger logger, Exception exception);
-
-            [LoggerMessage(EventId = 11, Level = LogLevel.Warning, Message = "Failed to remove slot {SlotId}.")]
-            public static partial void SlotRemovalFailed(ILogger logger, Exception exception, string slotId);
 
             [LoggerMessage(EventId = 12, Level = LogLevel.Warning, Message = "Failed to disconnect Resonite Link cleanly.")]
             public static partial void DisconnectFailed(ILogger logger, Exception exception);

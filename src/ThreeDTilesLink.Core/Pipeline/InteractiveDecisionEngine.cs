@@ -9,10 +9,6 @@ namespace ThreeDTilesLink.Core.Pipeline
 
     internal sealed record CancelActiveRunAction() : InteractiveAction;
 
-    internal sealed record RemoveSessionSlotAction(string SlotId) : InteractiveAction;
-
-    internal sealed record CreateSessionSlotAction(SelectionInputValues Values) : InteractiveAction;
-
     internal sealed record StartRunAction(SelectionInputValues Values, bool Overlaps) : InteractiveAction;
 
     internal sealed record InteractiveDecisionResult(
@@ -70,22 +66,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                     var currentFootprint = new InteractiveRangeFootprint(selectionReference, next.PendingValues.RangeM);
                     bool canReuseSlot = next.LastRequestedFootprint is not null &&
                         overlaps(next.LastRequestedFootprint, currentFootprint) &&
-                        !string.IsNullOrWhiteSpace(next.SessionSlotId) &&
                         next.PlacementReference is not null;
 
                     if (next.ActiveRun is not null)
                     {
                         actions.Add(new CancelActiveRunAction());
-                    }
-
-                    if (!canReuseSlot)
-                    {
-                        if (!string.IsNullOrWhiteSpace(next.SessionSlotId))
-                        {
-                            actions.Add(new RemoveSessionSlotAction(next.SessionSlotId));
-                        }
-
-                        actions.Add(new CreateSessionSlotAction(next.PendingValues));
                     }
 
                     actions.Add(new StartRunAction(next.PendingValues, canReuseSlot));

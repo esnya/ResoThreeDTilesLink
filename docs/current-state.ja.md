@@ -55,6 +55,15 @@
 - WSL から `send-json` の `-JsonFile` を使う場合は Windows パスを渡す。`/tmp/...` のような Linux パスは host 側 `dotnet.exe` から読めない
 - worktree 配下で host 実行すると、MinVer が project directory を Git working directory と見なせず warning を出すことがある。バージョン計算自体を検証対象にしていない限り、この warning は非 blocking として扱う
 - live のメッシュ送信や remove 挙動の確認は、`stream` や `interactive` などアプリ本体の entry point を優先する。`send-json` は主に接続確認と焦点を絞った message 確認に使う
+- WSL から live 検証のために `dotnet run` を叩く場合は、Linux 側 `dotnet` より `cmd.exe /c dotnet.exe run ...` や host 側 PowerShell ラッパを優先する
+- Resonite Link のポート番号は文書や script に固定値として保存しない。毎回その場の live 値として扱う
+
+## Live 検証の観点
+
+- `stream` の確認では、東京タワー付近の小さい範囲を優先する。例: `--latitude 35.65858 --longitude 139.745433 --range 60`
+- `stream` では、粗いタイルから細かいタイルへ収束する過程で、可視範囲が維持されるかを見る
+- `stream` のログでは `Streamed tile ...` と `Removed tile ...` の順序を重点確認する。可視範囲を保つために必要な追加より remove が先行してはいけない
+- 単発の `stream` でも refinement 中に `Removed tile ...` は出る。remove は `interactive` だけの現象だと決めつけない
 
 例:
 
