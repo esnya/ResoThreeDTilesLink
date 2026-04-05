@@ -37,6 +37,8 @@
 - WSL 側に Linux 版 `pwsh` がなくても、Windows 側 `pwsh.exe` を WSL から呼べる
 - 単発確認は `tools/Invoke-ResoniteLinkCommand.ps1` 経由で行う。primary は `send-json`
 - `dotnet` が `pwsh.exe` の `PATH` に見えない環境があるため、スクリプト側で `dotnet.exe` の既定パスも探す
+- Linux `dotnet` と Windows `dotnet.exe` を同じ checkout で混在させる前提があるため、`obj` はホスト OS ごとに分離して扱う
+- NuGet の restore メタデータにはホスト依存パスが入るため、`obj` を共有させる運用に戻さない
 - raw JSON 送信は `tools/ResoniteRawJson` を使う
 - WSL から `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost <port> -JsonFile <windows-path>` の形で呼ぶ
 - 例で使うポート番号はその時点の live な Resonite Link に合わせる。固定値として扱わない

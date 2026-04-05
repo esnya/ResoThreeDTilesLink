@@ -1,5 +1,14 @@
 <Project>
   <PropertyGroup>
+    <ThreeDTilesLinkHostOs Condition="$([System.OperatingSystem]::IsWindows())">windows</ThreeDTilesLinkHostOs>
+    <ThreeDTilesLinkHostOs Condition="$([System.OperatingSystem]::IsLinux())">linux</ThreeDTilesLinkHostOs>
+    <ThreeDTilesLinkHostOs Condition="$([System.OperatingSystem]::IsMacOS())">macos</ThreeDTilesLinkHostOs>
+    <ThreeDTilesLinkHostOs Condition="'$(ThreeDTilesLinkHostOs)' == ''">unknown</ThreeDTilesLinkHostOs>
+
+    <BaseIntermediateOutputPath>obj/$(ThreeDTilesLinkHostOs)/</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**</DefaultItemExcludes>
+
     <IsTestProject Condition="'$(IsTestProject)' == '' and $([System.String]::Copy('$(MSBuildProjectName)').EndsWith('.Tests'))">true</IsTestProject>
 
     <TargetFramework>net10.0</TargetFramework>
