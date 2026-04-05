@@ -196,8 +196,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             HashSet<string> ancestorsWithOutOfSelectionVisibleDescendants = BuildAncestorsWithVisibleDescendants(
                 planningVisibleTiles.Where(tile => !selectedStableIds.Contains(tile.StableId)));
             Dictionary<string, List<string>> childrenByParent = BuildChildrenByParent(facts);
-            var branchHasCandidatesMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
-            var subtreeCoveredMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
+            var coverageMemo = new Dictionary<(string StableId, bool RequireVisible), BranchCoverageState>();
             var desired = new HashSet<string>(StringComparer.Ordinal);
 
             foreach (string stableId in candidateStableIds)
@@ -223,8 +222,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                         writerState,
                         childrenByParent,
                         candidateStableIds,
-                        branchHasCandidatesMemo,
-                        subtreeCoveredMemo))
+                        coverageMemo))
                 {
                     continue;
                 }
@@ -317,8 +315,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             WriterState writerState,
             DesiredView desiredView,
             ProgressSnapshot progress,
-            bool dryRun,
-            bool allowRemoval = true)
+            bool dryRun)
         {
             ArgumentNullException.ThrowIfNull(facts);
             ArgumentNullException.ThrowIfNull(writerState);
@@ -332,13 +329,19 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return null;
             }
 
-            if (allowRemoval)
             {
+                Dictionary<string, List<string>> childrenByParent = BuildChildrenByParent(facts);
+                var coverageMemo = new Dictionary<(string StableId, bool RequireVisible), BranchCoverageState>();
                 RetainedTileState? removal = writerState.VisibleTiles.Values
                     .Where(tile => desiredView.SelectedStableIds.Contains(tile.StableId))
                     .Where(tile => !desiredView.StableIds.Contains(tile.StableId))
                     .Where(tile => !writerState.FailedRemovalStableIds.Contains(tile.StableId))
-                    .Where(tile => CanRemoveVisibleTile(tile, facts, writerState))
+                    .Where(tile => CanRemoveVisibleTile(
+                        tile.StableId,
+                        facts,
+                        writerState,
+                        childrenByParent,
+                        coverageMemo))
                     .OrderBy(tile => facts.Branches.TryGetValue(tile.StableId, out TileBranchFact? fact) ? fact.Tile.Depth : int.MaxValue)
                     .ThenBy(tile => tile.TileId, StringComparer.Ordinal)
                     .FirstOrDefault();
@@ -807,8 +810,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             WriterState writerState,
             Dictionary<string, List<string>> childrenByParent,
             IReadOnlySet<string> candidateStableIds,
-            Dictionary<string, bool> branchHasCandidatesMemo,
-            Dictionary<string, bool> subtreeCoveredMemo)
+            Dictionary<(string StableId, bool RequireVisible), BranchCoverageState> coverageMemo)
         {
             if (facts.Branches.TryGetValue(stableId, out TileBranchFact? fact) &&
                 !writerState.VisibleTiles.ContainsKey(stableId) &&
@@ -819,6 +821,13 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return false;
             }
 
+            if (facts.Branches.TryGetValue(stableId, out fact) &&
+                !writerState.VisibleTiles.ContainsKey(stableId) &&
+                HasVisibleAncestor(facts, writerState, fact.Tile.ParentStableId))
+            {
+                return false;
+            }
+
             if (!childrenByParent.TryGetValue(stableId, out List<string>? children))
             {
                 return false;
@@ -827,20 +836,20 @@ namespace ThreeDTilesLink.Core.Pipeline
             bool hasRelevantChild = false;
             foreach (string childId in children)
             {
-                if (!BranchHasCandidate(childId, childrenByParent, candidateStableIds, branchHasCandidatesMemo))
+                BranchCoverageState childCoverage = GetBranchCoverageState(
+                    childId,
+                    facts,
+                    writerState,
+                    childrenByParent,
+                    requireVisible: false,
+                    coverageMemo);
+                if (childCoverage == BranchCoverageState.NotApplicable)
                 {
                     continue;
                 }
 
                 hasRelevantChild = true;
-                if (!IsSubtreeCovered(
-                        childId,
-                        facts,
-                        writerState,
-                        childrenByParent,
-                        candidateStableIds,
-                        branchHasCandidatesMemo,
-                        subtreeCoveredMemo))
+                if (childCoverage != BranchCoverageState.Covered)
                 {
                     return false;
                 }
@@ -850,264 +859,118 @@ namespace ThreeDTilesLink.Core.Pipeline
         }
 
         private static bool CanRemoveVisibleTile(
-            RetainedTileState tile,
-            DiscoveryFacts facts,
-            WriterState writerState)
-        {
-            bool hasVisibleDescendant = false;
-            IReadOnlyCollection<RetainedTileState> visibleTiles = writerState.VisibleTiles.Values;
-            foreach (RetainedTileState visibleTile in visibleTiles)
-            {
-                if (IsStrictTileIdDescendantOf(visibleTile.TileId, tile.TileId) ||
-                    visibleTile.AncestorStableIds.Contains(tile.StableId, StringComparer.Ordinal))
-                {
-                    hasVisibleDescendant = true;
-                    break;
-                }
-            }
-
-            if (!hasVisibleDescendant)
-            {
-                return false;
-            }
-
-            foreach (TileBranchFact fact in facts.Branches.Values)
-            {
-                string branchStableId = fact.Tile.StableId!;
-                string branchTileId = fact.Tile.TileId;
-                if (!IsStrictTileIdDescendantOf(branchTileId, tile.TileId) &&
-                    !IsDescendantOf(branchStableId, tile.StableId, facts))
-                {
-                    continue;
-                }
-
-                if (IsBranchCoveredByVisibleTiles(branchStableId, branchTileId, facts, visibleTiles))
-                {
-                    continue;
-                }
-
-                if (fact.Tile.ContentKind == TileContentKind.Json)
-                {
-                    if (fact.NestedStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight)
-                    {
-                        return false;
-                    }
-
-                    continue;
-                }
-
-                return false;
-            }
-
-            return true;
-        }
-
-        private static bool BranchHasCandidate(
-            string stableId,
-            Dictionary<string, List<string>> childrenByParent,
-            IReadOnlySet<string> candidateStableIds,
-            Dictionary<string, bool> memo)
-        {
-            if (memo.TryGetValue(stableId, out bool cached))
-            {
-                return cached;
-            }
-
-            if (candidateStableIds.Contains(stableId))
-            {
-                memo[stableId] = true;
-                return true;
-            }
-
-            if (!childrenByParent.TryGetValue(stableId, out List<string>? children))
-            {
-                memo[stableId] = false;
-                return false;
-            }
-
-            foreach (string childId in children)
-            {
-                if (BranchHasCandidate(childId, childrenByParent, candidateStableIds, memo))
-                {
-                    memo[stableId] = true;
-                    return true;
-                }
-            }
-
-            memo[stableId] = false;
-            return false;
-        }
-
-        private static bool IsSubtreeCovered(
             string stableId,
             DiscoveryFacts facts,
             WriterState writerState,
             Dictionary<string, List<string>> childrenByParent,
-            IReadOnlySet<string> candidateStableIds,
-            Dictionary<string, bool> branchHasCandidatesMemo,
-            Dictionary<string, bool> memo)
+            Dictionary<(string StableId, bool RequireVisible), BranchCoverageState> coverageMemo)
         {
-            if (memo.TryGetValue(stableId, out bool cached))
-            {
-                return cached;
-            }
-
-            if (facts.Branches.TryGetValue(stableId, out TileBranchFact? fact) &&
-                candidateStableIds.Contains(stableId) &&
-                IsRenderableAvailable(fact, writerState))
-            {
-                memo[stableId] = true;
-                return true;
-            }
-
             if (!childrenByParent.TryGetValue(stableId, out List<string>? children))
             {
-                memo[stableId] = false;
                 return false;
             }
 
             bool hasRelevantChild = false;
             foreach (string childId in children)
             {
-                if (!BranchHasCandidate(childId, childrenByParent, candidateStableIds, branchHasCandidatesMemo))
+                BranchCoverageState childCoverage = GetBranchCoverageState(
+                    childId,
+                    facts,
+                    writerState,
+                    childrenByParent,
+                    requireVisible: true,
+                    coverageMemo);
+                if (childCoverage == BranchCoverageState.NotApplicable)
                 {
                     continue;
                 }
 
                 hasRelevantChild = true;
-                if (!IsSubtreeCovered(
-                        childId,
-                        facts,
-                        writerState,
-                        childrenByParent,
-                        candidateStableIds,
-                        branchHasCandidatesMemo,
-                        memo))
+                if (childCoverage != BranchCoverageState.Covered)
                 {
-                    memo[stableId] = false;
                     return false;
                 }
             }
 
-            memo[stableId] = hasRelevantChild;
             return hasRelevantChild;
         }
 
-        private static bool IsSubtreeVisibleCovered(
+        private static BranchCoverageState GetBranchCoverageState(
             string stableId,
+            DiscoveryFacts facts,
             WriterState writerState,
             Dictionary<string, List<string>> childrenByParent,
-            IReadOnlySet<string> selectedStableIds,
-            Dictionary<string, bool> branchHasSelectedMemo,
-            Dictionary<string, bool> memo)
+            bool requireVisible,
+            Dictionary<(string StableId, bool RequireVisible), BranchCoverageState> memo)
         {
-            if (memo.TryGetValue(stableId, out bool cached))
+            if (memo.TryGetValue((stableId, requireVisible), out BranchCoverageState cached))
             {
                 return cached;
             }
 
-            if (writerState.VisibleTiles.ContainsKey(stableId))
-            {
-                memo[stableId] = true;
-                return true;
-            }
-
-            if (!childrenByParent.TryGetValue(stableId, out List<string>? children))
-            {
-                memo[stableId] = false;
-                return false;
-            }
-
-            bool hasRelevantChild = false;
-            foreach (string childId in children)
-            {
-                if (!BranchHasCandidate(childId, childrenByParent, selectedStableIds, branchHasSelectedMemo))
-                {
-                    continue;
-                }
-
-                hasRelevantChild = true;
-                if (!IsSubtreeVisibleCovered(
-                        childId,
-                        writerState,
-                        childrenByParent,
-                        selectedStableIds,
-                        branchHasSelectedMemo,
-                        memo))
-                {
-                    memo[stableId] = false;
-                    return false;
-                }
-            }
-
-            memo[stableId] = hasRelevantChild;
-            return hasRelevantChild;
-        }
-
-        private static bool IsBranchCoveredByVisibleTiles(
-            string branchStableId,
-            string branchTileId,
-            DiscoveryFacts facts,
-            IReadOnlyCollection<RetainedTileState> visibleTiles)
-        {
-            foreach (RetainedTileState visibleTile in visibleTiles)
-            {
-                bool visibleIsSameBranch =
-                    string.Equals(visibleTile.TileId, branchTileId, StringComparison.Ordinal) ||
-                    string.Equals(visibleTile.StableId, branchStableId, StringComparison.Ordinal);
-                bool visibleIsDescendantBranch =
-                    IsStrictTileIdDescendantOf(visibleTile.TileId, branchTileId) ||
-                    IsDescendantOf(visibleTile.StableId, branchStableId, facts);
-
-                if (visibleIsSameBranch ||
-                    visibleIsDescendantBranch)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static bool IsDescendantOf(
-            string stableId,
-            string ancestorStableId,
-            DiscoveryFacts facts)
-        {
             if (!facts.Branches.TryGetValue(stableId, out TileBranchFact? fact))
             {
-                return false;
+                return memo[(stableId, requireVisible)] = BranchCoverageState.NotApplicable;
             }
 
-            string? currentId = fact.Tile.ParentStableId;
-            while (!string.IsNullOrWhiteSpace(currentId))
+            if (fact.Tile.ContentKind == TileContentKind.Glb)
             {
-                if (string.Equals(currentId, ancestorStableId, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-
-                if (!facts.Branches.TryGetValue(currentId, out TileBranchFact? parent))
-                {
-                    break;
-                }
-
-                currentId = parent.Tile.ParentStableId;
+                bool covered = requireVisible
+                    ? writerState.VisibleTiles.ContainsKey(stableId)
+                    : IsRenderableAvailable(fact, writerState);
+                return memo[(stableId, requireVisible)] = covered
+                    ? BranchCoverageState.Covered
+                    : BranchCoverageState.Uncovered;
             }
 
-            return false;
+            if (!childrenByParent.TryGetValue(stableId, out List<string>? children))
+            {
+                BranchCoverageState relayState = requireVisible &&
+                    (fact.NestedStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight)
+                    ? BranchCoverageState.Uncovered
+                    : BranchCoverageState.NotApplicable;
+                return memo[(stableId, requireVisible)] = relayState;
+            }
+
+            bool hasRelevantChild = false;
+            foreach (string childId in children)
+            {
+                BranchCoverageState childState = GetBranchCoverageState(
+                    childId,
+                    facts,
+                    writerState,
+                    childrenByParent,
+                    requireVisible,
+                    memo);
+                if (childState == BranchCoverageState.NotApplicable)
+                {
+                    continue;
+                }
+
+                hasRelevantChild = true;
+                if (childState != BranchCoverageState.Covered)
+                {
+                    return memo[(stableId, requireVisible)] = BranchCoverageState.Uncovered;
+                }
+            }
+
+            if (hasRelevantChild)
+            {
+                return memo[(stableId, requireVisible)] = BranchCoverageState.Covered;
+            }
+
+            BranchCoverageState emptyRelayState = requireVisible &&
+                (fact.NestedStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight)
+                ? BranchCoverageState.Uncovered
+                : BranchCoverageState.NotApplicable;
+            return memo[(stableId, requireVisible)] = emptyRelayState;
         }
 
-        private static bool IsStrictTileIdDescendantOf(
-            string tileId,
-            string ancestorTileId)
+        private enum BranchCoverageState
         {
-            if (tileId.Length <= ancestorTileId.Length)
-            {
-                return false;
-            }
-
-            return tileId.StartsWith(ancestorTileId, StringComparison.Ordinal);
+            NotApplicable = 0,
+            Uncovered = 1,
+            Covered = 2
         }
 
         private static bool IsRenderableAvailable(TileBranchFact fact, WriterState writerState)
@@ -1363,6 +1226,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             ProgressSnapshot progress)
         {
             string desiredLicense = BuildDesiredLicense(writerState.VisibleTiles.Values);
+            Dictionary<string, List<string>> childrenByParent = BuildChildrenByParent(facts);
+            var coverageMemo = new Dictionary<(string StableId, bool RequireVisible), BranchCoverageState>();
 
             int pendingDiscovery = facts.Branches.Values.Count(fact =>
                 (fact.Tile.ContentKind == TileContentKind.Json && fact.NestedStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight) ||
@@ -1373,7 +1238,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                 desiredView.SelectedStableIds.Contains(tile.StableId) &&
                 !desiredView.StableIds.Contains(tile.StableId) &&
                 !writerState.FailedRemovalStableIds.Contains(tile.StableId) &&
-                CanRemoveVisibleTile(tile, facts, writerState));
+                CanRemoveVisibleTile(
+                    tile.StableId,
+                    facts,
+                    writerState,
+                    childrenByParent,
+                    coverageMemo));
 
             int completedUnits = progress.ProcessedTiles;
             int pendingUnits = pendingDiscovery + pendingSend + pendingRemove +
