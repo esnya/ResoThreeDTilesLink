@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('inspect', 'probe', 'send-json', 'benchmark-send', 'cleanup-slot')]
+    [ValidateSet('repl', 'send-json', 'benchmark-send', 'cleanup-slot')]
     [string]$Command,
 
     [Parameter(Position = 1)]
@@ -33,8 +33,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $scriptDir
 
 $projectPath = switch ($Command) {
-    'inspect' { Join-Path $repoRoot 'tools/ResoniteInspect/ResoniteInspect.csproj' }
-    'probe' { Join-Path $repoRoot 'tools/ResoniteProbe/ResoniteProbe.csproj' }
+    'repl' { Join-Path $repoRoot 'tools/ResoniteRepl/ResoniteRepl.csproj' }
     'send-json' { Join-Path $repoRoot 'tools/ResoniteRawJson/ResoniteRawJson.csproj' }
     'benchmark-send' { Join-Path $repoRoot 'tools/ResoniteSendBenchmark/ResoniteSendBenchmark.csproj' }
     'cleanup-slot' { Join-Path $repoRoot 'tools/ResoniteSendBenchmark/ResoniteSendBenchmark.csproj' }

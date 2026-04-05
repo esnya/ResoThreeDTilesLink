@@ -18,7 +18,7 @@
 
 1. 型名やメンバー名を推測しない
 2. 必要な値は live の Resonite Link から確認する
-3. `tools/ResoniteInspect` と `tools/ResoniteProbe` を使って確認する
+3. live 確認とメンバー確認には `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` 経由で公式 ResoniteLink REPL を使う
 4. 実機確認ができない場合は、その前提を差分説明に明記する
 
 ## ドキュメント更新ルール

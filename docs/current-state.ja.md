@@ -26,8 +26,9 @@
 
 - Resonite のコンポーネント型名やメンバー名は推測で埋めない
 - 実在値が必要な場合は、実行中の Resonite Link に問い合わせて確認してから固定する
-- 確認には `tools/ResoniteInspect` と `tools/ResoniteProbe` を使う
-- WSL からの確認で制約がある場合は、必要に応じてホスト側コマンド実行も使う
+- live 確認とメンバー確認には公式 ResoniteLink REPL を使う
+- このリポジトリからは `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` 経由で起動する
+- WSL から運用する場合、確認コマンドは Windows host 側の `pwsh.exe` で実行し、Linux 側 `pwsh` 前提にはしない
 - live 環境によっては `SimpleAvatarProtection` が公開されていないことがある。その場合でも接続とメッシュ送信は継続できる前提で扱う
 - Session root に付ける常設 DV は session root 直下に置く
 - `World/` プレフィックス付き `DynamicField` は外部観測用 alias として扱い、書き込み元の実体 DV とは分けて考える
@@ -36,35 +37,34 @@
 
 ## WSL からの単発確認
 
-- WSL 側に Linux 版 `pwsh` がなくても、Windows 側 `pwsh.exe` を WSL から呼べる
+- WSL 側に Linux 版 `pwsh` がなくても、Windows 側 `pwsh.exe` を WSL から呼び、host 側で実行する
 - 単発確認は `tools/Invoke-ResoniteLinkCommand.ps1` 経由で行う。primary は `send-json`
+- interactive な確認が必要な場合は `repl` で公式 ResoniteLink REPL 実装を使う
 - `dotnet` が `pwsh.exe` の `PATH` に見えない環境があるため、スクリプト側で `dotnet.exe` の既定パスも探す
 - Linux `dotnet` と Windows `dotnet.exe` を同じ checkout で混在させる前提があるため、`obj` はホスト OS ごとに分離して扱う
 - NuGet の restore メタデータにはホスト依存パスが入るため、`obj` を共有させる運用に戻さない
 - CI や検証環境で正しいバージョンを計算するには `git tag` 履歴が必要で、浅い checkout のままにしない
 - raw JSON 送信は `tools/ResoniteRawJson` を使う
-- WSL から `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost <port> -JsonFile <windows-path>` の形で呼ぶ
+- WSL からは `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" <command> localhost <port> ...` の形で host 側実行に寄せる
 - 例で使うポート番号はその時点の live な Resonite Link に合わせる。固定値として扱わない
 
 例:
 
 ```bash
-pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost 49379 \
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" repl localhost 6216
+
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost 6216 \
   -Json '{"$type":"requestSessionData"}'
 
-pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost 49379 \
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost 6216 \
   -JsonFile "$(wslpath -w /tmp/get-slot-root.json)"
-
-pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" inspect localhost 49379
-pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" probe localhost 49379
 ```
 
 - `send-json` は任意の ResoniteLink JSON をそのまま 1 件送り、`sourceMessageId` が一致するレスポンスを待って整形表示する
 - `messageId` が無ければ送信前に自動付与する
 - live で使う `$type` は README の古い例と差異がありうるため、必要なら実際のレスポンスか SDK 実装で確認する
-- `inspect` は接続確認と定義確認向け
-- `probe` は三角形メッシュを 2 件送って描画経路を確認するときに使う
-- `probe` は `src/ThreeDTilesLink.Core` のビルドが通ることを前提にする。接続確認だけなら先に `inspect` を使う
+- `repl` は公式 ResoniteLink REPL controller を起動し、接続確認、スロット移動、コンポーネント確認、メンバー確認の標準手段として使う
+- メッシュ送信の確認は、アプリケーション本体の経路か対象を絞った JSON / message 検証で行う
 
 ## この文書に書いてよいもの
 

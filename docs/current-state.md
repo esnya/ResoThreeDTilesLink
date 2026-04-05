@@ -26,8 +26,9 @@ This document contains only current operational information that is difficult to
 
 - Do not fill in Resonite component type names or member names by guesswork.
 - When real values are required, query the running Resonite Link and confirm them before fixing them in code.
-- Use `tools/ResoniteInspect` and `tools/ResoniteProbe` for confirmation.
-- If verification from WSL has constraints, use host-side command execution as needed.
+- Use the official ResoniteLink REPL for live inspection and member confirmation.
+- From this repository, launch it through `tools/Invoke-ResoniteLinkCommand.ps1 repl ...`.
+- When operating from WSL, run the verification command on the Windows host with `pwsh.exe`; do not rely on a Linux-side `pwsh` setup.
 - In some live environments, `SimpleAvatarProtection` may not be exposed. Even in that case, assume connection and mesh transmission can continue.
 - Put persistent `DynamicValueVariable<T>` members attached to the session root directly under the session root.
 - Treat `DynamicField` values with the `World/` prefix as aliases for external observation, separate from the underlying writable DV members.
@@ -36,35 +37,34 @@ This document contains only current operational information that is difficult to
 
 ## One-Off Verification from WSL
 
-- Even if Linux `pwsh` is not installed inside WSL, Windows `pwsh.exe` can be invoked from WSL.
+- Even if Linux `pwsh` is not installed inside WSL, invoke Windows `pwsh.exe` from WSL and run the command on the host side.
 - Use `tools/Invoke-ResoniteLinkCommand.ps1` for one-off verification. The primary mode is `send-json`.
+- Use `repl` when you need interactive inspection through the official ResoniteLink REPL implementation.
 - In some environments, `dotnet` is not visible from `pwsh.exe` through `PATH`, so the script also searches default locations for `dotnet.exe`.
 - Because Linux `dotnet` and Windows `dotnet.exe` are expected to coexist in the same checkout, keep `obj` separated by host OS.
 - NuGet restore metadata contains host-dependent paths, so do not return to an operation mode that shares `obj`.
 - Correct version calculation in CI and verification environments requires `git tag` history, so do not keep a shallow checkout.
 - Use `tools/ResoniteRawJson` for raw JSON transmission.
-- From WSL, invoke it in the form `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost <port> -JsonFile <windows-path>`.
+- From WSL, invoke host-side commands in the form `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" <command> localhost <port> ...`.
 - The port numbers used in examples must match the live Resonite Link at that moment; do not treat them as fixed values.
 
 Example:
 
 ```bash
-pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost 49379 \
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" repl localhost 6216
+
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost 6216 \
   -Json '{"$type":"requestSessionData"}'
 
-pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost 49379 \
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost 6216 \
   -JsonFile "$(wslpath -w /tmp/get-slot-root.json)"
-
-pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" inspect localhost 49379
-pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" probe localhost 49379
 ```
 
 - `send-json` sends one arbitrary ResoniteLink JSON message as-is, waits for the response with the matching `sourceMessageId`, and prints it in formatted form.
 - If there is no `messageId`, one is added automatically before sending.
 - The live `$type` values may differ from old examples in the README, so verify them against actual responses or the SDK implementation when needed.
-- `inspect` is for connection checks and definition checks.
-- `probe` is for sending two triangle meshes to verify the rendering path.
-- `probe` assumes `src/ThreeDTilesLink.Core` builds successfully. If you only need a connection check, use `inspect` first.
+- `repl` starts the official ResoniteLink REPL controller and is the default path for connection checks, slot traversal, component inspection, and member confirmation.
+- For mesh send verification, use the application code paths or targeted JSON/message tests.
 
 ## What May Be Written in This Document
 

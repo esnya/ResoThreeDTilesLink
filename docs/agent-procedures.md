@@ -18,7 +18,7 @@ This document contains procedures for AI and coding agents. It keeps only decisi
 
 1. Do not guess type names or member names.
 2. Confirm required values from the live Resonite Link.
-3. Use `tools/ResoniteInspect` and `tools/ResoniteProbe` for verification.
+3. Use the official ResoniteLink REPL via `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` for live inspection and member confirmation.
 4. If real-environment verification was not possible, state that assumption explicitly in the change description.
 
 ## Documentation Update Rules
