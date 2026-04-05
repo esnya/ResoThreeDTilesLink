@@ -15,4 +15,5 @@ coverage/
 # Runtime
 *.log
 .env
+.codex
 .worktrees/
