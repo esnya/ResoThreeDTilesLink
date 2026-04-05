@@ -1,52 +1,52 @@
 # Current State
 
-この文書には、コードやテストだけでは伝わりにくい現時点の運用情報だけを置きます。
+This document contains only current operational information that is difficult to infer from the code and tests alone.
 
-## 運用上の前提
+## Operational Assumptions
 
-- このプロジェクトは Google Photorealistic 3D Tiles を Resonite Link へ非永続に流し込む用途を前提にする
-- 永続保存、アセット化、設計資料の保守は目的にしない
-- 正式リリースのバージョン起点は `v1.2.3` 形式の `git tag` に統一する
-- タグなしコミットのビルドはプレリリース扱いにし、正式版とは区別する
-- 認証は `GOOGLE_MAPS_API_KEY` があれば API キーを優先し、なければ ADC を使う
-- 機能ごとの必要 API は次の通り
-- CLI のタイル取得: Google Map Tiles API
-- Interactive の `Latitude` / `Longitude` / `Range` ベースのタイル取得: Google Map Tiles API
-- Interactive の自由検索 (`World/... .Search`): Google Geocoding API
-- Interactive の自由検索は `GOOGLE_MAPS_API_KEY` が必要で、ADC では扱わない
-- CLI は `.env` を上位ディレクトリ探索付きで自動ロードし、既存の環境変数は上書きしない
+- This project assumes the use case of streaming Google Photorealistic 3D Tiles into Resonite Link non-persistently.
+- Persistent storage, assetization, and maintenance of design documents are not project goals.
+- The version baseline for official releases is standardized on `git tag` values in the form `v1.2.3`.
+- Builds from commits without a tag are treated as prereleases and kept distinct from official releases.
+- For authentication, prefer an API key when `GOOGLE_MAPS_API_KEY` is present; otherwise use ADC.
+- The required APIs differ by feature as follows.
+- CLI tile fetch: Google Map Tiles API
+- Interactive tile fetch based on `Latitude` / `Longitude` / `Range`: Google Map Tiles API
+- Interactive free-text search (`World/... .Search`): Google Geocoding API
+- Interactive free-text search requires `GOOGLE_MAPS_API_KEY` and does not support ADC.
+- The CLI auto-loads `.env` with parent-directory discovery and does not overwrite existing environment variables.
 
-## 環境変数
+## Environment Variables
 
-- `GOOGLE_MAPS_API_KEY`: Google Map Tiles API と Google Geocoding API を API キーで使うときに設定する
-- `GOOGLE_APPLICATION_CREDENTIALS`: ADC の明示パス指定に使う
-- `THREEDTILESLINK_DUMP_MESH_JSON`: メッシュ送信内容の JSON ダンプが必要なときに使う
+- `GOOGLE_MAPS_API_KEY`: set this when using the Google Map Tiles API and Google Geocoding API with an API key
+- `GOOGLE_APPLICATION_CREDENTIALS`: use this to specify an explicit ADC path
+- `THREEDTILESLINK_DUMP_MESH_JSON`: use this when a JSON dump of mesh transmission contents is needed
 
-## Resonite 連携の扱い
+## Handling Resonite Integration
 
-- Resonite のコンポーネント型名やメンバー名は推測で埋めない
-- 実在値が必要な場合は、実行中の Resonite Link に問い合わせて確認してから固定する
-- 確認には `tools/ResoniteInspect` と `tools/ResoniteProbe` を使う
-- WSL からの確認で制約がある場合は、必要に応じてホスト側コマンド実行も使う
-- live 環境によっては `SimpleAvatarProtection` が公開されていないことがある。その場合でも接続とメッシュ送信は継続できる前提で扱う
-- Session root に付ける常設 DV は session root 直下に置く
-- `World/` プレフィックス付き `DynamicField` は外部観測用 alias として扱い、書き込み元の実体 DV とは分けて考える
-- Progress は親スロットに付けた `DynamicField` から `World/ThreeDTilesLink.Progress` へ `0.0..1.0` の float で公開する
-- 人間向けの進捗文字列は親スロットに付けた `DynamicField` から `World/ThreeDTilesLink.ProgressText` へ公開する
+- Do not fill in Resonite component type names or member names by guesswork.
+- When real values are required, query the running Resonite Link and confirm them before fixing them in code.
+- Use `tools/ResoniteInspect` and `tools/ResoniteProbe` for confirmation.
+- If verification from WSL has constraints, use host-side command execution as needed.
+- In some live environments, `SimpleAvatarProtection` may not be exposed. Even in that case, assume connection and mesh transmission can continue.
+- Put persistent `DynamicValueVariable<T>` members attached to the session root directly under the session root.
+- Treat `DynamicField` values with the `World/` prefix as aliases for external observation, separate from the underlying writable DV members.
+- Publish progress as a float in the range `0.0..1.0` from a `DynamicField` attached to the parent slot to `World/ThreeDTilesLink.Progress`.
+- Publish the human-readable progress string from a `DynamicField` attached to the parent slot to `World/ThreeDTilesLink.ProgressText`.
 
-## WSL からの単発確認
+## One-Off Verification from WSL
 
-- WSL 側に Linux 版 `pwsh` がなくても、Windows 側 `pwsh.exe` を WSL から呼べる
-- 単発確認は `tools/Invoke-ResoniteLinkCommand.ps1` 経由で行う。primary は `send-json`
-- `dotnet` が `pwsh.exe` の `PATH` に見えない環境があるため、スクリプト側で `dotnet.exe` の既定パスも探す
-- Linux `dotnet` と Windows `dotnet.exe` を同じ checkout で混在させる前提があるため、`obj` はホスト OS ごとに分離して扱う
-- NuGet の restore メタデータにはホスト依存パスが入るため、`obj` を共有させる運用に戻さない
-- CI や検証環境で正しいバージョンを計算するには `git tag` 履歴が必要で、浅い checkout のままにしない
-- raw JSON 送信は `tools/ResoniteRawJson` を使う
-- WSL から `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost <port> -JsonFile <windows-path>` の形で呼ぶ
-- 例で使うポート番号はその時点の live な Resonite Link に合わせる。固定値として扱わない
+- Even if Linux `pwsh` is not installed inside WSL, Windows `pwsh.exe` can be invoked from WSL.
+- Use `tools/Invoke-ResoniteLinkCommand.ps1` for one-off verification. The primary mode is `send-json`.
+- In some environments, `dotnet` is not visible from `pwsh.exe` through `PATH`, so the script also searches default locations for `dotnet.exe`.
+- Because Linux `dotnet` and Windows `dotnet.exe` are expected to coexist in the same checkout, keep `obj` separated by host OS.
+- NuGet restore metadata contains host-dependent paths, so do not return to an operation mode that shares `obj`.
+- Correct version calculation in CI and verification environments requires `git tag` history, so do not keep a shallow checkout.
+- Use `tools/ResoniteRawJson` for raw JSON transmission.
+- From WSL, invoke it in the form `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost <port> -JsonFile <windows-path>`.
+- The port numbers used in examples must match the live Resonite Link at that moment; do not treat them as fixed values.
 
-例:
+Example:
 
 ```bash
 pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost 49379 \
@@ -59,20 +59,20 @@ pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand
 pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" probe localhost 49379
 ```
 
-- `send-json` は任意の ResoniteLink JSON をそのまま 1 件送り、`sourceMessageId` が一致するレスポンスを待って整形表示する
-- `messageId` が無ければ送信前に自動付与する
-- live で使う `$type` は README の古い例と差異がありうるため、必要なら実際のレスポンスか SDK 実装で確認する
-- `inspect` は接続確認と定義確認向け
-- `probe` は三角形メッシュを 2 件送って描画経路を確認するときに使う
-- `probe` は `src/ThreeDTilesLink.Core` のビルドが通ることを前提にする。接続確認だけなら先に `inspect` を使う
+- `send-json` sends one arbitrary ResoniteLink JSON message as-is, waits for the response with the matching `sourceMessageId`, and prints it in formatted form.
+- If there is no `messageId`, one is added automatically before sending.
+- The live `$type` values may differ from old examples in the README, so verify them against actual responses or the SDK implementation when needed.
+- `inspect` is for connection checks and definition checks.
+- `probe` is for sending two triangle meshes to verify the rendering path.
+- `probe` assumes `src/ThreeDTilesLink.Core` builds successfully. If you only need a connection check, use `inspect` first.
 
-## この文書に書いてよいもの
+## What May Be Written in This Document
 
-- 明示しておくべき必須要件
-- 実運用で必要な前提
-- コードだけでは判断しにくい最新の制約
+- Mandatory requirements that should be stated explicitly
+- Assumptions needed in real operation
+- Current constraints that are difficult to judge from the code alone
 
-## この文書に書かないもの
+## What Not to Write in This Document
 
-- クラス構成や処理フローの設計説明
-- コードとテストを読めばわかる仕様の焼き直し
+- Design explanations of class structure or processing flow
+- Restatements of behavior that are already clear from reading the code and tests

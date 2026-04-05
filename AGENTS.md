@@ -1,22 +1,28 @@
 # AGENTS.md
 
-このファイルは Coding Agent 向けの不変で汎用的な最小ガイドです。長い説明や最新の情報は `docs/` を参照してください。
+This file is the minimal, stable, and generic guide for coding agents. Refer to `docs/` for longer explanations and current operational information.
 
-## 文書の分担
+## Document Split
 
-- `README.md`: プロジェクトが何か、簡単な使い方、人間向けの入口
-- `AGENTS.md`: Coding Agent 向けの不変で汎用的な最小ルール
-- `docs/`: 現時点の運用情報、意思決定、AI 向け手順など、コードから読み取れないもの
+- `README.md`: what the project is, brief usage, and the human-facing entry point
+- `AGENTS.md`: minimal, stable, and generic rules for coding agents
+- `docs/`: current operational information, decisions, and AI-oriented procedures that cannot be inferred from the code alone
 
-## ルール
+## Language Rules
 
-- 設計はコードとテストに置く
-- 必須要件の文書化はよい
-- 設計レベルの文書は増やさない
-- ドキュメントを更新するのは、コードだけでは伝わらない運用上の制約や判断を残す必要がある場合だけ
-- `README.md` を詳細仕様置き場にしない
-- `AGENTS.md` は最小に保つ
-- 長い手順、変わりうる情報、最新の運用情報は `docs/` に置く
-- 履歴や経緯は Git で管理し、履歴ファイルとして残さない
-- すべてのファイルは現状だけを扱い、過去の状態や移行の経緯を書き溜めない
-- コミットメッセージは `type(scope): gitmoji summary` の conventional commit 形式にそろえる
+- The canonical documents are the English files without a language suffix.
+- Provide Japanese counterparts as `.ja.*` files only for `AGENTS.md` and every file under `docs/`.
+- When updating those canonical English files, transpose the same content accurately into the corresponding `.ja.*` files.
+
+## Rules
+
+- Put the design in the code and tests.
+- Documenting mandatory requirements is fine.
+- Do not add design-level documentation.
+- Update documentation only when operational constraints or decisions need to be recorded and they cannot be understood from the code alone.
+- Do not turn `README.md` into a detailed specification dump.
+- Keep `AGENTS.md` minimal.
+- Put long procedures, changeable information, and current operational details under `docs/`.
+- Manage history and background in Git instead of keeping history files.
+- Every file should describe only the current state; do not accumulate past states or migration history.
+- Use the conventional commit format `type(scope): gitmoji summary` for commit messages.

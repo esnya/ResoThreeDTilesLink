@@ -1,35 +1,35 @@
 # Agent Procedures
 
-この文書は AI / Coding Agent 向けの手順を置きます。設計説明ではなく、作業時の判断基準だけを残します。
+This document contains procedures for AI and coding agents. It keeps only decision criteria for work, not design explanations.
 
-## 変更前
+## Before Making Changes
 
-1. まず関連コードとテストを読む
-2. コードとテストを設計の一次資料として扱う
-3. 文書変更が必要かは、コードから読み取れない情報があるかで判断する
+1. Read the related code and tests first.
+2. Treat the code and tests as the primary sources for the design.
+3. Decide whether documentation changes are needed based on whether there is information that cannot be inferred from the code.
 
-## 振る舞いを変えるとき
+## When Changing Behavior
 
-1. 先にテストの影響範囲を確認する
-2. 仕様変更なら、文書よりコードとテストの更新を優先する
-3. 文書は必須要件、運用前提、判断理由だけを補足する
+1. Check the affected test scope first.
+2. If the specification changes, prioritize updating the code and tests over the documentation.
+3. Use documentation only to supplement mandatory requirements, operational assumptions, and reasons for decisions.
 
-## Resonite 連携を触るとき
+## When Touching Resonite Integration
 
-1. 型名やメンバー名を推測しない
-2. 必要な値は live の Resonite Link から確認する
-3. `tools/ResoniteInspect` と `tools/ResoniteProbe` を使って確認する
-4. 実機確認ができない場合は、その前提を差分説明に明記する
+1. Do not guess type names or member names.
+2. Confirm required values from the live Resonite Link.
+3. Use `tools/ResoniteInspect` and `tools/ResoniteProbe` for verification.
+4. If real-environment verification was not possible, state that assumption explicitly in the change description.
 
-## ドキュメント更新ルール
+## Documentation Update Rules
 
-1. `README.md` は短く保つ
-2. `AGENTS.md` は不変で汎用的な最小セットだけにする
-3. `docs/` は最新情報と手順だけにする
-4. 設計レベルの説明は新設しない
+1. Keep `README.md` short.
+2. Keep `AGENTS.md` limited to the minimal stable and generic set.
+3. Keep `docs/` limited to current information and procedures.
+4. Do not add new design-level explanations.
 
-## 検証
+## Verification
 
-- 通常は `dotnet test ThreeDTilesLink.slnx`
-- 変更範囲が限定される場合は、まず関連テストを優先する
-- 実運用依存の確認が未実施なら、その不足を明示して終える
+- Normally run `dotnet test ThreeDTilesLink.slnx`.
+- If the change scope is limited, prioritize the relevant tests first.
+- If checks that depend on the live environment were not performed, finish by stating that gap explicitly.
