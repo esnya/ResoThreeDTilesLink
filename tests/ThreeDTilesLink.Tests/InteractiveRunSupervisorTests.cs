@@ -285,6 +285,40 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task RunAsync_StartsInitialRun_AfterSearchReflection_WhenValuesWereAlreadySet()
+        {
+            var session = new FakeSession();
+            var reflectedValues = new SelectionInputValues(35.7147651f, 139.7966553f, 400f);
+            var watchStore = new FakeWatchStore
+            {
+                SearchValues = new Queue<string?>(["Asakusa", "Asakusa", "Asakusa", "Asakusa"]),
+                SelectionInputValues = new Queue<SelectionInputValues?>(
+                [
+                    reflectedValues,
+                    reflectedValues,
+                    reflectedValues,
+                    reflectedValues
+                ])
+            };
+            var clock = new FakeClock();
+            var coordinator = new FakeTileRunCoordinator(_ => clock.RequestCancellation());
+            var searchResolver = new FakeSearchResolver(new LocationSearchResult("Asakusa", 35.7147651d, 139.7966553d));
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, searchResolver, clock);
+
+            using var cts = new CancellationTokenSource();
+            clock.CancellationSource = cts;
+
+            await supervisor.RunAsync(CreateRequest(apiKey: "key"), cts.Token);
+
+            _ = watchStore.UpdatedCoordinates.Should().ContainSingle()
+                .Which.Should().Be((35.7147651d, 139.7966553d));
+            _ = coordinator.Requests.Should().ContainSingle();
+            _ = coordinator.Requests[0].SelectionReference.Latitude.Should().BeApproximately(35.7147651d, 1e-5);
+            _ = coordinator.Requests[0].SelectionReference.Longitude.Should().BeApproximately(139.7966553d, 1e-5);
+            _ = coordinator.Requests[0].Traversal.RangeM.Should().Be(400d);
+        }
+
+        [Fact]
         public async Task RunAsync_Throws_WhenWatchSearchReadDetectsDisconnectedSession()
         {
             var session = new FakeSession();

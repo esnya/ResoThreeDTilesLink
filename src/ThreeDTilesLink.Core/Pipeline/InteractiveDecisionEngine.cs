@@ -122,11 +122,13 @@ namespace ThreeDTilesLink.Core.Pipeline
             SelectionInputValues? currentValues,
             DateTimeOffset now)
         {
+            bool resolvedCoordinatesReflected = false;
             if (currentValues is not null && state.AwaitingResolvedCoordinates is not null)
             {
                 if (MatchesResolvedCoordinates(currentValues, state.AwaitingResolvedCoordinates))
                 {
                     state = state with { AwaitingResolvedCoordinates = null };
+                    resolvedCoordinatesReflected = true;
                 }
                 else
                 {
@@ -134,7 +136,17 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
             }
 
-            if (currentValues is null || !SelectionInputReader.HasMeaningfulChange(state.LastObservedValues, currentValues))
+            if (currentValues is null)
+            {
+                return state;
+            }
+
+            bool hasMeaningfulChange = SelectionInputReader.HasMeaningfulChange(state.LastObservedValues, currentValues);
+            bool shouldStartInitialRunAfterSearchReflection =
+                resolvedCoordinatesReflected &&
+                state.LastRequestedFootprint is null &&
+                state.ActiveRun is null;
+            if (!hasMeaningfulChange && !shouldStartInitialRunAfterSearchReflection)
             {
                 return state;
             }
