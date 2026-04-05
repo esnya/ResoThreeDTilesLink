@@ -13,10 +13,8 @@ This `README.md` is the human-facing entry point. Current operational details an
 - Google APIs required by feature
   - 3D Tiles fetch (`ThreeDTilesLink.Cli`, `ThreeDTilesLink.Interactive` tile streaming): Google Map Tiles API
     - Use `GOOGLE_MAPS_API_KEY`
-    - Or use ADC (`gcloud auth application-default login` / `GOOGLE_APPLICATION_CREDENTIALS`)
   - Free-text location search in Interactive (`World/ThreeDTilesLink.Search`): Google Geocoding API
     - Use `GOOGLE_MAPS_API_KEY`
-    - ADC is not used for this search path
 - Enable Resonite Link in Resonite and confirm the destination port
 
 At startup, the CLI automatically loads `.env` with parent-directory discovery and does not overwrite existing environment variables.
@@ -42,29 +40,15 @@ dotnet run --project src/ThreeDTilesLink.Cli -- \
   --latitude 35.65858 \
   --longitude 139.745433 \
   --range 400 \
-  --resonite-host 127.0.0.1 \
   --resonite-port 12000
 ```
 
 - `--range` is the minimum coverage range from the center point.
 - Add `--dry-run` to verify only the fetch and conversion path without sending anything to Resonite.
 - `--content-workers` controls bounded fetch/decode parallelism. Default is `8`.
-- If `GOOGLE_MAPS_API_KEY` is set, the API key is used; otherwise ADC is used.
+- If `--resonite-host` is omitted, `localhost` is used.
 - If `--height-offset` is omitted, `0` is used.
 - Run `dotnet run --project src/ThreeDTilesLink.Cli -- --help` for units and defaults.
-
-Example using ADC:
-
-```bash
-gcloud auth application-default login
-dotnet run --project src/ThreeDTilesLink.Cli -- \
-  --latitude 35.65858 \
-  --longitude 139.745433 \
-  --range 400 \
-  --resonite-host 127.0.0.1 \
-  --resonite-port 12000 \
-  --dry-run
-```
 
 ## Usage (Interactive / Resident)
 
@@ -83,11 +67,9 @@ At connection time, the app creates a probe slot and watches `DynamicValueVariab
 Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and old run slots are removed.
 If `Search` is updated to a non-empty string, the app resolves it with the Google Geocoding API and writes the resulting coordinates back into `Latitude` / `Longitude`.
 If probe `Range` is `0` or less, no streaming run is started.
-Interactive search requires `GOOGLE_MAPS_API_KEY`; ADC-only authentication is not enough for free-text geocoding.
 
 ```bash
 dotnet run --project src/ThreeDTilesLink.Interactive -- \
-  --resonite-host 127.0.0.1 \
   --resonite-port 12000 \
   --poll-interval 250 \
   --debounce 800 \
@@ -99,6 +81,7 @@ dotnet run --project src/ThreeDTilesLink.Interactive -- \
 Run `dotnet run --project src/ThreeDTilesLink.Interactive -- --help` for units and defaults.
 
 - `--content-workers` controls bounded fetch/decode parallelism per run. Default is `8`.
+- If `--resonite-host` is omitted, `localhost` is used.
 
 ## Documentation
 

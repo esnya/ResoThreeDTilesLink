@@ -17,6 +17,7 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.Output.Should().Contain("--content-workers <value>");
             _ = invocation.Output.Should().Contain("--remove-out-of-range");
             _ = invocation.Output.Should().Contain("--probe-path <path>");
+            _ = invocation.Output.Should().Contain("Default: localhost.");
             _ = invocation.Output.Should().Contain("Unit: ms.");
             _ = invocation.Output.Should().Contain("Default: World/ThreeDTilesLink.");
         }
@@ -58,12 +59,24 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void Parse_DefaultsResoniteHostToLocalhost()
+        {
+            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
+            [
+                "--resonite-port", "12000"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeTrue();
+            InteractiveCommandOptions parsed = invocation.Options!;
+            _ = parsed.ResoniteHost.Should().Be("localhost");
+        }
+
+        [Fact]
         public void Parse_RejectsInteractiveRangeArgument()
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
             [
                 "--range", "400",
-                "--resonite-host", "127.0.0.1",
                 "--resonite-port", "12000"
             ]);
 
@@ -77,7 +90,6 @@ namespace ThreeDTilesLink.Tests
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
             [
-                "--resonite-host", "127.0.0.1",
                 "--resonite-port", "12000",
                 "--content-workers", "0"
             ]);

@@ -17,6 +17,7 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.Output.Should().Contain("--latitude <value>");
             _ = invocation.Output.Should().Contain("--range <value>");
             _ = invocation.Output.Should().Contain("--content-workers <value>");
+            _ = invocation.Output.Should().Contain("Default: localhost.");
             _ = invocation.Output.Should().Contain("Unit: m.");
             _ = invocation.Output.Should().Contain("Default: 120.");
             _ = invocation.Output.Should().Contain("Default: Information.");
@@ -60,6 +61,22 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void Parse_DefaultsResoniteHostToLocalhost()
+        {
+            CommandInvocation<CliCommandOptions> invocation = CliCommandLine.Parse(
+            [
+                "--latitude", "35.65858",
+                "--longitude", "139.745433",
+                "--range", "400",
+                "--resonite-port", "12000"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeTrue();
+            CliCommandOptions parsed = invocation.Options!;
+            _ = parsed.ResoniteHost.Should().Be("localhost");
+        }
+
+        [Fact]
         public void Parse_RejectsRenamedArgument()
         {
             CommandInvocation<CliCommandOptions> invocation = CliCommandLine.Parse(
@@ -67,7 +84,6 @@ namespace ThreeDTilesLink.Tests
                 "--latitude", "35.0",
                 "--longitude", "139.0",
                 "--half-width-m", "400",
-                "--resonite-host", "127.0.0.1",
                 "--resonite-port", "12000"
             ]);
 
@@ -85,7 +101,6 @@ namespace ThreeDTilesLink.Tests
                 "--latitude", "35.0",
                 "--longitude", "139.0",
                 "--range", "400",
-                "--resonite-host", "127.0.0.1",
                 "--resonite-port", "12000",
                 "--content-workers", "0"
             ]);

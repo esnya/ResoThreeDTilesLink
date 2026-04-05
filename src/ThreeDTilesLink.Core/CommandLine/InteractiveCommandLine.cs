@@ -27,7 +27,7 @@ namespace ThreeDTilesLink.Core.CommandLine
             "Attach probe variables in Resonite and keep streaming tiles as the probe latitude/longitude/range values change.",
             [
                 new("--height-offset", CommandOptionValueKind.DecimalNumber, "Height offset applied to streamed geometry.", DefaultValue: 0d, Unit: "m", RenamedFrom: ["--height-offset-m"]),
-                new("--resonite-host", CommandOptionValueKind.Text, "Resonite Link host name or IP address.", Required: true, ValueName: "host", RenamedFrom: ["--link-host"]),
+                new("--resonite-host", CommandOptionValueKind.Text, "Resonite Link host name or IP address.", DefaultValue: "localhost", ValueName: "host", RenamedFrom: ["--link-host"]),
                 new("--resonite-port", CommandOptionValueKind.WholeNumber, "Resonite Link port.", Required: true, ValueName: "port", RenamedFrom: ["--link-port"]),
                 new("--tile-limit", CommandOptionValueKind.WholeNumber, "Maximum number of tiles to stream per run.", DefaultValue: 1024, RenamedFrom: ["--max-tiles"]),
                 new("--depth-limit", CommandOptionValueKind.WholeNumber, "Maximum traversal depth per run.", DefaultValue: 32, RenamedFrom: ["--max-depth"]),
