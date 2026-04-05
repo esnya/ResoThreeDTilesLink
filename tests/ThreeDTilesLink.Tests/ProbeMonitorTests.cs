@@ -43,7 +43,25 @@ namespace ThreeDTilesLink.Tests
 
         private static ProbeBinding CreateBinding()
         {
-            return new ProbeBinding("probe", false, "lat", "Value", "lon", "Value", "range", "Value", "search", "Value");
+            return new ProbeBinding(
+                "probe",
+                false,
+                "lat",
+                "Value",
+                "lat_alias",
+                "Value",
+                "lon",
+                "Value",
+                "lon_alias",
+                "Value",
+                "range",
+                "Value",
+                "range_alias",
+                "Value",
+                "search",
+                "Value",
+                "search_alias",
+                "Value");
         }
 
         private sealed class ThrowingProbeStore(Exception? searchException, Exception? valuesException) : IProbeStore

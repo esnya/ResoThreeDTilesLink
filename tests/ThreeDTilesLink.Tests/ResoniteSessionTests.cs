@@ -106,6 +106,42 @@ namespace ThreeDTilesLink.Tests
                 }
             }
         }
+
+        [Fact]
+        public void BuildValueCopyMembers_UsesSourceTargetAndWriteBack()
+        {
+            MethodInfo? buildMembers = typeof(ResoniteSession)
+                .GetMethod("BuildValueCopyMembers", BindingFlags.NonPublic | BindingFlags.Static);
+            _ = buildMembers.Should().NotBeNull();
+
+            var members = buildMembers!.Invoke(null, ["field_source", "field_target", "[FrooxEngine]FrooxEngine.IField<float>", true])
+                .Should().BeOfType<Dictionary<string, Member>>().Subject;
+
+            _ = members.Should().ContainKeys("Source", "Target", "WriteBack");
+
+            Reference source = members["Source"].Should().BeOfType<Reference>().Subject;
+            _ = source.TargetID.Should().Be("field_source");
+            _ = source.TargetType.Should().Be("[FrooxEngine]FrooxEngine.IField<float>");
+
+            Reference target = members["Target"].Should().BeOfType<Reference>().Subject;
+            _ = target.TargetID.Should().Be("field_target");
+            _ = target.TargetType.Should().Be("[FrooxEngine]FrooxEngine.IField<float>");
+
+            _ = members["WriteBack"].Should().BeOfType<Field_bool>().Which.Value.Should().BeTrue();
+        }
+
+        [Fact]
+        public void BuildSessionVariablePath_AddsSpaceNameAndStripsWorldPrefix()
+        {
+            MethodInfo? buildPath = typeof(ResoniteSession)
+                .GetMethod("BuildSessionVariablePath", BindingFlags.NonPublic | BindingFlags.Static);
+            _ = buildPath.Should().NotBeNull();
+
+            string path = buildPath!.Invoke(null, ["Google3DTiles", "World/ThreeDTilesLink.Latitude"])
+                .Should().BeOfType<string>().Subject;
+
+            _ = path.Should().Be("Google3DTiles/ThreeDTilesLink.Latitude");
+        }
     }
 #pragma warning restore CA2000, CA2007
 }

@@ -29,10 +29,12 @@
 - このリポジトリからは `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` 経由で起動する
 - WSL から運用する場合、確認コマンドは Windows host 側の `pwsh.exe` で実行し、Linux 側 `pwsh` 前提にはしない
 - live 環境によっては `SimpleAvatarProtection` が公開されていないことがある。その場合でも接続とメッシュ送信は継続できる前提で扱う
-- Session root に付ける常設 DV は session root 直下に置く
-- `World/` プレフィックス付き `DynamicField` は外部観測用 alias として扱い、書き込み元の実体 DV とは分けて考える
-- Progress は親スロットに付けた `DynamicField` から `World/ThreeDTilesLink.Progress` へ `0.0..1.0` の float で公開する
-- 人間向けの進捗文字列は親スロットに付けた `DynamicField` から `World/ThreeDTilesLink.ProgressText` へ公開する
+- Session root や親スロットに付ける常設の書き込み元は、まず session-side の `DynamicValueVariable<T>` として置く
+- `DynamicVariableSpace.OnlyDirectBinding` が有効な場合、session-side の source DV 名には `SpaceName/` を明示して含める
+- `World/` alias は `DynamicField` ではなく、session-side の値を `ValueCopy<T>` で Drive する別の `DynamicValueVariable<T>` として公開する
+- Target 側からの上書きは `ValueCopy.WriteBack` で制御し、`World/` から session-side へ戻す必要がある Interactive 入力パラメーターにだけ有効化する
+- Progress は親スロットに置いた session-side の `DynamicValueVariable<float>` から `ValueCopy<float>` 経由で `World/ThreeDTilesLink.Progress` へ `0.0..1.0` の float として公開する
+- 人間向けの進捗文字列は親スロットに置いた session-side の `DynamicValueVariable<string>` から `ValueCopy<string>` 経由で `World/ThreeDTilesLink.ProgressText` へ公開する
 
 ## WSL からの単発確認
 

@@ -436,7 +436,25 @@ namespace ThreeDTilesLink.Tests
 
             public Task<ProbeBinding> CreateProbeAsync(ProbeConfiguration configuration, CancellationToken cancellationToken)
             {
-                return Task.FromResult(new ProbeBinding("probe", false, "lat", "Value", "lon", "Value", "range", "Value", "search", "Value"));
+                return Task.FromResult(new ProbeBinding(
+                    "probe",
+                    false,
+                    "lat",
+                    "Value",
+                    "lat_alias",
+                    "Value",
+                    "lon",
+                    "Value",
+                    "lon_alias",
+                    "Value",
+                    "range",
+                    "Value",
+                    "range_alias",
+                    "Value",
+                    "search",
+                    "Value",
+                    "search_alias",
+                    "Value"));
             }
 
             public Task<ProbeValues?> ReadProbeValuesAsync(ProbeBinding binding, CancellationToken cancellationToken)

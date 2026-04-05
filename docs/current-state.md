@@ -29,10 +29,12 @@ This document contains only current operational information that is difficult to
 - From this repository, launch it through `tools/Invoke-ResoniteLinkCommand.ps1 repl ...`.
 - When operating from WSL, run the verification command on the Windows host with `pwsh.exe`; do not rely on a Linux-side `pwsh` setup.
 - In some live environments, `SimpleAvatarProtection` may not be exposed. Even in that case, assume connection and mesh transmission can continue.
-- Put persistent `DynamicValueVariable<T>` members attached to the session root directly under the session root.
-- Treat `DynamicField` values with the `World/` prefix as aliases for external observation, separate from the underlying writable DV members.
-- Publish progress as a float in the range `0.0..1.0` from a `DynamicField` attached to the parent slot to `World/ThreeDTilesLink.Progress`.
-- Publish the human-readable progress string from a `DynamicField` attached to the parent slot to `World/ThreeDTilesLink.ProgressText`.
+- Put persistent writable `DynamicValueVariable<T>` members attached to the session root or parent slot on the session side first.
+- When `DynamicVariableSpace.OnlyDirectBinding` is enabled, the session-side source DV name must explicitly include `SpaceName/`.
+- Expose `World/` aliases as separate `DynamicValueVariable<T>` members driven from the session-side source by `ValueCopy<T>`, instead of `DynamicField`.
+- Control target-side overwrite through `ValueCopy.WriteBack`; enable it only for Interactive input parameters that must flow from `World/` back into the session-side values.
+- Publish progress as a float in the range `0.0..1.0` from a session-side `DynamicValueVariable<float>` on the parent slot to `World/ThreeDTilesLink.Progress` through `ValueCopy<float>`.
+- Publish the human-readable progress string from a session-side `DynamicValueVariable<string>` on the parent slot to `World/ThreeDTilesLink.ProgressText` through `ValueCopy<string>`.
 
 ## One-Off Verification from WSL
 

@@ -70,7 +70,10 @@ At connection time, the app attaches probe `DynamicValueVariable<T>` values to t
 - `World/ThreeDTilesLink.Range`
 - `World/ThreeDTilesLink.Search`
 
-For external observation, the `World/` paths are treated as aliases exposed through `DynamicField`. The underlying writable values remain session-root DV members.
+The session-root writable values are kept as separate `DynamicValueVariable<T>` members.
+The `World/` paths are exposed as alias `DynamicValueVariable<T>` members driven through `ValueCopy<T>`.
+For the Interactive input parameters (`Latitude` / `Longitude` / `Range` / `Search`), `ValueCopy.WriteBack` is enabled so changes from `World/` flow back into the session-side values.
+For observation-only aliases such as progress and credit text, `ValueCopy.WriteBack` stays disabled so changes on the alias side do not overwrite the source values.
 
 Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and old run slots are removed.
 If `Search` is updated to a non-empty string, the app resolves it with the Google Geocoding API and writes the resulting coordinates back into `Latitude` / `Longitude`.

@@ -28,10 +28,10 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string SimpleAvatarProtectionCloudUserRefType = "[FrooxEngine]FrooxEngine.CloudUserRef";
         private const string SimpleAvatarProtectionReassignMemberName = "ReassignUserOnPackageImport";
         private const string DynamicVariableSpaceComponentType = "[FrooxEngine]FrooxEngine.DynamicVariableSpace";
-        private const string DynamicFieldStringComponentType = "[FrooxEngine]FrooxEngine.DynamicField<string>";
-        private const string DynamicFieldFloatComponentType = "[FrooxEngine]FrooxEngine.DynamicField<float>";
         private const string DynamicValueVariableFloatComponentType = "[FrooxEngine]FrooxEngine.DynamicValueVariable<float>";
         private const string DynamicValueVariableStringComponentType = "[FrooxEngine]FrooxEngine.DynamicValueVariable<string>";
+        private const string ValueCopyFloatComponentType = "[FrooxEngine]FrooxEngine.ValueCopy<float>";
+        private const string ValueCopyStringComponentType = "[FrooxEngine]FrooxEngine.ValueCopy<string>";
         private const string DynamicValueVariableValueMemberName = "Value";
         private const string StringFieldType = "[FrooxEngine]FrooxEngine.IField<string>";
         private const string FloatFieldType = "[FrooxEngine]FrooxEngine.IField<float>";
@@ -74,6 +74,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private string? _sessionRootSlotId;
         private string? _sessionLicenseComponentId;
         private string? _sessionLicenseCreditText;
+        private string? _sessionLicenseAliasComponentId;
         private string? _materialTextureFieldName;
         private bool _materialTextureFieldResolved;
         private Dictionary<string, MemberDefinition>? _materialMemberDefinitions;
@@ -179,21 +180,70 @@ namespace ThreeDTilesLink.Core.Resonite
                 throw new InvalidOperationException("Session root slot is not initialized.");
             }
 
-            string latComponentId = await AddDynamicValueVariableAsync(_sessionRootSlotId, configuration.LatitudeVariablePath, cancellationToken).ConfigureAwait(false);
-            string lonComponentId = await AddDynamicValueVariableAsync(_sessionRootSlotId, configuration.LongitudeVariablePath, cancellationToken).ConfigureAwait(false);
-            string rangeComponentId = await AddDynamicValueVariableAsync(_sessionRootSlotId, configuration.RangeVariablePath, cancellationToken).ConfigureAwait(false);
-            string searchComponentId = await AddDynamicStringValueVariableAsync(_sessionRootSlotId, configuration.SearchVariablePath, cancellationToken).ConfigureAwait(false);
+            DynamicVariableBinding latBinding = await AddDynamicFloatValueVariableAsync(
+                _sessionRootSlotId,
+                BuildSessionVariablePath(GoogleTilesDynamicSpaceName, configuration.LatitudeVariablePath),
+                0f,
+                cancellationToken).ConfigureAwait(false);
+            DynamicVariableBinding lonBinding = await AddDynamicFloatValueVariableAsync(
+                _sessionRootSlotId,
+                BuildSessionVariablePath(GoogleTilesDynamicSpaceName, configuration.LongitudeVariablePath),
+                0f,
+                cancellationToken).ConfigureAwait(false);
+            DynamicVariableBinding rangeBinding = await AddDynamicFloatValueVariableAsync(
+                _sessionRootSlotId,
+                BuildSessionVariablePath(GoogleTilesDynamicSpaceName, configuration.RangeVariablePath),
+                0f,
+                cancellationToken).ConfigureAwait(false);
+            DynamicVariableBinding searchBinding = await AddDynamicStringValueVariableAsync(
+                _sessionRootSlotId,
+                BuildSessionVariablePath(GoogleTilesDynamicSpaceName, configuration.SearchVariablePath),
+                string.Empty,
+                cancellationToken).ConfigureAwait(false);
+
+            DynamicVariableBinding latAliasBinding = await AddWorldFloatAliasAsync(
+                _sessionRootSlotId,
+                configuration.LatitudeVariablePath,
+                latBinding.ValueFieldId,
+                writeBack: true,
+                cancellationToken).ConfigureAwait(false);
+            DynamicVariableBinding lonAliasBinding = await AddWorldFloatAliasAsync(
+                _sessionRootSlotId,
+                configuration.LongitudeVariablePath,
+                lonBinding.ValueFieldId,
+                writeBack: true,
+                cancellationToken).ConfigureAwait(false);
+            DynamicVariableBinding rangeAliasBinding = await AddWorldFloatAliasAsync(
+                _sessionRootSlotId,
+                configuration.RangeVariablePath,
+                rangeBinding.ValueFieldId,
+                writeBack: true,
+                cancellationToken).ConfigureAwait(false);
+            DynamicVariableBinding searchAliasBinding = await AddWorldStringAliasAsync(
+                _sessionRootSlotId,
+                configuration.SearchVariablePath,
+                searchBinding.ValueFieldId,
+                writeBack: true,
+                cancellationToken).ConfigureAwait(false);
 
             return new ProbeBinding(
                 _sessionRootSlotId,
                 false,
-                latComponentId,
+                latBinding.ComponentId,
                 DynamicValueVariableValueMemberName,
-                lonComponentId,
+                latAliasBinding.ComponentId,
                 DynamicValueVariableValueMemberName,
-                rangeComponentId,
+                lonBinding.ComponentId,
                 DynamicValueVariableValueMemberName,
-                searchComponentId,
+                lonAliasBinding.ComponentId,
+                DynamicValueVariableValueMemberName,
+                rangeBinding.ComponentId,
+                DynamicValueVariableValueMemberName,
+                rangeAliasBinding.ComponentId,
+                DynamicValueVariableValueMemberName,
+                searchBinding.ComponentId,
+                DynamicValueVariableValueMemberName,
+                searchAliasBinding.ComponentId,
                 DynamicValueVariableValueMemberName);
         }
 
@@ -231,8 +281,20 @@ namespace ThreeDTilesLink.Core.Resonite
                 throw new InvalidOperationException("Probe coordinates must be finite values.");
             }
 
-            await UpdateNumericMemberAsync(binding.LatitudeComponentId, binding.LatitudeValueMemberName, lat, cancellationToken).ConfigureAwait(false);
-            await UpdateNumericMemberAsync(binding.LongitudeComponentId, binding.LongitudeValueMemberName, lon, cancellationToken).ConfigureAwait(false);
+            await UpdateMirroredNumericMemberAsync(
+                binding.LatitudeComponentId,
+                binding.LatitudeValueMemberName,
+                binding.LatitudeAliasComponentId,
+                binding.LatitudeAliasValueMemberName,
+                lat,
+                cancellationToken).ConfigureAwait(false);
+            await UpdateMirroredNumericMemberAsync(
+                binding.LongitudeComponentId,
+                binding.LongitudeValueMemberName,
+                binding.LongitudeAliasComponentId,
+                binding.LongitudeAliasValueMemberName,
+                lon,
+                cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
         }
 
@@ -246,6 +308,11 @@ namespace ThreeDTilesLink.Core.Resonite
             string normalized = creditString.Trim();
             if (string.Equals(normalized, _sessionLicenseCreditText, StringComparison.Ordinal))
             {
+                await TryUpdateAliasStringMemberAsync(
+                    _sessionLicenseAliasComponentId,
+                    DynamicValueVariableValueMemberName,
+                    normalized,
+                    cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -267,6 +334,11 @@ namespace ThreeDTilesLink.Core.Resonite
                 cancellationToken).ConfigureAwait(false);
             _ = EnsureSuccess(response);
             _sessionLicenseCreditText = normalized;
+            await TryUpdateAliasStringMemberAsync(
+                _sessionLicenseAliasComponentId,
+                DynamicValueVariableValueMemberName,
+                normalized,
+                cancellationToken).ConfigureAwait(false);
         }
 
         public async Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken)
@@ -278,14 +350,32 @@ namespace ThreeDTilesLink.Core.Resonite
             string effectiveParentSlotId = ResolveEffectiveParentSlotId(parentSlotId);
             string normalizedText = progressText.Trim();
             SlotProgressBinding binding = await EnsureProgressBindingAsync(effectiveParentSlotId).ConfigureAwait(false);
-            await UpdateStringMemberAsync(binding.ProgressTextComponentId, DynamicValueVariableValueMemberName, normalizedText, cancellationToken).ConfigureAwait(false);
-            await UpdateNumericMemberAsync(binding.ProgressValueComponentId, DynamicValueVariableValueMemberName, normalizedProgress, cancellationToken).ConfigureAwait(false);
+            await UpdateMirroredStringMemberAsync(
+                binding.ProgressTextComponentId,
+                DynamicValueVariableValueMemberName,
+                binding.ProgressTextAliasComponentId,
+                DynamicValueVariableValueMemberName,
+                normalizedText,
+                cancellationToken).ConfigureAwait(false);
+            await UpdateMirroredNumericMemberAsync(
+                binding.ProgressValueComponentId,
+                DynamicValueVariableValueMemberName,
+                binding.ProgressValueAliasComponentId,
+                DynamicValueVariableValueMemberName,
+                normalizedProgress,
+                cancellationToken).ConfigureAwait(false);
 
             if (normalizedProgress >= 1f)
             {
                 // Some observers react immediately to the terminal progress value. Reapply the final
                 // text after the numeric completion update so the completed snapshot is visible there too.
-                await UpdateStringMemberAsync(binding.ProgressTextComponentId, DynamicValueVariableValueMemberName, normalizedText, cancellationToken).ConfigureAwait(false);
+                await UpdateMirroredStringMemberAsync(
+                    binding.ProgressTextComponentId,
+                    DynamicValueVariableValueMemberName,
+                    binding.ProgressTextAliasComponentId,
+                    DynamicValueVariableValueMemberName,
+                    normalizedText,
+                    cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -569,28 +659,156 @@ namespace ThreeDTilesLink.Core.Resonite
             }
         }
 
-        private async Task<string> AddDynamicValueVariableAsync(string slotId, string variablePath, CancellationToken cancellationToken = default)
+        private async Task<DynamicVariableBinding> AddDynamicFloatValueVariableAsync(
+            string slotId,
+            string variablePath,
+            float initialValue,
+            CancellationToken cancellationToken = default)
         {
-            return await AddComponentAsync(
+            string valueFieldId = $"t3dtile_field_{Guid.NewGuid():N}";
+            string componentId = await AddComponentAsync(
                 slotId,
                 DynamicValueVariableFloatComponentType,
-                new Dictionary<string, Member>(StringComparer.Ordinal)
-                {
-                    ["VariableName"] = new Field_string { Value = variablePath }
-                },
+                BuildDynamicFloatValueVariableMembers(variablePath, valueFieldId, initialValue),
                 cancellationToken).ConfigureAwait(false);
+            return new DynamicVariableBinding(componentId, valueFieldId);
         }
 
-        private async Task<string> AddDynamicStringValueVariableAsync(string slotId, string variablePath, CancellationToken cancellationToken = default)
+        private async Task<DynamicVariableBinding?> TryAddDynamicFloatValueVariableAsync(
+            string slotId,
+            string variablePath,
+            float initialValue,
+            CancellationToken cancellationToken = default)
         {
-            return await AddComponentAsync(
+            try
+            {
+                return await AddDynamicFloatValueVariableAsync(slotId, variablePath, initialValue, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private async Task<DynamicVariableBinding> AddDynamicStringValueVariableAsync(
+            string slotId,
+            string variablePath,
+            string initialValue,
+            CancellationToken cancellationToken = default)
+        {
+            string valueFieldId = $"t3dtile_field_{Guid.NewGuid():N}";
+            string componentId = await AddComponentAsync(
                 slotId,
                 DynamicValueVariableStringComponentType,
-                new Dictionary<string, Member>(StringComparer.Ordinal)
-                {
-                    ["VariableName"] = new Field_string { Value = variablePath }
-                },
+                BuildDynamicStringValueVariableMembers(variablePath, valueFieldId, initialValue),
                 cancellationToken).ConfigureAwait(false);
+            return new DynamicVariableBinding(componentId, valueFieldId);
+        }
+
+        private async Task<DynamicVariableBinding?> TryAddDynamicStringValueVariableAsync(
+            string slotId,
+            string variablePath,
+            string initialValue,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                return await AddDynamicStringValueVariableAsync(slotId, variablePath, initialValue, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private async Task<DynamicVariableBinding> AddWorldFloatAliasAsync(
+            string slotId,
+            string variablePath,
+            string sourceFieldId,
+            bool writeBack,
+            CancellationToken cancellationToken = default)
+        {
+            DynamicVariableBinding aliasBinding = await AddDynamicFloatValueVariableAsync(
+                slotId,
+                variablePath,
+                0f,
+                cancellationToken).ConfigureAwait(false);
+            _ = await AddComponentAsync(
+                slotId,
+                ValueCopyFloatComponentType,
+                BuildValueCopyMembers(sourceFieldId, aliasBinding.ValueFieldId, FloatFieldType, writeBack),
+                cancellationToken).ConfigureAwait(false);
+            return aliasBinding;
+        }
+
+        private async Task<DynamicVariableBinding?> TryAddWorldFloatAliasAsync(
+            string slotId,
+            string variablePath,
+            string sourceFieldId,
+            bool writeBack,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                return await AddWorldFloatAliasAsync(slotId, variablePath, sourceFieldId, writeBack, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private async Task<DynamicVariableBinding> AddWorldStringAliasAsync(
+            string slotId,
+            string variablePath,
+            string sourceFieldId,
+            bool writeBack,
+            CancellationToken cancellationToken = default)
+        {
+            DynamicVariableBinding aliasBinding = await AddDynamicStringValueVariableAsync(
+                slotId,
+                variablePath,
+                string.Empty,
+                cancellationToken).ConfigureAwait(false);
+            _ = await AddComponentAsync(
+                slotId,
+                ValueCopyStringComponentType,
+                BuildValueCopyMembers(sourceFieldId, aliasBinding.ValueFieldId, StringFieldType, writeBack),
+                cancellationToken).ConfigureAwait(false);
+            return aliasBinding;
+        }
+
+        private async Task<DynamicVariableBinding?> TryAddWorldStringAliasAsync(
+            string slotId,
+            string variablePath,
+            string sourceFieldId,
+            bool writeBack,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                return await AddWorldStringAliasAsync(slotId, variablePath, sourceFieldId, writeBack, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private async Task<string> CreateAssetSlotAsync(string parentSlotId, string assetName, CancellationToken cancellationToken = default)
@@ -670,6 +888,43 @@ namespace ThreeDTilesLink.Core.Resonite
             _ = EnsureSuccess(response);
         }
 
+        private async Task UpdateMirroredNumericMemberAsync(
+            string sourceComponentId,
+            string sourceMemberName,
+            string? aliasComponentId,
+            string aliasMemberName,
+            float value,
+            CancellationToken cancellationToken = default)
+        {
+            await UpdateNumericMemberAsync(sourceComponentId, sourceMemberName, value, cancellationToken).ConfigureAwait(false);
+            await TryUpdateAliasNumericMemberAsync(aliasComponentId, aliasMemberName, value, cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task TryUpdateAliasNumericMemberAsync(
+            string? componentId,
+            string memberName,
+            float value,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(componentId))
+            {
+                return;
+            }
+
+            try
+            {
+                await UpdateNumericMemberAsync(componentId, memberName, value, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to update mirrored numeric alias component {ComponentId}.", componentId);
+            }
+        }
+
         private async Task UpdateStringMemberAsync(string componentId, string memberName, string value, CancellationToken cancellationToken = default)
         {
             Response response = await ExecuteLinkRequestAsync(
@@ -687,6 +942,43 @@ namespace ThreeDTilesLink.Core.Resonite
                     }),
                 cancellationToken).ConfigureAwait(false);
             _ = EnsureSuccess(response);
+        }
+
+        private async Task UpdateMirroredStringMemberAsync(
+            string sourceComponentId,
+            string sourceMemberName,
+            string? aliasComponentId,
+            string aliasMemberName,
+            string value,
+            CancellationToken cancellationToken = default)
+        {
+            await UpdateStringMemberAsync(sourceComponentId, sourceMemberName, value, cancellationToken).ConfigureAwait(false);
+            await TryUpdateAliasStringMemberAsync(aliasComponentId, aliasMemberName, value, cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task TryUpdateAliasStringMemberAsync(
+            string? componentId,
+            string memberName,
+            string value,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(componentId))
+            {
+                return;
+            }
+
+            try
+            {
+                await UpdateStringMemberAsync(componentId, memberName, value, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to update mirrored string alias component {ComponentId}.", componentId);
+            }
         }
 
         private async Task<Member> ReadComponentMemberAsync(string componentId, string memberName, CancellationToken cancellationToken)
@@ -827,16 +1119,13 @@ namespace ThreeDTilesLink.Core.Resonite
             _sessionLicenseComponentId = licenseComponentId;
             _sessionLicenseCreditText = DefaultGoogleMapsCreditText;
 
-            _ = await TryAddComponentAsync(
+            DynamicVariableBinding? licenseAliasBinding = await TryAddWorldStringAliasAsync(
                 sessionRootSlotId,
-                DynamicFieldStringComponentType,
-                new Dictionary<string, Member>
-                {
-                    ["VariableName"] = new Field_string { Value = LicenseDynamicVariablePath },
-                    ["TargetField"] = new Reference { TargetID = creditFieldId, TargetType = StringFieldType },
-                    ["OverrideOnLink"] = new Field_bool { Value = true }
-                },
+                LicenseDynamicVariablePath,
+                creditFieldId,
+                writeBack: false,
                 cancellationToken).ConfigureAwait(false);
+            _sessionLicenseAliasComponentId = licenseAliasBinding?.ComponentId;
         }
 
         private async Task EnsureSessionDynamicSpaceAsync(string sessionRootSlotId, CancellationToken cancellationToken = default)
@@ -874,60 +1163,38 @@ namespace ThreeDTilesLink.Core.Resonite
                     ["OnlyDirectBinding"] = new Field_bool { Value = true }
                 }).ConfigureAwait(false);
 
-            string progressValueFieldId = $"t3dtile_field_{Guid.NewGuid():N}";
-            string? progressValueComponentId = await TryAddComponentAsync(
+            DynamicVariableBinding? progressValueBinding = await TryAddDynamicFloatValueVariableAsync(
                 parentSlotId,
-                DynamicValueVariableFloatComponentType,
-                new Dictionary<string, Member>(StringComparer.Ordinal)
-                {
-                    ["VariableName"] = new Field_string { Value = ProgressValueVariableLocalName },
-                    [DynamicValueVariableValueMemberName] = new Field_float
-                    {
-                        ID = progressValueFieldId,
-                        Value = 0f
-                    }
-                }).ConfigureAwait(false);
+                BuildScopedVariablePath(BuildParentDynamicSpaceName(parentSlotId), ProgressValueVariableLocalName),
+                0f).ConfigureAwait(false);
 
-            string progressTextFieldId = $"t3dtile_field_{Guid.NewGuid():N}";
-            string? progressTextComponentId = await TryAddComponentAsync(
+            DynamicVariableBinding? progressTextBinding = await TryAddDynamicStringValueVariableAsync(
                 parentSlotId,
-                DynamicValueVariableStringComponentType,
-                new Dictionary<string, Member>(StringComparer.Ordinal)
-                {
-                    ["VariableName"] = new Field_string { Value = ProgressTextVariableLocalName },
-                    [DynamicValueVariableValueMemberName] = new Field_string
-                    {
-                        ID = progressTextFieldId,
-                        Value = string.Empty
-                    }
-                }).ConfigureAwait(false);
+                BuildScopedVariablePath(BuildParentDynamicSpaceName(parentSlotId), ProgressTextVariableLocalName),
+                string.Empty).ConfigureAwait(false);
 
-            if (string.IsNullOrWhiteSpace(progressValueComponentId) || string.IsNullOrWhiteSpace(progressTextComponentId))
+            if (progressValueBinding is null || progressTextBinding is null)
             {
                 throw new InvalidOperationException($"Failed to create progress dynamic variable for slot {parentSlotId}.");
             }
 
-            _ = await TryAddComponentAsync(
+            DynamicVariableBinding? progressValueAliasBinding = await TryAddWorldFloatAliasAsync(
                 parentSlotId,
-                DynamicFieldFloatComponentType,
-                new Dictionary<string, Member>
-                {
-                    ["VariableName"] = new Field_string { Value = BuildWorldProgressPath() },
-                    ["TargetField"] = new Reference { TargetID = progressValueFieldId, TargetType = FloatFieldType },
-                    ["OverrideOnLink"] = new Field_bool { Value = true }
-                }).ConfigureAwait(false);
+                BuildWorldProgressPath(),
+                progressValueBinding.ValueFieldId,
+                writeBack: false).ConfigureAwait(false);
 
-            _ = await TryAddComponentAsync(
+            DynamicVariableBinding? progressTextAliasBinding = await TryAddWorldStringAliasAsync(
                 parentSlotId,
-                DynamicFieldStringComponentType,
-                new Dictionary<string, Member>
-                {
-                    ["VariableName"] = new Field_string { Value = BuildWorldProgressTextPath() },
-                    ["TargetField"] = new Reference { TargetID = progressTextFieldId, TargetType = StringFieldType },
-                    ["OverrideOnLink"] = new Field_bool { Value = true }
-                }).ConfigureAwait(false);
+                BuildWorldProgressTextPath(),
+                progressTextBinding.ValueFieldId,
+                writeBack: false).ConfigureAwait(false);
 
-            var binding = new SlotProgressBinding(progressValueComponentId, progressTextComponentId);
+            var binding = new SlotProgressBinding(
+                progressValueBinding.ComponentId,
+                progressTextBinding.ComponentId,
+                progressValueAliasBinding?.ComponentId,
+                progressTextAliasBinding?.ComponentId);
             _progressBindingsByParentSlotId[parentSlotId] = binding;
             return binding;
         }
@@ -1140,6 +1407,74 @@ namespace ThreeDTilesLink.Core.Resonite
             return ProgressTextDynamicVariablePath;
         }
 
+        private static string BuildSessionVariablePath(string spaceName, string worldVariablePath)
+        {
+            const string worldPrefix = "World/";
+            string localPath = worldVariablePath.StartsWith(worldPrefix, StringComparison.Ordinal)
+                ? worldVariablePath[worldPrefix.Length..]
+                : worldVariablePath;
+            return BuildScopedVariablePath(spaceName, localPath);
+        }
+
+        private static string BuildScopedVariablePath(string spaceName, string variableName)
+        {
+            return $"{spaceName}/{variableName}";
+        }
+
+        private static Dictionary<string, Member> BuildDynamicFloatValueVariableMembers(
+            string variablePath,
+            string valueFieldId,
+            float initialValue)
+        {
+            return new Dictionary<string, Member>(StringComparer.Ordinal)
+            {
+                ["VariableName"] = new Field_string { Value = variablePath },
+                [DynamicValueVariableValueMemberName] = new Field_float
+                {
+                    ID = valueFieldId,
+                    Value = initialValue
+                }
+            };
+        }
+
+        private static Dictionary<string, Member> BuildDynamicStringValueVariableMembers(
+            string variablePath,
+            string valueFieldId,
+            string initialValue)
+        {
+            return new Dictionary<string, Member>(StringComparer.Ordinal)
+            {
+                ["VariableName"] = new Field_string { Value = variablePath },
+                [DynamicValueVariableValueMemberName] = new Field_string
+                {
+                    ID = valueFieldId,
+                    Value = initialValue
+                }
+            };
+        }
+
+        private static Dictionary<string, Member> BuildValueCopyMembers(
+            string sourceFieldId,
+            string targetFieldId,
+            string fieldType,
+            bool writeBack)
+        {
+            return new Dictionary<string, Member>(StringComparer.Ordinal)
+            {
+                ["Source"] = new Reference
+                {
+                    TargetID = sourceFieldId,
+                    TargetType = fieldType
+                },
+                ["Target"] = new Reference
+                {
+                    TargetID = targetFieldId,
+                    TargetType = fieldType
+                },
+                ["WriteBack"] = new Field_bool { Value = writeBack }
+            };
+        }
+
         private static T EnsureSuccess<T>(T? response) where T : Response
         {
             return response is null
@@ -1350,6 +1685,7 @@ namespace ThreeDTilesLink.Core.Resonite
             _sessionRootSlotId = null;
             _sessionLicenseComponentId = null;
             _sessionLicenseCreditText = null;
+            _sessionLicenseAliasComponentId = null;
             _materialTextureFieldName = null;
             _materialTextureFieldResolved = false;
             _materialMemberDefinitions = null;
@@ -1361,6 +1697,11 @@ namespace ThreeDTilesLink.Core.Resonite
             _progressBindingsByParentSlotId.Clear();
         }
 
-        private sealed record SlotProgressBinding(string ProgressValueComponentId, string ProgressTextComponentId);
+        private sealed record SlotProgressBinding(
+            string ProgressValueComponentId,
+            string ProgressTextComponentId,
+            string? ProgressValueAliasComponentId,
+            string? ProgressTextAliasComponentId);
+        private sealed record DynamicVariableBinding(string ComponentId, string ValueFieldId);
     }
 }
