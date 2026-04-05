@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using ThreeDTilesLink.Core.App;
 
 namespace ThreeDTilesLink.Core.CommandLine
 {
@@ -15,7 +16,7 @@ namespace ThreeDTilesLink.Core.CommandLine
         int ContentWorkers,
         int TimeoutSec,
         bool DryRun,
-        LogLevel LogLevel);
+        LogLevel LogLevel) : ICommandRuntimeOptions;
 
     internal static class StreamCommandLine
     {
@@ -47,45 +48,39 @@ namespace ThreeDTilesLink.Core.CommandLine
         internal static CommandInvocation<StreamCommandOptions> Parse(IReadOnlyList<string> args)
         {
             ParsedCommand parsed = CommandLineParser.Parse(Specification, args);
-            if (parsed.Status == CommandParseStatus.Help)
+            if (CommandInvocationBuilder.TryHandleParseResult(parsed, out CommandInvocation<StreamCommandOptions> handled))
             {
-                return new CommandInvocation<StreamCommandOptions>(false, default, 0, parsed.Output, false);
+                return handled;
             }
 
-            if (parsed.Status == CommandParseStatus.Error)
+            if (!CommandInvocationBuilder.TryGetLogLevel(parsed, out LogLevel logLevel, out string? logLevelRaw))
             {
-                return new CommandInvocation<StreamCommandOptions>(false, default, 1, parsed.Output, true);
+                return CommandInvocationBuilder.Error<StreamCommandOptions>($"Invalid value for --log-level: {logLevelRaw}", RenderHelp);
             }
 
-            if (!TryGetValue(parsed, "--log-level", out string? logLevelRaw) ||
-                !Enum.TryParse(logLevelRaw, ignoreCase: true, out LogLevel logLevel))
+            if (!CommandInvocationBuilder.TryGetPositiveInt(parsed, "--content-workers", out int contentWorkers))
             {
-                return Error($"Invalid value for --log-level: {logLevelRaw}");
+                return CommandInvocationBuilder.Error<StreamCommandOptions>($"Invalid value for --content-workers: {contentWorkers}", RenderHelp);
             }
 
-            if (!TryGetValue(parsed, "--content-workers", out int contentWorkers) || contentWorkers <= 0)
+            if (!CommandInvocationBuilder.TryGetValue(parsed, "--latitude", out double latitude) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--longitude", out double longitude) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--height-offset", out double heightOffsetM) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--range", out double rangeM) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--resonite-host", out string? resoniteHost) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--resonite-port", out int resonitePort) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--tile-limit", out int tileLimit) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--depth-limit", out int depthLimit) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--detail", out double detailTargetM) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--timeout", out int timeoutSec) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--dry-run", out bool dryRun))
             {
-                return Error($"Invalid value for --content-workers: {contentWorkers}");
-            }
-
-            if (!TryGetValue(parsed, "--latitude", out double latitude) ||
-                !TryGetValue(parsed, "--longitude", out double longitude) ||
-                !TryGetValue(parsed, "--height-offset", out double heightOffsetM) ||
-                !TryGetValue(parsed, "--range", out double rangeM) ||
-                !TryGetValue(parsed, "--resonite-host", out string? resoniteHost) ||
-                !TryGetValue(parsed, "--resonite-port", out int resonitePort) ||
-                !TryGetValue(parsed, "--tile-limit", out int tileLimit) ||
-                !TryGetValue(parsed, "--depth-limit", out int depthLimit) ||
-                !TryGetValue(parsed, "--detail", out double detailTargetM) ||
-                !TryGetValue(parsed, "--timeout", out int timeoutSec) ||
-                !TryGetValue(parsed, "--dry-run", out bool dryRun))
-            {
-                return Error("Invalid command values.");
+                return CommandInvocationBuilder.Error<StreamCommandOptions>("Invalid command values.", RenderHelp);
             }
 
             if (string.IsNullOrWhiteSpace(resoniteHost))
             {
-                return Error("Invalid value for --resonite-host.");
+                return CommandInvocationBuilder.Error<StreamCommandOptions>("Invalid value for --resonite-host.", RenderHelp);
             }
 
             return new CommandInvocation<StreamCommandOptions>(true, new StreamCommandOptions(
@@ -107,28 +102,6 @@ namespace ThreeDTilesLink.Core.CommandLine
         internal static string RenderHelp()
         {
             return CommandLineParser.RenderHelp(Specification);
-        }
-
-        private static CommandInvocation<StreamCommandOptions> Error(string message)
-        {
-            return new CommandInvocation<StreamCommandOptions>(
-                false,
-                default,
-                1,
-                $"{message}{Environment.NewLine}{Environment.NewLine}{RenderHelp()}",
-                true);
-        }
-
-        private static bool TryGetValue<T>(ParsedCommand parsed, string key, out T value)
-        {
-            if (parsed.Values.TryGetValue(key, out object? raw) && raw is T typed)
-            {
-                value = typed;
-                return true;
-            }
-
-            value = default!;
-            return false;
         }
     }
 }

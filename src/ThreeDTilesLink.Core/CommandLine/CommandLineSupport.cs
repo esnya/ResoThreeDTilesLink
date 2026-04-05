@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Globalization;
 
 namespace ThreeDTilesLink.Core.CommandLine
@@ -271,6 +272,67 @@ namespace ThreeDTilesLink.Core.CommandLine
                 IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
                 _ => value.ToString() ?? string.Empty
             };
+        }
+    }
+
+    internal static class CommandInvocationBuilder
+    {
+        internal static bool TryGetValue<T>(ParsedCommand parsed, string key, out T value)
+        {
+            if (parsed.Values.TryGetValue(key, out object? raw) && raw is T typed)
+            {
+                value = typed;
+                return true;
+            }
+
+            value = default!;
+            return false;
+        }
+
+        internal static bool TryHandleParseResult<T>(ParsedCommand parsed, out CommandInvocation<T> invocation)
+        {
+            if (parsed.Status == CommandParseStatus.Help)
+            {
+                invocation = new CommandInvocation<T>(false, default, 0, parsed.Output, false);
+                return true;
+            }
+
+            if (parsed.Status == CommandParseStatus.Error)
+            {
+                invocation = new CommandInvocation<T>(false, default, 1, parsed.Output, true);
+                return true;
+            }
+
+            invocation = default!;
+            return false;
+        }
+
+        internal static bool TryGetLogLevel(ParsedCommand parsed, out LogLevel logLevel, out string? rawValue)
+        {
+            logLevel = default;
+            bool success = TryGetValue(parsed, "--log-level", out rawValue) &&
+                Enum.TryParse(rawValue, ignoreCase: true, out logLevel);
+            if (!success)
+            {
+                logLevel = default;
+            }
+
+            return success;
+        }
+
+        internal static bool TryGetPositiveInt(ParsedCommand parsed, string key, out int value)
+        {
+            return TryGetValue(parsed, key, out value) && value > 0;
+        }
+
+        internal static CommandInvocation<T> Error<T>(string message, Func<string> renderHelp)
+        {
+            return new CommandInvocation<T>(
+                false,
+                default,
+                1,
+                $"{message}{Environment.NewLine}{Environment.NewLine}{renderHelp()}",
+                true);
         }
     }
 }
