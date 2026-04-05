@@ -141,7 +141,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                             break;
                         }
 
-                        if (tree.AncestorsWithPlanningVisibleDescendants.Contains(node.StableId))
+                        if (tree.AncestorsWithPlanningVisibleDescendants.Contains(node.StableId) &&
+                            !ShouldPrioritizeCoverage(facts.Request, node.Fact.Tile))
                         {
                             break;
                         }
@@ -938,18 +939,15 @@ namespace ThreeDTilesLink.Core.Pipeline
                 _ = candidates.Add(node.StableId);
             }
 
-            if (tree.PlanningVisibleStableIds.Count == 0)
+            foreach (string stableId in tree.Nodes.Values
+                         .Where(static node => node.Fact.Tile.ContentKind == TileContentKind.Glb)
+                         .Where(node => ShouldPrioritizeCoverage(tree.Request, node.Fact.Tile))
+                         .OrderBy(static node => node.Fact.Tile.Depth)
+                         .ThenByDescending(static node => node.Fact.Tile.HorizontalSpanM ?? double.MinValue)
+                         .ThenBy(static node => node.Fact.Tile.TileId, StringComparer.Ordinal)
+                         .Select(static node => node.StableId))
             {
-                foreach (string stableId in tree.Nodes.Values
-                             .Where(static node => node.Fact.Tile.ContentKind == TileContentKind.Glb)
-                             .Where(node => ShouldPrioritizeCoverage(tree.Request, node.Fact.Tile))
-                             .OrderBy(static node => node.Fact.Tile.Depth)
-                             .ThenByDescending(static node => node.Fact.Tile.HorizontalSpanM ?? double.MinValue)
-                             .ThenBy(static node => node.Fact.Tile.TileId, StringComparer.Ordinal)
-                             .Select(static node => node.StableId))
-                {
-                    _ = candidates.Add(stableId);
-                }
+                _ = candidates.Add(stableId);
             }
 
             foreach (string visibleStableId in tree.PlanningVisibleStableIds)

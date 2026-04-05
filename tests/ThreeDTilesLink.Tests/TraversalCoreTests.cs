@@ -271,6 +271,30 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void PlanDiscovery_VisibleDescendantStillSchedulesCoverageParent_WhenRangeExpansionNeedsSiblingBranch()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p", "https://example.com/p.glb", depth: 0, parentTileId: null, hasChildren: true, span: 3000d),
+                CreateTile("c0", "https://example.com/c0.glb", depth: 1, parentTileId: "p", hasChildren: false, span: 40d),
+                CreateTile("c1", "https://example.com/c1.glb", depth: 1, parentTileId: "p", hasChildren: false, span: 40d)
+            ]);
+            string childStableId = StableId("c0");
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [childStableId] = new(childStableId, "c0", StableId("p"), [StableId("p")], ["slot_child"], "Google; Child")
+            });
+
+            List<DiscoveryWorkItem> work = core.PlanDiscovery(facts, writerState, availableSlots: 2);
+
+            _ = work.Should().HaveCount(2);
+            _ = work[0].Tile.TileId.Should().Be("p");
+            _ = work[1].Tile.TileId.Should().Be("c1");
+        }
+
+        [Fact]
         public void ComputeDesiredView_CleanupEnabled_IgnoresOutOfRangeRetainedDescendant()
         {
             TraversalCore core = CreateCore(_ =>
