@@ -201,6 +201,67 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void Select_ExcludesCoarseRenderable_WhenNoChildBranchIntersects()
+        {
+            var transformer = new GeographicCoordinateTransformer();
+            var selector = new TileSelector(transformer);
+            var reference = new GeoReference(0d, 0d, 0d);
+            Vector3d center = transformer.GeographicToEcef(0d, 0d, 0d);
+
+            static BoundingVolume BoxAt(Vector3d centerEcef, double eastOffsetM, double northOffsetM, double halfExtentM)
+            {
+                return new BoundingVolume
+                {
+                    Box =
+                    [
+                        centerEcef.X + eastOffsetM, centerEcef.Y + northOffsetM, centerEcef.Z,
+                        0d, halfExtentM, 0d,
+                        0d, 0d, halfExtentM,
+                        halfExtentM, 0d, 0d
+                    ]
+                };
+            }
+
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        BoundingVolume = BoxAt(center, 0d, 0d, 1200d),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "c-out",
+                                ContentUri = new Uri("https://example.com/c-out.glb"),
+                                BoundingVolume = BoxAt(center, 5000d, 5000d, 120d)
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            IReadOnlyList<TileSelectionResult> selected = selector.Select(
+                tileset,
+                reference,
+                new QueryRange(500d),
+                maxDepth: 16,
+                detailTargetM: 30d,
+                maxTiles: 64,
+                Matrix4x4d.Identity,
+                string.Empty,
+                0,
+                null,
+                null);
+
+            _ = selected.Should().BeEmpty();
+        }
+
+        [Fact]
         public void Select_ComposeId_KeepsCompactReadableIds()
         {
             var selector = new TileSelector(new GeographicCoordinateTransformer());

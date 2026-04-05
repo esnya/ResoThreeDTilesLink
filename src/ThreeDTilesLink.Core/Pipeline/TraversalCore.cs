@@ -34,6 +34,8 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public bool NestedExpanded { get; set; }
 
+        public bool SendFailed { get; set; }
+
         public string? AssetCopyright { get; set; }
 
         public int CompleteSendFailureCount { get; set; }
@@ -352,6 +354,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 .Where(fact => !HasVisibleAncestor(facts, writerState, fact.Tile.ParentStableId))
                 .Where(fact => ShouldPrioritizeCoverage(facts.Request, fact.Tile))
                 .OrderBy(static fact => fact.Tile.Depth)
+                .ThenByDescending(static fact => fact.Tile.HorizontalSpanM ?? double.MinValue)
                 .ThenBy(static fact => fact.PreparedOrder)
                 .FirstOrDefault();
 
@@ -366,7 +369,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                                    fact.PreparedContent is not null &&
                                    fact.PrepareStatus == ContentDiscoveryStatus.Ready)
                 .Select(stableId => facts.Branches[stableId])
-                .OrderBy(static fact => fact.PreparedOrder)
+                .OrderBy(fact => GetNearestVisibleAncestorDepth(facts, writerState, fact.Tile.ParentStableId))
+                .ThenBy(static fact => fact.Tile.Depth)
+                .ThenByDescending(static fact => fact.Tile.HorizontalSpanM ?? double.MinValue)
+                .ThenBy(static fact => fact.PreparedOrder)
                 .FirstOrDefault();
 
             if (sendFact?.PreparedContent is not null)
@@ -433,6 +439,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     fact.PreparedContent = prepared.Content;
                     fact.AssetCopyright = prepared.Content.AssetCopyright;
                     fact.PreparedOrder = nextPreparedOrder++;
+                    fact.SendFailed = false;
                     break;
 
                 case DiscoverySkipped skipped:
@@ -504,6 +511,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                     if (!sent.Succeeded)
                     {
                         failedTiles++;
+                        fact.SendFailed = sent.SlotIds.Count == 0 &&
+                            !string.IsNullOrWhiteSpace(fact.Tile.ParentStableId);
                         if (sent.SlotIds.Count == 0)
                         {
                             fact.CompleteSendFailureCount++;
@@ -511,6 +520,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                                 ? ContentDiscoveryStatus.Ready
                                 : ContentDiscoveryStatus.Failed;
                         }
+                    }
+                    else
+                    {
+                        fact.SendFailed = false;
                     }
 
                     // Partial sends are retained only when rollback failed; fully rolled back sends are retried.
@@ -712,6 +725,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     PreparedContent = fact.PreparedContent,
                     PreparedOrder = fact.PreparedOrder,
                     NestedExpanded = fact.NestedExpanded,
+                    SendFailed = fact.SendFailed,
                     AssetCopyright = fact.AssetCopyright,
                     CompleteSendFailureCount = fact.CompleteSendFailureCount
                 };
@@ -793,6 +807,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             Dictionary<string, bool> subtreeCoveredMemo)
         {
             if (facts.Branches.TryGetValue(stableId, out TileBranchFact? fact) &&
+                !writerState.VisibleTiles.ContainsKey(stableId) &&
                 !string.IsNullOrWhiteSpace(fact.Tile.ParentStableId) &&
                 !candidateStableIds.Contains(fact.Tile.ParentStableId) &&
                 !writerState.VisibleTiles.ContainsKey(fact.Tile.ParentStableId))
@@ -923,6 +938,12 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         private static bool IsRenderableAvailable(TileBranchFact fact, WriterState writerState)
         {
+            if (fact.SendFailed &&
+                !writerState.VisibleTiles.ContainsKey(fact.Tile.StableId!))
+            {
+                return false;
+            }
+
             return writerState.VisibleTiles.ContainsKey(fact.Tile.StableId!) ||
                    (fact.PrepareStatus == ContentDiscoveryStatus.Ready && fact.PreparedContent is not null);
         }
@@ -949,11 +970,16 @@ namespace ThreeDTilesLink.Core.Pipeline
                 .Select(static tile => tile.StableId)
                 .ToHashSet(StringComparer.Ordinal);
 
-            IEnumerable<TileBranchFact> prioritized = facts.Branches.Values
-                .Where(static fact => fact.Tile.ContentKind == TileContentKind.Glb)
-                .OrderByDescending(static fact => fact.Tile.Depth)
-                .ThenBy(static fact => fact.Tile.HorizontalSpanM ?? double.MaxValue)
-                .ThenBy(static fact => fact.Tile.TileId, StringComparer.Ordinal);
+            IEnumerable<TileBranchFact> prioritized = visibleStableIds.Count == 0
+                ? facts.Branches.Values
+                    .Where(static fact => fact.Tile.ContentKind == TileContentKind.Glb)
+                    .OrderByDescending(static fact => fact.Tile.Depth)
+                    .ThenBy(static fact => fact.Tile.HorizontalSpanM ?? double.MaxValue)
+                    .ThenBy(static fact => fact.Tile.TileId, StringComparer.Ordinal)
+                : GetVisibleFrontierCandidates(
+                    facts,
+                    visibleStableIds,
+                    BuildAncestorsWithVisibleDescendants(planningVisibleTiles));
 
             var candidates = new HashSet<string>(StringComparer.Ordinal);
             foreach (TileBranchFact fact in prioritized)
@@ -967,6 +993,20 @@ namespace ThreeDTilesLink.Core.Pipeline
                 _ = candidates.Add(fact.Tile.StableId!);
             }
 
+            if (visibleStableIds.Count == 0)
+            {
+                foreach (string stableId in facts.Branches.Values
+                             .Where(static fact => fact.Tile.ContentKind == TileContentKind.Glb)
+                             .Where(fact => ShouldPrioritizeCoverage(facts.Request, fact.Tile))
+                             .OrderBy(static fact => fact.Tile.Depth)
+                             .ThenByDescending(static fact => fact.Tile.HorizontalSpanM ?? double.MinValue)
+                             .ThenBy(static fact => fact.Tile.TileId, StringComparer.Ordinal)
+                             .Select(static fact => fact.Tile.StableId!))
+                {
+                    _ = candidates.Add(stableId);
+                }
+            }
+
             foreach (string visibleStableId in visibleStableIds)
             {
                 if (facts.Branches.ContainsKey(visibleStableId))
@@ -976,6 +1016,61 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             return candidates;
+        }
+
+        private static IReadOnlyList<TileBranchFact> GetVisibleFrontierCandidates(
+            DiscoveryFacts facts,
+            IReadOnlySet<string> visibleStableIds,
+            IReadOnlySet<string> ancestorsWithVisibleDescendants)
+        {
+            Dictionary<string, List<string>> childrenByParent = BuildChildrenByParent(facts);
+            var frontier = new List<TileBranchFact>();
+            var queue = new Queue<string>(
+                facts.Branches.Values
+                    .Where(fact => string.IsNullOrWhiteSpace(fact.Tile.ParentStableId) ||
+                                   !facts.Branches.ContainsKey(fact.Tile.ParentStableId))
+                    .OrderBy(static fact => fact.Tile.Depth)
+                    .ThenByDescending(static fact => fact.Tile.HorizontalSpanM ?? double.MinValue)
+                    .ThenBy(static fact => fact.Tile.TileId, StringComparer.Ordinal)
+                    .Select(static fact => fact.Tile.StableId!));
+
+            while (queue.Count > 0)
+            {
+                string stableId = queue.Dequeue();
+                if (!facts.Branches.TryGetValue(stableId, out TileBranchFact? fact))
+                {
+                    continue;
+                }
+
+                if (fact.Tile.ContentKind == TileContentKind.Glb &&
+                    !visibleStableIds.Contains(stableId) &&
+                    !ancestorsWithVisibleDescendants.Contains(stableId))
+                {
+                    frontier.Add(fact);
+                    continue;
+                }
+
+                if (!childrenByParent.TryGetValue(stableId, out List<string>? children))
+                {
+                    continue;
+                }
+
+                foreach (string childId in children
+                             .Where(facts.Branches.ContainsKey)
+                             .OrderBy(childId => facts.Branches[childId].Tile.Depth)
+                             .ThenByDescending(childId => facts.Branches[childId].Tile.HorizontalSpanM ?? double.MinValue)
+                             .ThenBy(childId => facts.Branches[childId].Tile.TileId, StringComparer.Ordinal))
+                {
+                    queue.Enqueue(childId);
+                }
+            }
+
+            return frontier
+                .OrderByDescending(fact => HasVisibleAncestor(visibleStableIds, facts, fact.Tile.ParentStableId))
+                .ThenBy(static fact => fact.Tile.Depth)
+                .ThenByDescending(static fact => fact.Tile.HorizontalSpanM ?? double.MinValue)
+                .ThenBy(static fact => fact.Tile.TileId, StringComparer.Ordinal)
+                .ToArray();
         }
 
         private static HashSet<string> BuildAncestorsWithVisibleDescendants(IEnumerable<RetainedTileState> visibleTiles)
@@ -1010,10 +1105,18 @@ namespace ThreeDTilesLink.Core.Pipeline
             WriterState writerState,
             string? parentStableId)
         {
+            return HasVisibleAncestor(writerState.VisibleTiles.Keys.ToHashSet(StringComparer.Ordinal), facts, parentStableId);
+        }
+
+        private static bool HasVisibleAncestor(
+            IReadOnlySet<string> visibleStableIds,
+            DiscoveryFacts facts,
+            string? parentStableId)
+        {
             string? currentId = parentStableId;
             while (!string.IsNullOrWhiteSpace(currentId))
             {
-                if (writerState.VisibleTiles.ContainsKey(currentId))
+                if (visibleStableIds.Contains(currentId))
                 {
                     return true;
                 }
@@ -1027,6 +1130,32 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             return false;
+        }
+
+        private static int GetNearestVisibleAncestorDepth(
+            DiscoveryFacts facts,
+            WriterState writerState,
+            string? parentStableId)
+        {
+            string? currentId = parentStableId;
+            while (!string.IsNullOrWhiteSpace(currentId))
+            {
+                if (writerState.VisibleTiles.ContainsKey(currentId))
+                {
+                    return facts.Branches.TryGetValue(currentId, out TileBranchFact? fact)
+                        ? fact.Tile.Depth
+                        : int.MaxValue;
+                }
+
+                if (!facts.Branches.TryGetValue(currentId, out TileBranchFact? parent))
+                {
+                    break;
+                }
+
+                currentId = parent.Tile.ParentStableId;
+            }
+
+            return int.MaxValue;
         }
 
         private static bool ShouldPrioritizeCoverage(TileRunRequest request, TileSelectionResult tile)
