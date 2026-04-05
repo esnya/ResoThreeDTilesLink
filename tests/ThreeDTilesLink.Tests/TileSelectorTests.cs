@@ -16,6 +16,7 @@ namespace ThreeDTilesLink.Tests
 
             var reference = new GeoReference(0d, 0d, 0d);
             Vector3d referenceEcef = transformer.GeographicToEcef(0d, 0d, 0d);
+            Vector3d antipodeEcef = transformer.GeographicToEcef(0d, 180d, 0d);
 
             var tileset = new Tileset(new Tile
             {
@@ -54,6 +55,21 @@ namespace ThreeDTilesLink.Tests
                         {
                             Sphere = [referenceEcef.X, referenceEcef.Y + 5000d, referenceEcef.Z, 30d]
                         }
+                    },
+                    new Tile
+                    {
+                        Id = "box-below-local-plane",
+                        ContentUri = new Uri("https://example.com/box-below-local-plane.glb"),
+                        BoundingVolume = new BoundingVolume
+                        {
+                            Box =
+                            [
+                                antipodeEcef.X, antipodeEcef.Y, antipodeEcef.Z,
+                                0d, 40d, 0d,
+                                0d, 0d, 40d,
+                                40d, 0d, 0d
+                            ]
+                        }
                     }
                 ]
             });
@@ -61,7 +77,7 @@ namespace ThreeDTilesLink.Tests
             IReadOnlyList<TileSelectionResult> selected = selector.Select(tileset, reference, new QueryRange(120d), maxDepth: 8, detailTargetM: 40d, maxTiles: 32, Matrix4x4d.Identity, string.Empty, 0, null, null);
 
             _ = selected.Select(x => x.TileId).Should().Contain(["region-in", "box-in"]);
-            _ = selected.Select(x => x.TileId).Should().NotContain("sphere-out");
+            _ = selected.Select(x => x.TileId).Should().NotContain(["sphere-out", "box-below-local-plane"]);
         }
 
         [Fact]

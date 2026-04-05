@@ -7,6 +7,8 @@ namespace ThreeDTilesLink.Core.Tiles
 {
     public sealed class TileSelector(ICoordinateTransformer transformer) : ITileSelector
     {
+        private const double MaxBelowLocalPlaneM = 10000d;
+
         private readonly ICoordinateTransformer _transformer = transformer;
 
         public IReadOnlyList<TileSelectionResult> Select(
@@ -208,46 +210,63 @@ namespace ThreeDTilesLink.Core.Tiles
                 return true;
             }
 
-            if (!TryGetHorizontalBounds(volume, world, reference, out double minEast, out double maxEast, out double minNorth, out double maxNorth))
+            if (!TryGetLocalBounds(
+                    volume,
+                    world,
+                    reference,
+                    out double minEast,
+                    out double maxEast,
+                    out double minNorth,
+                    out double maxNorth,
+                    out double _,
+                    out double maxUp))
             {
                 horizontalSpanM = null;
                 return true;
             }
 
             horizontalSpanM = SMath.Max(maxEast - minEast, maxNorth - minNorth);
+            if (maxUp < -MaxBelowLocalPlaneM)
+            {
+                return false;
+            }
+
             return !(maxEast < range.Min || minEast > range.Max || maxNorth < range.Min || minNorth > range.Max);
         }
 
-        private bool TryGetHorizontalBounds(
+        private bool TryGetLocalBounds(
             BoundingVolume volume,
             Matrix4x4d world,
             GeoReference reference,
             out double minEast,
             out double maxEast,
             out double minNorth,
-            out double maxNorth)
+            out double maxNorth,
+            out double minUp,
+            out double maxUp)
         {
             var eastValues = new List<double>();
             var northValues = new List<double>();
+            var upValues = new List<double>();
 
             if (volume.Region is { Count: 6 } region)
             {
-                AppendRegionSamples(region, reference, eastValues, northValues);
+                AppendRegionSamples(region, reference, eastValues, northValues, upValues);
             }
 
             if (volume.Box is { Count: 12 } box)
             {
-                AppendBoxSamples(box, world, reference, eastValues, northValues);
+                AppendBoxSamples(box, world, reference, eastValues, northValues, upValues);
             }
 
             if (volume.Sphere is { Count: 4 } sphere)
             {
-                AppendSphereSamples(sphere, world, reference, eastValues, northValues);
+                AppendSphereSamples(sphere, world, reference, eastValues, northValues, upValues);
             }
 
-            if (eastValues.Count == 0 || northValues.Count == 0)
+            if (eastValues.Count == 0 || northValues.Count == 0 || upValues.Count == 0)
             {
-                minEast = maxEast = minNorth = maxNorth = 0d;
+                minEast = maxEast = minNorth = maxNorth = minUp = maxUp = 0d;
                 return false;
             }
 
@@ -255,6 +274,8 @@ namespace ThreeDTilesLink.Core.Tiles
             maxEast = eastValues.Max();
             minNorth = northValues.Min();
             maxNorth = northValues.Max();
+            minUp = upValues.Min();
+            maxUp = upValues.Max();
             return true;
         }
 
@@ -262,7 +283,8 @@ namespace ThreeDTilesLink.Core.Tiles
             IReadOnlyList<double> region,
             GeoReference reference,
             ICollection<double> eastValues,
-            ICollection<double> northValues)
+            ICollection<double> northValues,
+            ICollection<double> upValues)
         {
             double west = NormalizeLongitude(region[0], DegreesToRadians(reference.Longitude));
             double south = region[1];
@@ -287,6 +309,7 @@ namespace ThreeDTilesLink.Core.Tiles
                         Vector3d enu = _transformer.EcefToEnu(ecef, reference);
                         eastValues.Add(enu.X);
                         northValues.Add(enu.Y);
+                        upValues.Add(enu.Z);
                     }
                 }
             }
@@ -297,7 +320,8 @@ namespace ThreeDTilesLink.Core.Tiles
             Matrix4x4d world,
             GeoReference reference,
             ICollection<double> eastValues,
-            ICollection<double> northValues)
+            ICollection<double> northValues,
+            ICollection<double> upValues)
         {
             Vector3d center = world.TransformPoint(new Vector3d(box[0], box[1], box[2]));
             Vector3d axisX = world.TransformDirection(new Vector3d(box[3], box[4], box[5]));
@@ -314,6 +338,7 @@ namespace ThreeDTilesLink.Core.Tiles
                         Vector3d enu = _transformer.EcefToEnu(corner, reference);
                         eastValues.Add(enu.X);
                         northValues.Add(enu.Y);
+                        upValues.Add(enu.Z);
                     }
                 }
             }
@@ -324,7 +349,8 @@ namespace ThreeDTilesLink.Core.Tiles
             Matrix4x4d world,
             GeoReference reference,
             ICollection<double> eastValues,
-            ICollection<double> northValues)
+            ICollection<double> northValues,
+            ICollection<double> upValues)
         {
             Vector3d center = world.TransformPoint(new Vector3d(sphere[0], sphere[1], sphere[2]));
             Vector3d enu = _transformer.EcefToEnu(center, reference);
@@ -334,6 +360,8 @@ namespace ThreeDTilesLink.Core.Tiles
             eastValues.Add(enu.X + radius);
             northValues.Add(enu.Y - radius);
             northValues.Add(enu.Y + radius);
+            upValues.Add(enu.Z - radius);
+            upValues.Add(enu.Z + radius);
         }
 
         private static double NormalizeLongitude(double lonRad, double aroundLonRad)
