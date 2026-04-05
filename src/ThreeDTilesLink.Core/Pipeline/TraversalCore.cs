@@ -69,6 +69,13 @@ namespace ThreeDTilesLink.Core.Pipeline
             ? new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             : new Dictionary<string, RetainedTileState>(initialVisibleTiles, StringComparer.Ordinal);
 
+        public Dictionary<string, DateTimeOffset> VisibleSinceByStableId { get; } = initialVisibleTiles is null
+            ? new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal)
+            : initialVisibleTiles.Keys.ToDictionary(
+                static stableId => stableId,
+                static _ => DateTimeOffset.MinValue,
+                StringComparer.Ordinal);
+
         public HashSet<string> FailedRemovalStableIds { get; } = new(StringComparer.Ordinal);
 
         public string? InFlightSendStableId { get; set; }
@@ -119,6 +126,9 @@ namespace ThreeDTilesLink.Core.Pipeline
     internal sealed record RemoveTileWriterCommand(string StableId, string TileId, IReadOnlyList<string> SlotIds)
         : WriterCommand;
 
+    internal sealed record DelayWriterCommand(TimeSpan Delay)
+        : WriterCommand;
+
     internal sealed record SyncSessionMetadataWriterCommand(
         string LicenseCredit,
         float ProgressValue,
@@ -144,6 +154,9 @@ namespace ThreeDTilesLink.Core.Pipeline
         Exception? Error = null)
         : WriterCompletion;
 
+    internal sealed record DelayCompleted(TimeSpan Delay)
+        : WriterCompletion;
+
     internal sealed record SyncSessionMetadataCompleted(
         string LicenseCredit,
         float ProgressValue,
@@ -160,6 +173,8 @@ namespace ThreeDTilesLink.Core.Pipeline
 
     public sealed class TraversalCore(ITileSelector selector)
     {
+        private static readonly TimeSpan VisibleReplacementGrace = TimeSpan.FromSeconds(1);
+
         private readonly ITileSelector _selector = selector;
 
         internal DiscoveryFacts Initialize(
@@ -317,12 +332,15 @@ namespace ThreeDTilesLink.Core.Pipeline
             WriterState writerState,
             DesiredView desiredView,
             ProgressSnapshot progress,
-            bool dryRun)
+            bool dryRun,
+            DateTimeOffset? now = null)
         {
             ArgumentNullException.ThrowIfNull(facts);
             ArgumentNullException.ThrowIfNull(writerState);
             ArgumentNullException.ThrowIfNull(desiredView);
             ArgumentNullException.ThrowIfNull(progress);
+
+            DateTimeOffset currentTime = now ?? DateTimeOffset.UtcNow;
 
             if (writerState.InFlightSendStableId is not null ||
                 writerState.InFlightRemoveStableId is not null ||
@@ -331,11 +349,30 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return null;
             }
 
+            DateTimeOffset? deferredRemovalDueAt = null;
             RetainedTileState? removal = writerState.VisibleTiles.Values
                 .Where(tile => desiredView.SelectedStableIds.Contains(tile.StableId))
                 .Where(tile => !desiredView.StableIds.Contains(tile.StableId))
                 .Where(tile => !writerState.FailedRemovalStableIds.Contains(tile.StableId))
                 .Where(tile => HasVisibleDescendant(tile.StableId, writerState.VisibleTiles.Values))
+                .Select(tile => new
+                {
+                    Tile = tile,
+                    ReadyAt = GetReplacementReadyAt(tile.StableId, writerState)
+                })
+                .Where(entry => entry.ReadyAt is not null)
+                .Select(entry =>
+                {
+                    if (entry.ReadyAt > currentTime &&
+                        (deferredRemovalDueAt is null || entry.ReadyAt < deferredRemovalDueAt))
+                    {
+                        deferredRemovalDueAt = entry.ReadyAt;
+                    }
+
+                    return entry;
+                })
+                .Where(entry => entry.ReadyAt <= currentTime)
+                .Select(entry => entry.Tile)
                 .OrderBy(tile => facts.Branches.TryGetValue(tile.StableId, out TileBranchFact? fact) ? fact.Tile.Depth : int.MaxValue)
                 .ThenBy(tile => tile.TileId, StringComparer.Ordinal)
                 .FirstOrDefault();
@@ -397,6 +434,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                 {
                     return new SyncSessionMetadataWriterCommand(desiredLicense, desiredProgressValue, desiredProgressText);
                 }
+            }
+
+            if (deferredRemovalDueAt is DateTimeOffset dueAt && dueAt > currentTime)
+            {
+                return new DelayWriterCommand(dueAt - currentTime);
             }
 
             return null;
@@ -483,11 +525,14 @@ namespace ThreeDTilesLink.Core.Pipeline
             bool dryRun,
             ref int processedTiles,
             ref int streamedMeshes,
-            ref int failedTiles)
+            ref int failedTiles,
+            DateTimeOffset? now = null)
         {
             ArgumentNullException.ThrowIfNull(facts);
             ArgumentNullException.ThrowIfNull(writerState);
             ArgumentNullException.ThrowIfNull(completion);
+
+            DateTimeOffset currentTime = now ?? DateTimeOffset.UtcNow;
 
             switch (completion)
             {
@@ -536,6 +581,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                             GetAncestorStableIds(facts, sent.Content.Tile.ParentStableId),
                             sent.SlotIds,
                             sent.Content.AssetCopyright);
+                        writerState.VisibleSinceByStableId[stableId] = currentTime;
                     }
 
                     fact.AssetCopyright = sent.Content.AssetCopyright;
@@ -554,6 +600,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     {
                         _ = writerState.FailedRemovalStableIds.Remove(removed.StableId);
                         _ = writerState.VisibleTiles.Remove(removed.StableId);
+                        _ = writerState.VisibleSinceByStableId.Remove(removed.StableId);
                     }
                     else
                     {
@@ -577,6 +624,9 @@ namespace ThreeDTilesLink.Core.Pipeline
                     writerState.AppliedProgressValue = metadata.ProgressValue;
                     writerState.AppliedProgressText = metadata.ProgressText;
 
+                    break;
+
+                case DelayCompleted:
                     break;
             }
         }
@@ -1098,6 +1148,32 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             return false;
+        }
+
+        private static DateTimeOffset? GetReplacementReadyAt(string stableId, WriterState writerState)
+        {
+            DateTimeOffset? earliest = null;
+            foreach (RetainedTileState tile in writerState.VisibleTiles.Values)
+            {
+                if (!tile.AncestorStableIds.Contains(stableId, StringComparer.Ordinal))
+                {
+                    continue;
+                }
+
+                DateTimeOffset visibleSince = writerState.VisibleSinceByStableId.TryGetValue(tile.StableId, out DateTimeOffset timestamp)
+                    ? timestamp
+                    : DateTimeOffset.MinValue;
+                DateTimeOffset readyAt = visibleSince == DateTimeOffset.MinValue
+                    ? DateTimeOffset.MinValue
+                    : visibleSince + VisibleReplacementGrace;
+
+                if (earliest is null || readyAt < earliest)
+                {
+                    earliest = readyAt;
+                }
+            }
+
+            return earliest;
         }
 
         private static bool HasVisibleAncestor(

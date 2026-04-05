@@ -630,9 +630,22 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 SendTileWriterCommand send => await ExecuteSendAsync(send, request, cancellationToken).ConfigureAwait(false),
                 RemoveTileWriterCommand remove => await ExecuteRemoveAsync(remove, interactiveContext, cancellationToken).ConfigureAwait(false),
+                DelayWriterCommand delay => await ExecuteDelayAsync(delay, cancellationToken).ConfigureAwait(false),
                 SyncSessionMetadataWriterCommand metadata => await ExecuteSyncMetadataAsync(request, metadata, cancellationToken).ConfigureAwait(false),
                 _ => throw new InvalidOperationException($"Unsupported writer command type: {command.GetType().Name}")
             };
+        }
+
+        private static async Task<WriterCompletion> ExecuteDelayAsync(
+            DelayWriterCommand command,
+            CancellationToken cancellationToken)
+        {
+            if (command.Delay > TimeSpan.Zero)
+            {
+                await Task.Delay(command.Delay, cancellationToken).ConfigureAwait(false);
+            }
+
+            return new DelayCompleted(command.Delay);
         }
 
         private async Task<WriterCompletion> ExecuteSendAsync(

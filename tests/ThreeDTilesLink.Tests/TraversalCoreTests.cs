@@ -186,6 +186,47 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void PlanWriterCommand_DelaysRemovingVisibleParent_UntilReplacementGraceExpires()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p", "https://example.com/p.glb", depth: 0, parentTileId: null, hasChildren: true, span: 1200d),
+                CreateTile("c", "https://example.com/c.glb", depth: 1, parentTileId: "p", hasChildren: false, span: 240d)
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: true), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent"),
+                [StableId("c")] = new(StableId("c"), "c", StableId("p"), [StableId("p")], ["slot_child"], "Google; Child")
+            });
+            DateTimeOffset visibleSince = DateTimeOffset.UnixEpoch;
+            writerState.VisibleSinceByStableId[StableId("c")] = visibleSince;
+
+            DesiredView desired = core.ComputeDesiredView(facts, writerState);
+
+            WriterCommand? delayed = core.PlanWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(2, 2, 2, 0),
+                dryRun: true,
+                now: visibleSince + TimeSpan.FromMilliseconds(250));
+            WriterCommand? removal = core.PlanWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(2, 2, 2, 0),
+                dryRun: true,
+                now: visibleSince + TimeSpan.FromMilliseconds(1250));
+
+            _ = desired.StableIds.Should().ContainSingle().Which.Should().Be(StableId("c"));
+            _ = delayed.Should().BeOfType<DelayWriterCommand>();
+            _ = removal.Should().BeOfType<RemoveTileWriterCommand>()
+                .Which.StableId.Should().Be(StableId("p"));
+        }
+
+        [Fact]
         public void PlanWriterCommand_PrefersReplacingCoarserVisibleBranch_BeforeDeeperRefinement()
         {
             TraversalCore core = CreateCore(_ =>
