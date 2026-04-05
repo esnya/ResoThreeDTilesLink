@@ -21,10 +21,12 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string MaterialComponentType = "[FrooxEngine]FrooxEngine.PBS_Metallic";
         private const string MeshRendererComponentType = "[FrooxEngine]FrooxEngine.MeshRenderer";
         private const string LicenseComponentType = "[FrooxEngine]FrooxEngine.License";
+        private const string PackageExportableComponentType = "[FrooxEngine]FrooxEngine.PackageExportable";
+        private const string PackageExportableRootMemberName = "Root";
+        private const string SimpleAvatarProtectionComponentType = "[FrooxEngine]FrooxEngine.CommonAvatar.SimpleAvatarProtection";
         private const string SimpleAvatarProtectionUserMemberName = "User";
+        private const string SimpleAvatarProtectionCloudUserRefType = "[FrooxEngine]FrooxEngine.CloudUserRef";
         private const string SimpleAvatarProtectionReassignMemberName = "ReassignUserOnPackageImport";
-        private const string UserLoginStatusLoggedInMemberName = "IsLoggedIn";
-        private const string UserLoginStatusUserIdMemberName = "LoggedUserId";
         private const string DynamicVariableSpaceComponentType = "[FrooxEngine]FrooxEngine.DynamicVariableSpace";
         private const string DynamicFieldStringComponentType = "[FrooxEngine]FrooxEngine.DynamicField<string>";
         private const string DynamicFieldFloatComponentType = "[FrooxEngine]FrooxEngine.DynamicField<float>";
@@ -42,6 +44,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string ProgressTextDynamicVariablePath = "World/ThreeDTilesLink.ProgressText";
         private const string ParentDynamicSpaceNamePrefix = "ThreeDTilesLink.Parent";
         private const string DefaultGoogleMapsCreditText = "Google Maps";
+        private const string PackageExportWarningSlotName = "EXPORT PROHIBITED: STREAMED GOOGLE 3D TILES";
         private const string MeshAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Mesh>";
         private const string MaterialAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Material>";
         private const string TextureAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.ITexture2D>";
@@ -53,19 +56,6 @@ namespace ThreeDTilesLink.Core.Resonite
         private static readonly TimeSpan ReadComponentMemberRetryDelay = TimeSpan.FromMilliseconds(25);
 
         private static readonly string[] PreferredTextureFieldNames = ["AlbedoTexture", "BaseColorTexture", "MainTexture", "Texture"];
-        private static readonly string[] SimpleAvatarProtectionComponentTypeCandidates =
-        [
-            "[FrooxEngine]FrooxEngine.SimpleAvatarProtection",
-            "[FrooxEngine.Users]FrooxEngine.SimpleAvatarProtection",
-            "FrooxEngine.SimpleAvatarProtection"
-        ];
-        private static readonly string[] UserLoginStatusComponentTypeCandidates =
-        [
-            "[FrooxEngine]FrooxEngine.UserLoginStatus",
-            "[FrooxEngine.Users]FrooxEngine.UserLoginStatus",
-            "FrooxEngine.UserLoginStatus"
-        ];
-
         private LinkInterface _linkInterface = resoniteLink ?? throw new ArgumentNullException(nameof(resoniteLink));
         private readonly Func<LinkInterface> _linkInterfaceFactory = linkInterfaceFactory ?? (() => new LinkInterface());
         private readonly ILogger<ResoniteSession> _logger = logger;
@@ -88,10 +78,8 @@ namespace ThreeDTilesLink.Core.Resonite
         private bool _materialTextureFieldResolved;
         private Dictionary<string, MemberDefinition>? _materialMemberDefinitions;
         private string? _avatarProtectionComponentType;
-        private string? _avatarProtectionUserTargetType;
-        private bool _avatarProtectionHasReassignUserOnPackageImport;
         private bool _avatarProtectionUnavailable;
-        private string? _localUserId;
+        private string? _packageExportWarningSlotId;
         private bool _sessionDynamicSpaceInitialized;
 
         public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
@@ -146,7 +134,8 @@ namespace ThreeDTilesLink.Core.Resonite
                     cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 await AttachSessionMetadataAsync(_sessionRootSlotId, cancellationToken).ConfigureAwait(false);
-                await ResolveAvatarProtectionContextAsync().ConfigureAwait(false);
+                await AttachAvatarProtectionAsync(_sessionRootSlotId).ConfigureAwait(false);
+                await AttachPackageExportableAsync(_sessionRootSlotId, cancellationToken).ConfigureAwait(false);
             }
             catch
             {
@@ -447,6 +436,7 @@ namespace ThreeDTilesLink.Core.Resonite
                     cancellationToken).ConfigureAwait(false);
 
                 await AttachAvatarProtectionAsync(tileSlotId).ConfigureAwait(false);
+                await AttachPackageExportableAsync(tileSlotId, cancellationToken).ConfigureAwait(false);
                 return tileSlotId;
             }
             finally
@@ -599,7 +589,10 @@ namespace ThreeDTilesLink.Core.Resonite
         private async Task<string> CreateAssetSlotAsync(string parentSlotId, string assetName, CancellationToken cancellationToken = default)
         {
             string assetsSlotId = await GetOrCreateAssetsSlotAsync(parentSlotId, cancellationToken).ConfigureAwait(false);
-            return await CreateSlotAsync($"{assetName} Asset", assetsSlotId, cancellationToken: cancellationToken).ConfigureAwait(false);
+            string assetSlotId = await CreateSlotAsync($"{assetName} Asset", assetsSlotId, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await AttachAvatarProtectionAsync(assetSlotId).ConfigureAwait(false);
+            await AttachPackageExportableAsync(assetSlotId, cancellationToken).ConfigureAwait(false);
+            return assetSlotId;
         }
 
         private async Task<string> GetOrCreateAssetsSlotAsync(string parentSlotId, CancellationToken cancellationToken = default)
@@ -611,6 +604,8 @@ namespace ThreeDTilesLink.Core.Resonite
             }
 
             assetsSlotId = await CreateSlotAsync(AssetsSlotName, parentSlotId, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await AttachAvatarProtectionAsync(assetsSlotId).ConfigureAwait(false);
+            await AttachPackageExportableAsync(assetsSlotId, cancellationToken).ConfigureAwait(false);
             _assetsSlotByParentSlotId[parentSlotId] = assetsSlotId;
             return assetsSlotId;
         }
@@ -937,9 +932,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(_avatarProtectionComponentType) &&
-                !string.IsNullOrWhiteSpace(_avatarProtectionUserTargetType) &&
-                !string.IsNullOrWhiteSpace(_localUserId))
+            if (!string.IsNullOrWhiteSpace(_avatarProtectionComponentType))
             {
                 return;
             }
@@ -952,7 +945,7 @@ namespace ThreeDTilesLink.Core.Resonite
             (string protectionComponentType, Dictionary<string, MemberDefinition> protectionMembers) protectionContext;
             try
             {
-                protectionContext = await ResolveComponentDefinitionAsync(SimpleAvatarProtectionComponentTypeCandidates).ConfigureAwait(false);
+                protectionContext = await ResolveComponentDefinitionAsync([SimpleAvatarProtectionComponentType]).ConfigureAwait(false);
             }
             catch (InvalidOperationException)
             {
@@ -961,47 +954,22 @@ namespace ThreeDTilesLink.Core.Resonite
             }
 
             if (!protectionContext.protectionMembers.TryGetValue(SimpleAvatarProtectionUserMemberName, out MemberDefinition? userMemberDefinition) ||
-                userMemberDefinition is not ReferenceDefinition userReferenceDefinition ||
-                string.IsNullOrWhiteSpace(userReferenceDefinition.TargetType?.Type))
+                userMemberDefinition is not SyncObjectMemberDefinition userSyncObjectDefinition ||
+                !string.Equals(userSyncObjectDefinition.Type?.Type, SimpleAvatarProtectionCloudUserRefType, StringComparison.Ordinal))
             {
-                _avatarProtectionUnavailable = true;
-                return;
+                throw new InvalidOperationException(
+                    $"Unexpected {SimpleAvatarProtectionComponentType}.{SimpleAvatarProtectionUserMemberName} definition.");
             }
 
-            (string loginStatusComponentType, Dictionary<string, MemberDefinition> _) loginStatusContext;
-            try
+            if (!protectionContext.protectionMembers.TryGetValue(SimpleAvatarProtectionReassignMemberName, out MemberDefinition? reassignMemberDefinition) ||
+                reassignMemberDefinition is not FieldDefinition reassignFieldDefinition ||
+                !string.Equals(reassignFieldDefinition.ValueType?.Type, "bool", StringComparison.Ordinal))
             {
-                loginStatusContext = await ResolveComponentDefinitionAsync(UserLoginStatusComponentTypeCandidates).ConfigureAwait(false);
-            }
-            catch (InvalidOperationException)
-            {
-                _avatarProtectionUnavailable = true;
-                return;
-            }
-
-            string loginStatusComponentId = await AddComponentAsync(_sessionRootSlotId, loginStatusContext.loginStatusComponentType, []).ConfigureAwait(false);
-
-            try
-            {
-                bool isLoggedIn = await ReadBooleanMemberAsync(loginStatusComponentId, UserLoginStatusLoggedInMemberName, CancellationToken.None).ConfigureAwait(false);
-                string userId = await ReadStringMemberAsync(loginStatusComponentId, UserLoginStatusUserIdMemberName, CancellationToken.None).ConfigureAwait(false);
-
-                if (!isLoggedIn || string.IsNullOrWhiteSpace(userId))
-                {
-                    _avatarProtectionUnavailable = true;
-                    return;
-                }
-
-                _localUserId = userId.Trim();
-            }
-            finally
-            {
-                await RemoveComponentAsync(loginStatusComponentId).ConfigureAwait(false);
+                throw new InvalidOperationException(
+                    $"Unexpected {SimpleAvatarProtectionComponentType}.{SimpleAvatarProtectionReassignMemberName} definition.");
             }
 
             _avatarProtectionComponentType = protectionContext.protectionComponentType;
-            _avatarProtectionUserTargetType = userReferenceDefinition.TargetType.Type;
-            _avatarProtectionHasReassignUserOnPackageImport = protectionContext.protectionMembers.ContainsKey(SimpleAvatarProtectionReassignMemberName);
         }
 
         private async Task AttachAvatarProtectionAsync(string slotId)
@@ -1013,28 +981,74 @@ namespace ThreeDTilesLink.Core.Resonite
 
             await ResolveAvatarProtectionContextAsync().ConfigureAwait(false);
             if (_avatarProtectionUnavailable ||
-                string.IsNullOrWhiteSpace(_avatarProtectionComponentType) ||
-                string.IsNullOrWhiteSpace(_avatarProtectionUserTargetType) ||
-                string.IsNullOrWhiteSpace(_localUserId))
+                string.IsNullOrWhiteSpace(_avatarProtectionComponentType))
             {
                 return;
             }
 
-            var members = new Dictionary<string, Member>(StringComparer.Ordinal)
-            {
-                [SimpleAvatarProtectionUserMemberName] = new Reference
-                {
-                    TargetID = _localUserId,
-                    TargetType = _avatarProtectionUserTargetType
-                }
-            };
+            _ = await AddComponentAsync(
+                slotId,
+                _avatarProtectionComponentType,
+                BuildAvatarProtectionMembers()).ConfigureAwait(false);
+        }
 
-            if (_avatarProtectionHasReassignUserOnPackageImport)
+        private static Dictionary<string, Member> BuildAvatarProtectionMembers()
+        {
+            return new Dictionary<string, Member>(StringComparer.Ordinal)
             {
-                members[SimpleAvatarProtectionReassignMemberName] = new Field_bool { Value = false };
+                [SimpleAvatarProtectionReassignMemberName] = new Field_bool { Value = false }
+            };
+        }
+
+        private async Task AttachPackageExportableAsync(string slotId, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(slotId))
+            {
+                throw new InvalidOperationException("Target slot is not initialized.");
             }
 
-            _ = await AddComponentAsync(slotId, _avatarProtectionComponentType, members).ConfigureAwait(false);
+            string warningSlotId = await EnsurePackageExportWarningSlotAsync(cancellationToken).ConfigureAwait(false);
+            _ = await AddComponentAsync(
+                slotId,
+                PackageExportableComponentType,
+                BuildPackageExportableMembers(warningSlotId),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task<string> EnsurePackageExportWarningSlotAsync(CancellationToken cancellationToken)
+        {
+            if (!string.IsNullOrWhiteSpace(_packageExportWarningSlotId))
+            {
+                return _packageExportWarningSlotId;
+            }
+
+            if (string.IsNullOrWhiteSpace(_sessionRootSlotId))
+            {
+                throw new InvalidOperationException("Session root slot is not initialized.");
+            }
+
+            _packageExportWarningSlotId = await CreateSlotAsync(
+                PackageExportWarningSlotName,
+                _sessionRootSlotId,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            return _packageExportWarningSlotId;
+        }
+
+        private static Dictionary<string, Member> BuildPackageExportableMembers(string warningSlotId)
+        {
+            if (string.IsNullOrWhiteSpace(warningSlotId))
+            {
+                throw new InvalidOperationException("Package export warning slot is not initialized.");
+            }
+
+            return new Dictionary<string, Member>(StringComparer.Ordinal)
+            {
+                [PackageExportableRootMemberName] = new Reference
+                {
+                    TargetID = warningSlotId,
+                    TargetType = SlotWorkerType
+                }
+            };
         }
 
         private async Task<(string ComponentType, Dictionary<string, MemberDefinition> Members)> ResolveComponentDefinitionAsync(IEnumerable<string> componentTypeCandidates)
@@ -1330,10 +1344,8 @@ namespace ThreeDTilesLink.Core.Resonite
             _materialTextureFieldResolved = false;
             _materialMemberDefinitions = null;
             _avatarProtectionComponentType = null;
-            _avatarProtectionUserTargetType = null;
-            _avatarProtectionHasReassignUserOnPackageImport = false;
             _avatarProtectionUnavailable = false;
-            _localUserId = null;
+            _packageExportWarningSlotId = null;
             _sessionDynamicSpaceInitialized = false;
             _assetsSlotByParentSlotId.Clear();
             _progressBindingsByParentSlotId.Clear();

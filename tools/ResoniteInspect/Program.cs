@@ -7,10 +7,9 @@ var host = args.Length > 0 ? args[0] : "localhost";
 var port = args.Length > 1 ? int.Parse(args[1], CultureInfo.InvariantCulture) : 49379;
 string[] protectionComponentCandidates =
 [
-    "[FrooxEngine]FrooxEngine.SimpleAvatarProtection",
-    "[FrooxEngine.Users]FrooxEngine.SimpleAvatarProtection",
-    "FrooxEngine.SimpleAvatarProtection"
+    "[FrooxEngine]FrooxEngine.CommonAvatar.SimpleAvatarProtection"
 ];
+const string packageExportableComponentType = "[FrooxEngine]FrooxEngine.PackageExportable";
 
 using var link = new LinkInterface();
 await link.Connect(new Uri($"ws://{host}:{port}/"), CancellationToken.None).ConfigureAwait(false);
@@ -42,6 +41,27 @@ foreach (string componentType in protectionComponentCandidates)
 
     Console.WriteLine($"  {componentType}: found");
     foreach (var kv in protectionDef.Definition.Members.OrderBy(x => x.Key))
+    {
+        var extra = kv.Value switch
+        {
+            ReferenceDefinition rd => $" targetType={rd.TargetType?.Type}",
+            _ => string.Empty
+        };
+        Console.WriteLine($"    {kv.Key}: {kv.Value.GetType().Name}{extra}");
+    }
+}
+
+Console.WriteLine();
+Console.WriteLine("PackageExportable component definition probe:");
+var packageExportableDef = await link.GetComponentDefinition(packageExportableComponentType, true).ConfigureAwait(false);
+if (!packageExportableDef.Success || packageExportableDef.Definition is null)
+{
+    Console.WriteLine($"  {packageExportableComponentType}: not found ({packageExportableDef.ErrorInfo})");
+}
+else
+{
+    Console.WriteLine($"  {packageExportableComponentType}: found");
+    foreach (var kv in packageExportableDef.Definition.Members.OrderBy(x => x.Key))
     {
         var extra = kv.Value switch
         {
