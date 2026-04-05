@@ -95,7 +95,6 @@ namespace ThreeDTilesLink.Core.Tiles
                     kind,
                     tile.Children.Count > 0,
                     horizontalSpanM,
-                    [],
                     stableId,
                     parentContentStableKey);
                 nextParentContentId = tileId;

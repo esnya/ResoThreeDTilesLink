@@ -11,7 +11,6 @@ namespace ThreeDTilesLink.Core.Models
         TileContentKind ContentKind,
         bool HasChildren,
         double? HorizontalSpanM,
-        IReadOnlyList<string> Attributions,
         string? StableId = null,
         string? ParentStableId = null);
 }

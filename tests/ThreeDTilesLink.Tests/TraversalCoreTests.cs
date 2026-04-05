@@ -454,7 +454,6 @@ namespace ThreeDTilesLink.Tests
                 contentUri.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? TileContentKind.Json : TileContentKind.Glb,
                 hasChildren,
                 span,
-                [],
                 stableId,
                 parentStableId);
         }

@@ -6,7 +6,7 @@ namespace ThreeDTilesLink.Tests
     public sealed class TilesetParserTests
     {
         [Fact]
-        public void Parse_GeneratesCompactTileIdsWithoutSlash()
+        public void Parse_GeneratesCompactTileDisplayLabelsWithoutSlash()
         {
             var source = new Uri("https://tile.googleapis.com/v1/3dtiles/root.json?session=s");
             string json = /*lang=json,strict*/ """
@@ -65,7 +65,7 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public void Parse_Throws_WhenChildrenCountExceedsCompactIdRange()
+        public void Parse_Throws_WhenChildrenCountExceedsCompactDisplayLabelRange()
         {
             var source = new Uri("https://tile.googleapis.com/v1/3dtiles/root.json?session=s");
             string json = /*lang=json,strict*/ """
@@ -118,36 +118,6 @@ namespace ThreeDTilesLink.Tests
 
             _ = act.Should().Throw<InvalidOperationException>()
                 .WithMessage("*more than 36 children*");
-        }
-
-        [Fact]
-        public void Parse_CollectsCopyrightStrings()
-        {
-            var parser = new TilesetParser();
-            var source = new Uri("https://tile.googleapis.com/v1/3dtiles/root.json?session=s");
-            string json = /*lang=json,strict*/ """
-                   {
-                     "asset": {
-                       "version": "1.0",
-                       "copyright": "Google, Maxar Technologies"
-                     },
-                     "root": {
-                       "content": { "uri": "0.glb" },
-                       "children": [
-                         {
-                           "content": { "uri": "1.glb" },
-                           "copyright": "Google, Airbus"
-                         }
-                       ]
-                     }
-                   }
-                   """;
-
-            Tileset tileset = TilesetParser.Parse(json, source);
-
-            _ = tileset.Copyrights.Should().BeEquivalentTo(
-                "Google, Maxar Technologies",
-                "Google, Airbus");
         }
     }
 }

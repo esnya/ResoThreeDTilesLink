@@ -1,11 +1,10 @@
 namespace ThreeDTilesLink.Core.Tiles
 {
     /// <summary>
-    /// Parsed root tileset metadata and optional asset copyrights.
+    /// Parsed root tileset metadata.
     /// </summary>
     /// <param name="Root">Root tile in the hierarchy.</param>
-    /// <param name="Copyrights">Optional asset-level copyright statements.</param>
-    public sealed record Tileset(Tile Root, IReadOnlyList<string>? Copyrights = null);
+    public sealed record Tileset(Tile Root);
 
     /// <summary>
     /// Describes a single 3D Tiles node.
@@ -13,7 +12,7 @@ namespace ThreeDTilesLink.Core.Tiles
     public sealed class Tile
     {
         /// <summary>
-        /// Stable node identifier.
+        /// Internal display label for the node.
         /// </summary>
         public string Id { get; init; } = string.Empty;
         /// <summary>

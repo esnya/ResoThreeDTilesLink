@@ -12,12 +12,10 @@ namespace ThreeDTilesLink.Core.Tiles
             JsonElement root = doc.RootElement;
             return !root.TryGetProperty("root", out JsonElement rootTile)
                 ? throw new InvalidOperationException("tileset root is missing.")
-                : new Tileset(
-                ParseTile(rootTile, sourceUri, "0"),
-                ParseCopyrights(root));
+                : new Tileset(ParseTile(rootTile, sourceUri, "0"));
         }
 
-        private static Tile ParseTile(JsonElement tileElement, Uri sourceUri, string id)
+        private static Tile ParseTile(JsonElement tileElement, Uri sourceUri, string displayLabel)
         {
             var children = new List<Tile>();
             if (tileElement.TryGetProperty("children", out JsonElement childrenElement) && childrenElement.ValueKind == JsonValueKind.Array)
@@ -25,7 +23,7 @@ namespace ThreeDTilesLink.Core.Tiles
                 int index = 0;
                 foreach (JsonElement child in childrenElement.EnumerateArray())
                 {
-                    children.Add(ParseTile(child, sourceUri, $"{id}{EncodeIdSegment(index)}"));
+                    children.Add(ParseTile(child, sourceUri, $"{displayLabel}{EncodeIdSegment(index)}"));
                     index++;
                 }
             }
@@ -36,7 +34,7 @@ namespace ThreeDTilesLink.Core.Tiles
 
             return new Tile
             {
-                Id = id,
+                Id = displayLabel,
                 BoundingVolume = bounding,
                 Transform = transform,
                 ContentUri = contentUri,
@@ -56,7 +54,7 @@ namespace ThreeDTilesLink.Core.Tiles
                 return (char)('A' + (index - 10));
             }
 
-            throw new InvalidOperationException("Tile has more than 36 children; compact one-character id segment cannot represent it.");
+            throw new InvalidOperationException("Tile has more than 36 children; compact one-character display label segment cannot represent it.");
         }
 
         private static BoundingVolume? ParseBoundingVolume(JsonElement tileElement)
@@ -178,101 +176,6 @@ namespace ThreeDTilesLink.Core.Tiles
             };
 
             return builder.Uri;
-        }
-
-        private static List<string> ParseCopyrights(JsonElement root)
-        {
-            var output = new List<string>();
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            CollectCopyright(root, output, seen);
-            return output;
-        }
-
-        private static void CollectCopyright(
-            JsonElement element,
-            List<string> output,
-            HashSet<string> seen)
-        {
-            switch (element.ValueKind)
-            {
-                case JsonValueKind.Object:
-                    foreach (JsonProperty property in element.EnumerateObject())
-                    {
-                        if (property.NameEquals("copyright"))
-                        {
-                            AddCopyrightValue(property.Value, output, seen);
-                            continue;
-                        }
-
-                        CollectCopyright(property.Value, output, seen);
-                    }
-
-                    break;
-
-                case JsonValueKind.Array:
-                    foreach (JsonElement item in element.EnumerateArray())
-                    {
-                        CollectCopyright(item, output, seen);
-                    }
-
-                    break;
-                case JsonValueKind.Undefined:
-                    break;
-                case JsonValueKind.String:
-                    break;
-                case JsonValueKind.Number:
-                    break;
-                case JsonValueKind.True:
-                    break;
-                case JsonValueKind.False:
-                    break;
-                case JsonValueKind.Null:
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        private static void AddCopyrightValue(
-            JsonElement value,
-            List<string> output,
-            HashSet<string> seen)
-        {
-            if (value.ValueKind == JsonValueKind.String)
-            {
-                AddCopyrightString(value.GetString(), output, seen);
-                return;
-            }
-
-            if (value.ValueKind != JsonValueKind.Array)
-            {
-                return;
-            }
-
-            foreach (JsonElement item in value.EnumerateArray())
-            {
-                if (item.ValueKind == JsonValueKind.String)
-                {
-                    AddCopyrightString(item.GetString(), output, seen);
-                }
-            }
-        }
-
-        private static void AddCopyrightString(
-            string? raw,
-            List<string> output,
-            HashSet<string> seen)
-        {
-            if (string.IsNullOrWhiteSpace(raw))
-            {
-                return;
-            }
-
-            string normalized = raw.Trim();
-            if (seen.Add(normalized))
-            {
-                output.Add(normalized);
-            }
         }
     }
 }
