@@ -25,4 +25,5 @@
 - 長い手順、変わりうる情報、最新の運用情報は `docs/` に置く
 - 履歴や経緯は Git で管理し、履歴ファイルとして残さない
 - すべてのファイルは現状だけを扱い、過去の状態や移行の経緯を書き溜めない
+- 特に指示がない限り、Git worktree は `.worktrees/` の下に作成する
 - コミットメッセージは `type(scope): gitmoji summary` の conventional commit 形式にそろえる

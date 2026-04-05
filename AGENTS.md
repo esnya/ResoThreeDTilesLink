@@ -25,4 +25,5 @@ This file is the minimal, stable, and generic guide for coding agents. Refer to 
 - Put long procedures, changeable information, and current operational details under `docs/`.
 - Manage history and background in Git instead of keeping history files.
 - Every file should describe only the current state; do not accumulate past states or migration history.
+- Unless instructed otherwise, create Git worktrees under `.worktrees/`.
 - Use the conventional commit format `type(scope): gitmoji summary` for commit messages.
