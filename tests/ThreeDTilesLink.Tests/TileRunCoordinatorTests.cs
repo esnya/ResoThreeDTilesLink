@@ -545,6 +545,48 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task Run_TileLimitReached_KeepsParentVisible()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "c",
+                                ContentUri = new Uri("https://example.com/c.glb"),
+                                Children =
+                                [
+                                    new Tile
+                                    {
+                                        Id = "g",
+                                        ContentUri = new Uri("https://example.com/g.glb")
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 2), CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(2);
+            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_c_m", StringComparison.Ordinal));
+        }
+
+        [Fact]
         public async Task Run_SetsLicenseCredit_FromGlbAssetCopyright()
         {
             var tileset = new Tileset(new Tile

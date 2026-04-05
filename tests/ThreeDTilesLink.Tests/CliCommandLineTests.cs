@@ -77,6 +77,22 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void Parse_DefaultsTileLimitTo2048()
+        {
+            CommandInvocation<CliCommandOptions> invocation = CliCommandLine.Parse(
+            [
+                "--latitude", "35.65858",
+                "--longitude", "139.745433",
+                "--range", "400",
+                "--resonite-port", "12000"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeTrue();
+            CliCommandOptions parsed = invocation.Options!;
+            _ = parsed.TileLimit.Should().Be(2048);
+        }
+
+        [Fact]
         public void Parse_RejectsRenamedArgument()
         {
             CommandInvocation<CliCommandOptions> invocation = CliCommandLine.Parse(

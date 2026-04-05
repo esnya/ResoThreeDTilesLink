@@ -83,6 +83,43 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void BranchCompletion_DoesNotQueueParentRemoval_WhileGrandchildIsPending()
+        {
+            var planner = CreatePlanner(new FakeSelector(_ =>
+            [
+                CreateTile("p", "https://example.com/p.glb", depth: 0, parentTileId: null, hasChildren: true, span: 100d),
+                CreateTile("c", "https://example.com/c.glb", depth: 1, parentTileId: "p", hasChildren: true, span: 50d),
+                CreateTile("g", "https://example.com/g.glb", depth: 2, parentTileId: "c", hasChildren: false, span: 25d)
+            ]));
+
+            planner.Initialize(CreateRootTileset(), CreateRequest(dryRun: false));
+
+            _ = planner.TryPlanNext(out PlannerCommand? initial).Should().BeTrue();
+            UpdateLicenseCreditCommand initialUpdate = initial.Should().BeOfType<UpdateLicenseCreditCommand>().Subject;
+            planner.ApplyResult(new LicenseUpdatedResult(initialUpdate.CreditString, true, null));
+
+            _ = planner.TryPlanNext(out PlannerCommand? parentItem).Should().BeTrue();
+            ProcessTileContentCommand parentStream = parentItem.Should().BeOfType<ProcessTileContentCommand>().Subject;
+            planner.ApplyResult(new RenderableContentReadyResult(parentStream.Tile, 1, ["slot_parent"], "Google; Parent"));
+
+            _ = planner.TryPlanNext(out PlannerCommand? parentCreditItem).Should().BeTrue();
+            UpdateLicenseCreditCommand parentCredit = parentCreditItem.Should().BeOfType<UpdateLicenseCreditCommand>().Subject;
+            planner.ApplyResult(new LicenseUpdatedResult(parentCredit.CreditString, true, null));
+
+            _ = planner.TryPlanNext(out PlannerCommand? childItem).Should().BeTrue();
+            ProcessTileContentCommand childStream = childItem.Should().BeOfType<ProcessTileContentCommand>().Subject;
+            planner.ApplyResult(new RenderableContentReadyResult(childStream.Tile, 1, ["slot_child"], "Google; Child"));
+
+            _ = planner.TryPlanNext(out PlannerCommand? childCreditItem).Should().BeTrue();
+            UpdateLicenseCreditCommand childCredit = childCreditItem.Should().BeOfType<UpdateLicenseCreditCommand>().Subject;
+            planner.ApplyResult(new LicenseUpdatedResult(childCredit.CreditString, true, null));
+
+            _ = planner.TryPlanNext(out PlannerCommand? nextItem).Should().BeTrue();
+            ProcessTileContentCommand grandchildStream = nextItem.Should().BeOfType<ProcessTileContentCommand>().Subject;
+            _ = grandchildStream.Tile.TileId.Should().Be("g");
+        }
+
+        [Fact]
         public void AttributionUpdate_EmitsInitialAndPostStreamCredits()
         {
             var planner = CreatePlanner(new FakeSelector(_ =>

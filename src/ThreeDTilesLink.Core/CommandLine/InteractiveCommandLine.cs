@@ -29,7 +29,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 new("--height-offset", CommandOptionValueKind.DecimalNumber, "Height offset applied to streamed geometry.", DefaultValue: 0d, Unit: "m", RenamedFrom: ["--height-offset-m"]),
                 new("--resonite-host", CommandOptionValueKind.Text, "Resonite Link host name or IP address.", DefaultValue: "localhost", ValueName: "host", RenamedFrom: ["--link-host"]),
                 new("--resonite-port", CommandOptionValueKind.WholeNumber, "Resonite Link port.", Required: true, ValueName: "port", RenamedFrom: ["--link-port"]),
-                new("--tile-limit", CommandOptionValueKind.WholeNumber, "Maximum number of tiles to stream per run.", DefaultValue: 1024, RenamedFrom: ["--max-tiles"]),
+                new("--tile-limit", CommandOptionValueKind.WholeNumber, "Maximum number of tiles to stream per run.", DefaultValue: 2048, RenamedFrom: ["--max-tiles"]),
                 new("--depth-limit", CommandOptionValueKind.WholeNumber, "Maximum traversal depth per run.", DefaultValue: 32, RenamedFrom: ["--max-depth"]),
                 new("--detail", CommandOptionValueKind.DecimalNumber, "Target tile detail before traversal stops descending renderable GLB tiles.", DefaultValue: 30d, Unit: "m", RenamedFrom: ["--detail-target-m"]),
                 new("--content-workers", CommandOptionValueKind.WholeNumber, "Maximum number of tile content fetch/decode workers per run.", DefaultValue: 8),

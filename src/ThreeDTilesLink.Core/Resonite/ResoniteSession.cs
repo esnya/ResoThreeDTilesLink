@@ -485,23 +485,6 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 _logger.LogDebug("Closing Resonite Link session.");
 
-                if (_linkInterface.IsConnected && !string.IsNullOrWhiteSpace(_sessionRootSlotId))
-                {
-                    try
-                    {
-                        Response response = EnsureSuccess(
-                            await ExecuteLinkRequestAsync(
-                                link => link.RemoveSlot(new RemoveSlot { SlotID = _sessionRootSlotId }),
-                                cancellationToken,
-                                allowReconnect: false).ConfigureAwait(false));
-                        _ = response;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogDebug(ex, "Failed to remove session root slot {SlotId} during disconnect.", _sessionRootSlotId);
-                    }
-                }
-
                 DisposeDirectLink(clearSessionState: true);
             }
             finally

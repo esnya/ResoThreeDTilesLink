@@ -72,6 +72,19 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void Parse_DefaultsTileLimitTo2048()
+        {
+            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
+            [
+                "--resonite-port", "12000"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeTrue();
+            InteractiveCommandOptions parsed = invocation.Options!;
+            _ = parsed.TileLimit.Should().Be(2048);
+        }
+
+        [Fact]
         public void Parse_RejectsInteractiveRangeArgument()
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(

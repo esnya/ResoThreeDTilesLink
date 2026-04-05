@@ -770,7 +770,9 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             return state.ContentKind switch
             {
-                TileContentKind.Glb => state.SelfCompleted || (state.DeferredSuppressed && state.ChildrenDiscoveryDone && state.PendingChildBranches.Count == 0),
+                TileContentKind.Glb => state.ChildrenDiscoveryDone &&
+                    state.PendingChildBranches.Count == 0 &&
+                    (state.SelfCompleted || state.DeferredSuppressed),
                 TileContentKind.Json => state.SelfCompleted && state.ChildrenDiscoveryDone && state.PendingChildBranches.Count == 0,
                 _ => state.SelfCompleted
             };
