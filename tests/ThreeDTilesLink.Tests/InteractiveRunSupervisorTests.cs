@@ -93,9 +93,31 @@ namespace ThreeDTilesLink.Tests
 
             _ = coordinator.Requests.Should().HaveCount(2);
             _ = session.CreatedRunSlots.Should().HaveCount(2);
+            _ = session.RemovedSlotIds.Should().ContainSingle().Which.Should().Be(session.CreatedRunSlots[0]);
             _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().NotBe(coordinator.Requests[1].Output.MeshParentSlotId);
             _ = coordinator.Requests[1].PlacementReference.Latitude.Should().Be(2000d);
             _ = coordinator.Requests[1].PlacementReference.Longitude.Should().Be(2000d);
+        }
+
+        [Fact]
+        public async Task RunAsync_CancellationKeepsCurrentSessionSlot()
+        {
+            var session = new FakeSession();
+            var probeStore = new FakeProbeStore
+            {
+                ProbeValues = new Queue<ProbeValues?>([new ProbeValues(35f, 139f, 400f), new ProbeValues(35f, 139f, 400f)])
+            };
+            var clock = new FakeClock { CancelAfterDelayCalls = 3 };
+            var coordinator = new FakeTileRunCoordinator(_ => clock.RequestCancellation());
+            var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
+
+            using var cts = new CancellationTokenSource();
+            clock.CancellationSource = cts;
+
+            await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
+
+            _ = session.CreatedRunSlots.Should().ContainSingle();
+            _ = session.RemovedSlotIds.Should().BeEmpty();
         }
 
         [Fact]
@@ -361,6 +383,7 @@ namespace ThreeDTilesLink.Tests
         private sealed class FakeSession : IResoniteSession
         {
             public List<string> CreatedRunSlots { get; } = [];
+            public List<string> RemovedSlotIds { get; } = [];
             public int DisconnectCalls { get; private set; }
 
             public Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
@@ -392,6 +415,7 @@ namespace ThreeDTilesLink.Tests
 
             public Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken)
             {
+                RemovedSlotIds.Add(slotId);
                 return Task.CompletedTask;
             }
 

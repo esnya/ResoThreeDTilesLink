@@ -221,7 +221,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 _ = retainedTiles;
                 _ = retainedCheckpoint;
 
-                if (!string.IsNullOrWhiteSpace(sessionSlotId))
+                if (!string.IsNullOrWhiteSpace(sessionSlotId) && !cancellationToken.IsCancellationRequested)
                 {
                     await TryRemoveSlotAsync(sessionSlotId, CancellationToken.None).ConfigureAwait(false);
                 }
