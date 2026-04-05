@@ -473,9 +473,9 @@ namespace ThreeDTilesLink.Core.Resonite
             await _connectionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                _logger.LogDebug("Closing Resonite Link session.");
-
-                DisposeDirectLink(clearSessionState: true);
+                _logger.LogDebug("Closing Resonite Link transport.");
+                CleanupTemporaryFiles();
+                DisposeDirectLink(clearSessionState: false);
             }
             finally
             {
@@ -1315,24 +1315,27 @@ namespace ThreeDTilesLink.Core.Resonite
                 {
                     _connectionUri = null;
                     ResetSessionState();
-
-                    foreach (string textureFile in _tempTextureFiles)
-                    {
-                        try
-                        {
-                            if (File.Exists(textureFile))
-                            {
-                                File.Delete(textureFile);
-                            }
-                        }
-                        catch
-                        {
-                        }
-                    }
-
-                    _tempTextureFiles.Clear();
                 }
             }
+        }
+
+        private void CleanupTemporaryFiles()
+        {
+            foreach (string textureFile in _tempTextureFiles)
+            {
+                try
+                {
+                    if (File.Exists(textureFile))
+                    {
+                        File.Delete(textureFile);
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            _tempTextureFiles.Clear();
         }
 
         private void ResetSessionState()

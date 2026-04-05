@@ -2,11 +2,13 @@ using Microsoft.Extensions.Logging;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
 
+#pragma warning disable CA1822
+
 namespace ThreeDTilesLink.Core.Pipeline
 {
     public sealed class TileRunCoordinator(
         ITilesSource tilesSource,
-        TraversalPlanner traversalPlanner,
+        TraversalCore traversalCore,
         IContentProcessor contentProcessor,
         IMeshPlacementService meshPlacementService,
         IResoniteSession resoniteSession,
@@ -15,7 +17,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         int maxConcurrentTileProcessing = 1) : ITileRunCoordinator
     {
         private readonly ITilesSource _tilesSource = tilesSource;
-        private readonly TraversalPlanner _traversalPlanner = traversalPlanner;
+        private readonly TraversalCore _traversalCore = traversalCore;
         private readonly IContentProcessor _contentProcessor = contentProcessor;
         private readonly IMeshPlacementService _meshPlacementService = meshPlacementService;
         private readonly IResoniteSession _resoniteSession = resoniteSession;
@@ -28,45 +30,48 @@ namespace ThreeDTilesLink.Core.Pipeline
         public async Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(request);
-            return await RunCoreAsync(request, interactiveContext: null, cancellationToken).ConfigureAwait(false);
+            RunExecutionResult result = await RunCoreAsync(request, interactiveInput: null, interactiveContext: null, cancellationToken).ConfigureAwait(false);
+            return result.Summary;
         }
 
         public async Task<InteractiveTileRunResult> RunInteractiveAsync(
             TileRunRequest request,
-            IReadOnlyDictionary<string, RetainedTileState> retainedTiles,
-            bool removeOutOfRangeTiles,
+            InteractiveRunInput interactive,
             CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(request);
-            ArgumentNullException.ThrowIfNull(retainedTiles);
+            ArgumentNullException.ThrowIfNull(interactive);
 
-            var interactiveContext = new InteractiveExecutionContext(retainedTiles, removeOutOfRangeTiles);
+            var interactiveContext = new InteractiveExecutionContext(interactive.RetainedTiles, interactive.RemoveOutOfRangeTiles);
 
             try
             {
-                RunSummary summary = await RunCoreAsync(request, interactiveContext, cancellationToken).ConfigureAwait(false);
-
-                IReadOnlyDictionary<string, RetainedTileState> visibleTiles = _traversalPlanner.GetVisibleTiles();
-                IReadOnlySet<string> selectedTileStableIds = _traversalPlanner.GetSelectedTileStableIds();
-
-                HashSet<string> failedRemovalStateIds = await CommitInteractiveChangesAsync(
+                RunExecutionResult execution = await RunCoreAsync(request, interactive, interactiveContext, cancellationToken).ConfigureAwait(false);
+                IReadOnlyDictionary<string, RetainedTileState> failedRetainedTiles = await CommitInteractiveChangesAsync(
                     interactiveContext,
-                    selectedTileStableIds,
+                    execution.SelectedTileStableIds,
                     CancellationToken.None).ConfigureAwait(false);
 
                 IReadOnlyDictionary<string, RetainedTileState> nextRetainedTiles = BuildNextRetainedTiles(
-                    retainedTiles,
-                    visibleTiles,
-                    selectedTileStableIds,
-                    removeOutOfRangeTiles,
-                    failedRemovalStateIds);
+                    interactive.RetainedTiles,
+                    execution.VisibleTiles,
+                    execution.SelectedTileStableIds,
+                    interactive.RemoveOutOfRangeTiles,
+                    failedRetainedTiles);
 
                 await ApplyFinalLicenseCreditAsync(request, nextRetainedTiles, CancellationToken.None).ConfigureAwait(false);
-                return new InteractiveTileRunResult(summary, nextRetainedTiles, selectedTileStableIds);
+                return new InteractiveTileRunResult(
+                    execution.Summary,
+                    nextRetainedTiles,
+                    execution.SelectedTileStableIds,
+                    execution.Checkpoint);
             }
             catch (OperationCanceledException)
             {
-                return await FinalizeCanceledInteractiveRunAsync(request, interactiveContext).ConfigureAwait(false);
+                return await FinalizeCanceledInteractiveRunAsync(
+                    request,
+                    interactive,
+                    interactiveContext).ConfigureAwait(false);
             }
             catch
             {
@@ -75,8 +80,9 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        private async Task<RunSummary> RunCoreAsync(
+        private async Task<RunExecutionResult> RunCoreAsync(
             TileRunRequest request,
+            InteractiveRunInput? interactiveInput,
             InteractiveExecutionContext? interactiveContext,
             CancellationToken cancellationToken)
         {
@@ -87,216 +93,551 @@ namespace ThreeDTilesLink.Core.Pipeline
                 await _resoniteSession.ConnectAsync(request.Output.Host, request.Output.Port, cancellationToken).ConfigureAwait(false);
             }
 
+            using var workerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var discoveryTasks = new Dictionary<string, Task<DiscoveryCompletion>>(StringComparer.Ordinal);
+            Task<WriterCompletion>? writerTask = null;
+
+            DiscoveryFacts? facts = null;
+            WriterState? writerState = null;
+            var counters = new RunCounters();
+
             try
             {
                 _logger.LogInformation("Fetching root tileset from Google Map Tiles API.");
-                await SetProgressAsync(request, 0f, "Fetching root tileset...", cancellationToken).ConfigureAwait(false);
-                Tiles.Tileset rootTileset = await _tilesSource.FetchRootTilesetAsync(auth, cancellationToken).ConfigureAwait(false);
-                _traversalPlanner.Initialize(rootTileset, request);
-                interactiveContext?.MarkPlannerInitialized();
-                await SetProgressAsync(request, _traversalPlanner.GetProgress(), cancellationToken).ConfigureAwait(false);
-
-                while (_traversalPlanner.TryPlanNextBatch(_maxConcurrentTileProcessing, out IReadOnlyList<PlannerCommand> commandBatch) &&
-                       commandBatch.Count > 0)
+                if (!request.Output.DryRun)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (commandBatch[0] is ProcessTileContentCommand)
+                    try
                     {
-                        IReadOnlyList<PlannerResult> batchResults = await ExecuteProcessTileBatchAsync(
-                            commandBatch.Cast<ProcessTileContentCommand>().ToArray(),
-                            request,
-                            auth,
-                            interactiveContext,
+                        await _resoniteSession.SetProgressAsync(
+                            request.Output.MeshParentSlotId,
+                            0f,
+                            "Fetching root tileset...",
                             cancellationToken).ConfigureAwait(false);
-
-                        foreach (PlannerResult batchResult in batchResults)
-                        {
-                            _traversalPlanner.ApplyResult(batchResult);
-                            await SetProgressAsync(request, _traversalPlanner.GetProgress(), cancellationToken).ConfigureAwait(false);
-                        }
-
-                        continue;
                     }
-
-                    PlannerCommand command = commandBatch[0];
-                    PlannerResult singleResult = await ExecuteCommandAsync(command, request, auth, interactiveContext, cancellationToken).ConfigureAwait(false);
-                    _traversalPlanner.ApplyResult(singleResult);
-                    await SetProgressAsync(request, _traversalPlanner.GetProgress(), cancellationToken).ConfigureAwait(false);
+                    catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                    {
+                        _logger.LogWarning(ex, "Failed to set initial fetch progress.");
+                    }
                 }
 
-                RunSummary summary = _traversalPlanner.GetSummary();
-                await SetProgressAsync(request, summary, cancellationToken, completed: true).ConfigureAwait(false);
-                return summary;
+                Tiles.Tileset rootTileset = await _tilesSource.FetchRootTilesetAsync(auth, cancellationToken).ConfigureAwait(false);
+                facts = _traversalCore.Initialize(rootTileset, request, interactiveInput);
+                writerState = new WriterState(interactiveInput?.RetainedTiles);
+                UpdateInteractiveState(interactiveContext, facts, writerState, counters);
+
+                while (true)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    DesiredView desiredView = _traversalCore.ComputeDesiredView(facts, writerState);
+                    ProgressSnapshot progress = BuildProgressSnapshot(facts, writerState, counters);
+
+                    int availableDiscoverySlots = System.Math.Max(0, _maxConcurrentTileProcessing - discoveryTasks.Count);
+                    foreach (DiscoveryWorkItem work in _traversalCore.PlanDiscovery(facts, writerState, availableDiscoverySlots))
+                    {
+                        string stableId = work.Tile.StableId!;
+                        if (discoveryTasks.ContainsKey(stableId))
+                        {
+                            continue;
+                        }
+
+                        MarkDiscoveryInFlight(facts, work);
+                        discoveryTasks.Add(stableId, ExecuteDiscoveryAsync(work, request, auth, workerCts.Token));
+                    }
+
+                    if (writerTask is null)
+                    {
+                        WriterCommand? writerCommand = _traversalCore.PlanWriterCommand(
+                            facts,
+                            writerState,
+                            desiredView,
+                            progress,
+                            request.Output.DryRun);
+                        if (writerCommand is not null)
+                        {
+                            MarkWriterInFlight(writerState, writerCommand);
+                            writerTask = ExecuteWriterCommandAsync(writerCommand, request, interactiveContext, workerCts.Token);
+                        }
+                    }
+
+                    desiredView = _traversalCore.ComputeDesiredView(facts, writerState);
+                    progress = BuildProgressSnapshot(facts, writerState, counters);
+                    UpdateInteractiveState(interactiveContext, facts, writerState, counters);
+
+                    bool writerBusy = writerTask is not null;
+                    if (_traversalCore.IsSettled(
+                        facts,
+                        writerState,
+                        desiredView,
+                        discoveryTasks.Count,
+                        writerBusy,
+                        progress,
+                        request.Output.DryRun))
+                    {
+                        return BuildRunExecutionResult(facts, writerState, counters);
+                    }
+
+                    if (discoveryTasks.Count == 0 && writerTask is null)
+                    {
+                        throw new InvalidOperationException("Traversal stalled without pending discovery or writer work.");
+                    }
+
+                    if (writerTask is null)
+                    {
+                        Task completedTask = await Task.WhenAny(discoveryTasks.Values).ConfigureAwait(false);
+                        if (!completedTask.IsCompleted)
+                        {
+                            throw new InvalidOperationException("Completed task was not completed.");
+                        }
+                    }
+                    else
+                    {
+                        Task completedTask = await Task.WhenAny(discoveryTasks.Values.Cast<Task>().Concat([writerTask])).ConfigureAwait(false);
+                        if (!completedTask.IsCompleted)
+                        {
+                            throw new InvalidOperationException("Completed task was not completed.");
+                        }
+                    }
+
+                    writerTask = await ApplyCompletedWorkAsync(
+                        facts,
+                        writerState,
+                        discoveryTasks,
+                        interactiveContext,
+                        writerTask,
+                        counters).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (facts is not null && writerState is not null)
+            {
+                workerCts.Cancel();
+                writerTask = await ApplyCompletedWorkAsync(
+                    facts,
+                    writerState,
+                    discoveryTasks,
+                    interactiveContext,
+                    writerTask,
+                    counters).ConfigureAwait(false);
+                writerTask = await DrainOutstandingWorkAsync(
+                    facts,
+                    writerState,
+                    discoveryTasks,
+                    interactiveContext,
+                    writerTask,
+                    counters).ConfigureAwait(false);
+                UpdateInteractiveState(interactiveContext, facts, writerState, counters);
+                throw;
             }
             finally
             {
+                workerCts.Cancel();
+                await ObserveOutstandingTasksAsync(discoveryTasks.Values, writerTask).ConfigureAwait(false);
+
                 if (!request.Output.DryRun && request.Output.ManageConnection)
                 {
-                    await _resoniteSession.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+                    await _resoniteSession.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
                 }
             }
         }
 
-        private async Task<IReadOnlyList<PlannerResult>> ExecuteProcessTileBatchAsync(
-            IReadOnlyList<ProcessTileContentCommand> batch,
-            TileRunRequest request,
-            GoogleTilesAuth auth,
+        private async Task<Task<WriterCompletion>?> ApplyCompletedWorkAsync(
+            DiscoveryFacts facts,
+            WriterState writerState,
+            Dictionary<string, Task<DiscoveryCompletion>> discoveryTasks,
             InteractiveExecutionContext? interactiveContext,
-            CancellationToken cancellationToken)
+            Task<WriterCompletion>? writerTask,
+            RunCounters counters)
         {
-            if (batch.Count == 1)
+            foreach ((string stableId, Task<DiscoveryCompletion> task) in discoveryTasks
+                         .Where(static pair => pair.Value.IsCompleted)
+                         .ToArray())
             {
-                return
-                [
-                    await ExecuteProcessTileContentAsync(batch[0], request, auth, interactiveContext, cancellationToken).ConfigureAwait(false)
-                ];
+                _ = discoveryTasks.Remove(stableId);
+                try
+                {
+                    DiscoveryCompletion completion = await task.ConfigureAwait(false);
+                    LogDiscoveryCompletion(completion);
+                    long nextPreparedOrder = counters.NextPreparedOrder;
+                    int processedTiles = counters.ProcessedTiles;
+                    int failedTiles = counters.FailedTiles;
+                    _traversalCore.ApplyDiscoveryCompletion(
+                        facts,
+                        completion,
+                        ref nextPreparedOrder,
+                        ref processedTiles,
+                        ref failedTiles);
+                    counters.NextPreparedOrder = nextPreparedOrder;
+                    counters.ProcessedTiles = processedTiles;
+                    counters.FailedTiles = failedTiles;
+                }
+                catch (OperationCanceledException)
+                {
+                    RestoreDiscoveryStatus(facts, stableId);
+                }
             }
 
-            _logger.LogDebug("Running tile content batch with {BatchSize} workers.", batch.Count);
-
-            Task<PreparedProcessTileCommand>[] preparedTasks = batch
-                .Select(command => PrepareProcessTileContentAsync(command, auth, interactiveContext, cancellationToken))
-                .ToArray();
-
-            var results = new List<PlannerResult>(batch.Count);
-            for (int i = 0; i < preparedTasks.Length; i++)
+            if (writerTask is null || !writerTask.IsCompleted)
             {
-                PreparedProcessTileCommand prepared = await preparedTasks[i].ConfigureAwait(false);
-                PlannerResult result = await FinalizePreparedProcessTileAsync(
-                    prepared,
-                    request,
-                    interactiveContext,
-                    cancellationToken).ConfigureAwait(false);
-                results.Add(result);
+                return writerTask;
             }
 
-            return results;
+            try
+            {
+                WriterCompletion completion = await writerTask.ConfigureAwait(false);
+                LogWriterCompletion(completion);
+                if (completion is SendTileCompleted sent)
+                {
+                    foreach (string slotId in sent.SlotIds)
+                    {
+                        interactiveContext?.TrackNewSlotId(slotId);
+                    }
+                }
+
+                int processedTiles = counters.ProcessedTiles;
+                int streamedMeshes = counters.StreamedMeshes;
+                int failedTiles = counters.FailedTiles;
+                _traversalCore.ApplyWriterCompletion(
+                    facts,
+                    writerState,
+                    completion,
+                    dryRun: facts.Request.Output.DryRun,
+                    ref processedTiles,
+                    ref streamedMeshes,
+                    ref failedTiles);
+                counters.ProcessedTiles = processedTiles;
+                counters.StreamedMeshes = streamedMeshes;
+                counters.FailedTiles = failedTiles;
+            }
+            catch (OperationCanceledException)
+            {
+                ClearWriterInFlight(writerState);
+            }
+            finally
+            {
+                writerTask = null;
+            }
+
+            return writerTask;
         }
 
-        private async Task<PlannerResult> ExecuteCommandAsync(
-            PlannerCommand command,
+        private async Task<Task<WriterCompletion>?> DrainOutstandingWorkAsync(
+            DiscoveryFacts facts,
+            WriterState writerState,
+            Dictionary<string, Task<DiscoveryCompletion>> discoveryTasks,
+            InteractiveExecutionContext? interactiveContext,
+            Task<WriterCompletion>? writerTask,
+            RunCounters counters)
+        {
+            while (discoveryTasks.Count > 0 || writerTask is not null)
+            {
+                if (writerTask is null)
+                {
+                    _ = await Task.WhenAny(discoveryTasks.Values).ConfigureAwait(false);
+                }
+                else
+                {
+                    _ = await Task.WhenAny(discoveryTasks.Values.Cast<Task>().Concat([writerTask])).ConfigureAwait(false);
+                }
+
+                writerTask = await ApplyCompletedWorkAsync(
+                    facts,
+                    writerState,
+                    discoveryTasks,
+                    interactiveContext,
+                    writerTask,
+                    counters).ConfigureAwait(false);
+            }
+
+            return writerTask;
+        }
+
+        private async Task ObserveOutstandingTasksAsync(
+            IEnumerable<Task<DiscoveryCompletion>> discoveryTasks,
+            Task<WriterCompletion>? writerTask)
+        {
+            IEnumerable<Task> outstanding = writerTask is null
+                ? discoveryTasks
+                : discoveryTasks.Cast<Task>().Concat([writerTask]);
+
+            try
+            {
+                await Task.WhenAll(outstanding).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void LogDiscoveryCompletion(DiscoveryCompletion completion)
+        {
+            switch (completion)
+            {
+                case NestedTilesetDiscovered nested:
+                    _logger.LogInformation(
+                        "Loaded nested tileset for tile {TileId} from {Uri}.",
+                        nested.Tile.TileId,
+                        nested.Tile.ContentUri);
+                    break;
+
+                case TilePrepared prepared:
+                    _logger.LogInformation(
+                        "Prepared tile {TileId} from {Uri} with {MeshCount} meshes.",
+                        prepared.Tile.TileId,
+                        prepared.Tile.ContentUri,
+                        prepared.Content.Meshes.Count);
+                    break;
+
+                case DiscoverySkipped skipped when skipped.Error is not null:
+                    _logger.LogWarning(
+                        skipped.Error,
+                        "Skipped tile {TileId} from {Uri} after fetch/process error.",
+                        skipped.Tile.TileId,
+                        skipped.Tile.ContentUri);
+                    break;
+
+                case DiscoverySkipped skipped:
+                    _logger.LogInformation(
+                        "Skipped tile {TileId} from {Uri}: {Reason}",
+                        skipped.Tile.TileId,
+                        skipped.Tile.ContentUri,
+                        skipped.Reason ?? "no reason");
+                    break;
+
+                case DiscoveryFailed failed:
+                    _logger.LogWarning(
+                        failed.Error,
+                        "Failed to discover tile {TileId} from {Uri}.",
+                        failed.Tile.TileId,
+                        failed.Tile.ContentUri);
+                    break;
+            }
+        }
+
+        private void LogWriterCompletion(WriterCompletion completion)
+        {
+            switch (completion)
+            {
+                case SendTileCompleted sent when sent.Succeeded:
+                    _logger.LogInformation(
+                        "Streamed tile {TileId}: meshes={MeshCount}, slots={SlotCount}.",
+                        sent.Content.Tile.TileId,
+                        sent.StreamedMeshCount,
+                        sent.SlotIds.Count);
+                    break;
+
+                case SendTileCompleted sent:
+                    _logger.LogWarning(
+                        sent.Error,
+                        "Failed to stream tile {TileId}: streamedMeshes={MeshCount}, slots={SlotCount}.",
+                        sent.Content.Tile.TileId,
+                        sent.StreamedMeshCount,
+                        sent.SlotIds.Count);
+                    break;
+
+                case RemoveTileCompleted removed when removed.Succeeded:
+                    _logger.LogInformation(
+                        "Removed tile {TileId}.",
+                        removed.TileId);
+                    break;
+
+                case RemoveTileCompleted removed:
+                    _logger.LogWarning(
+                        removed.Error,
+                        "Failed to fully remove tile {TileId}: remainingSlots={RemainingSlotCount}.",
+                        removed.TileId,
+                        removed.RemainingSlotIds.Count);
+                    break;
+
+                case SyncSessionMetadataCompleted metadata when metadata.Succeeded:
+                    _logger.LogInformation(
+                        "Updated session metadata: progress={Progress:P0}, text={ProgressText}.",
+                        metadata.ProgressValue,
+                        metadata.ProgressText);
+                    break;
+
+                case SyncSessionMetadataCompleted metadata:
+                    _logger.LogWarning(
+                        metadata.Error,
+                        "Failed to update session metadata: progress={Progress:P0}, text={ProgressText}.",
+                        metadata.ProgressValue,
+                        metadata.ProgressText);
+                    break;
+            }
+        }
+
+        private static void MarkDiscoveryInFlight(DiscoveryFacts facts, DiscoveryWorkItem work)
+        {
+            if (!facts.Branches.TryGetValue(work.Tile.StableId!, out TileBranchFact? fact))
+            {
+                return;
+            }
+
+            switch (work)
+            {
+                case LoadNestedTilesetWorkItem:
+                    fact.NestedStatus = ContentDiscoveryStatus.InFlight;
+                    break;
+                case PrepareTileWorkItem:
+                    fact.PrepareStatus = ContentDiscoveryStatus.InFlight;
+                    break;
+            }
+        }
+
+        private static void RestoreDiscoveryStatus(DiscoveryFacts facts, string stableId)
+        {
+            if (!facts.Branches.TryGetValue(stableId, out TileBranchFact? fact))
+            {
+                return;
+            }
+
+            if (fact.Tile.ContentKind == TileContentKind.Json &&
+                fact.NestedStatus == ContentDiscoveryStatus.InFlight)
+            {
+                fact.NestedStatus = ContentDiscoveryStatus.Unrequested;
+            }
+            else if (fact.Tile.ContentKind == TileContentKind.Glb &&
+                     fact.PrepareStatus == ContentDiscoveryStatus.InFlight)
+            {
+                fact.PrepareStatus = ContentDiscoveryStatus.Unrequested;
+            }
+        }
+
+        private static void MarkWriterInFlight(WriterState writerState, WriterCommand command)
+        {
+            switch (command)
+            {
+                case SendTileWriterCommand send:
+                    writerState.InFlightSendStableId = send.Content.Tile.StableId;
+                    break;
+                case RemoveTileWriterCommand remove:
+                    writerState.InFlightRemoveStableId = remove.StableId;
+                    break;
+                case SyncSessionMetadataWriterCommand:
+                    writerState.MetadataInFlight = true;
+                    break;
+            }
+        }
+
+        private static void ClearWriterInFlight(WriterState writerState)
+        {
+            writerState.InFlightSendStableId = null;
+            writerState.InFlightRemoveStableId = null;
+            writerState.MetadataInFlight = false;
+        }
+
+        private ProgressSnapshot BuildProgressSnapshot(
+            DiscoveryFacts facts,
+            WriterState writerState,
+            RunCounters counters)
+        {
+            return new ProgressSnapshot(
+                _traversalCore.CountCandidateTiles(facts, writerState),
+                counters.ProcessedTiles,
+                counters.StreamedMeshes,
+                counters.FailedTiles);
+        }
+
+        private RunExecutionResult BuildRunExecutionResult(
+            DiscoveryFacts facts,
+            WriterState writerState,
+            RunCounters counters)
+        {
+            var summary = new RunSummary(
+                _traversalCore.CountCandidateTiles(facts, writerState),
+                counters.ProcessedTiles,
+                counters.StreamedMeshes,
+                counters.FailedTiles);
+            IReadOnlySet<string> selectedTileStableIds = facts.Branches.Keys.ToHashSet(StringComparer.Ordinal);
+            IReadOnlyDictionary<string, RetainedTileState> visibleTiles = _traversalCore.BuildVisibleTiles(writerState)
+                .Where(pair => facts.Branches.ContainsKey(pair.Key))
+                .ToDictionary(
+                    static pair => pair.Key,
+                    static pair => pair.Value,
+                    StringComparer.Ordinal);
+
+            return new RunExecutionResult(
+                summary,
+                visibleTiles,
+                selectedTileStableIds,
+                _traversalCore.BuildCheckpoint(facts));
+        }
+
+        private void UpdateInteractiveState(
+            InteractiveExecutionContext? interactiveContext,
+            DiscoveryFacts facts,
+            WriterState writerState,
+            RunCounters counters)
+        {
+            if (interactiveContext is null)
+            {
+                return;
+            }
+
+            RunExecutionResult state = BuildRunExecutionResult(facts, writerState, counters);
+            interactiveContext.UpdateState(state);
+        }
+
+        private async Task<DiscoveryCompletion> ExecuteDiscoveryAsync(
+            DiscoveryWorkItem work,
             TileRunRequest request,
             GoogleTilesAuth auth,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                ContentProcessResult content = await _contentProcessor.ProcessAsync(work.Tile, auth, cancellationToken).ConfigureAwait(false);
+                return content switch
+                {
+                    NestedTilesetContentProcessResult nested => new NestedTilesetDiscovered(work.Tile, nested.Tileset),
+                    RenderableContentProcessResult renderable => new TilePrepared(
+                        work.Tile,
+                        new PreparedTileContent(
+                            work.Tile,
+                            _meshPlacementService.Place(
+                                work.Tile,
+                                renderable.Meshes,
+                                request.PlacementReference,
+                                request.Output.MeshParentSlotId),
+                            renderable.AssetCopyright)),
+                    SkippedContentProcessResult skipped => new DiscoverySkipped(work.Tile, skipped.Reason),
+                    _ => throw new InvalidOperationException($"Unsupported content process result: {content.GetType().Name}")
+                };
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
+            {
+                return new DiscoverySkipped(work.Tile, Error: ex);
+            }
+            catch (Exception ex)
+            {
+                return new DiscoveryFailed(work.Tile, ex);
+            }
+        }
+
+        private async Task<WriterCompletion> ExecuteWriterCommandAsync(
+            WriterCommand command,
+            TileRunRequest request,
             InteractiveExecutionContext? interactiveContext,
             CancellationToken cancellationToken)
         {
             return command switch
             {
-                ProcessTileContentCommand process => await ExecuteProcessTileContentAsync(process, request, auth, interactiveContext, cancellationToken).ConfigureAwait(false),
-                StreamPlacedMeshesCommand stream => await ExecuteStreamPlacedMeshesAsync(stream, interactiveContext, cancellationToken).ConfigureAwait(false),
-                RemoveSlotsCommand remove => await ExecuteRemoveSlotsAsync(remove, interactiveContext, cancellationToken).ConfigureAwait(false),
-                UpdateLicenseCreditCommand update => await ExecuteUpdateLicenseCreditAsync(update, cancellationToken).ConfigureAwait(false),
-                _ => throw new InvalidOperationException($"Unsupported planner command type: {command.GetType().Name}")
+                SendTileWriterCommand send => await ExecuteSendAsync(send, request, cancellationToken).ConfigureAwait(false),
+                RemoveTileWriterCommand remove => await ExecuteRemoveAsync(remove, interactiveContext, cancellationToken).ConfigureAwait(false),
+                SyncSessionMetadataWriterCommand metadata => await ExecuteSyncMetadataAsync(request, metadata, cancellationToken).ConfigureAwait(false),
+                _ => throw new InvalidOperationException($"Unsupported writer command type: {command.GetType().Name}")
             };
         }
 
-        private async Task<PlannerResult> ExecuteProcessTileContentAsync(
-            ProcessTileContentCommand command,
+        private async Task<WriterCompletion> ExecuteSendAsync(
+            SendTileWriterCommand command,
             TileRunRequest request,
-            GoogleTilesAuth auth,
-            InteractiveExecutionContext? interactiveContext,
-            CancellationToken cancellationToken)
-        {
-            PreparedProcessTileCommand prepared = await PrepareProcessTileContentAsync(
-                command,
-                auth,
-                interactiveContext,
-                cancellationToken).ConfigureAwait(false);
-
-            return await FinalizePreparedProcessTileAsync(
-                prepared,
-                request,
-                interactiveContext,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        private async Task<PreparedProcessTileCommand> PrepareProcessTileContentAsync(
-            ProcessTileContentCommand command,
-            GoogleTilesAuth auth,
-            InteractiveExecutionContext? interactiveContext,
-            CancellationToken cancellationToken)
-        {
-            if (interactiveContext is not null &&
-                interactiveContext.TryGetRetainedTile(command.Tile, out RetainedTileState retainedTile))
-            {
-                return new PreparedPlannerResult(
-                    new RenderableContentReadyResult(command.Tile, 0, retainedTile.SlotIds, retainedTile.AssetCopyright));
-            }
-
-            if (interactiveContext is not null &&
-                interactiveContext.HasRetainedVisibleDescendant(command.Tile))
-            {
-                return new PreparedPlannerResult(
-                    new ContentSkippedResult(command.Tile, "Suppressed by retained descendant."));
-            }
-
-            try
-            {
-                ContentProcessResult content = await _contentProcessor.ProcessAsync(command.Tile, auth, cancellationToken).ConfigureAwait(false);
-                return content switch
-                {
-                    NestedTilesetContentProcessResult nested => new PreparedPlannerResult(new NestedTilesetLoadedResult(command.Tile, nested.Tileset)),
-                    RenderableContentProcessResult renderable => new PreparedRenderableContent(command.Tile, renderable),
-                    SkippedContentProcessResult skipped => new PreparedPlannerResult(new ContentSkippedResult(command.Tile, skipped.Reason)),
-                    _ => throw new InvalidOperationException($"Unsupported content process result: {content.GetType().Name}")
-                };
-            }
-            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
-            {
-                return new PreparedPlannerResult(new ContentSkippedResult(command.Tile, Error: ex));
-            }
-            catch (Exception ex)
-            {
-                return new PreparedPlannerResult(new ContentFailedResult(command.Tile, ex));
-            }
-        }
-
-        private async Task<PlannerResult> FinalizePreparedProcessTileAsync(
-            PreparedProcessTileCommand prepared,
-            TileRunRequest request,
-            InteractiveExecutionContext? interactiveContext,
-            CancellationToken cancellationToken)
-        {
-            return prepared switch
-            {
-                PreparedPlannerResult direct => direct.Result,
-                PreparedRenderableContent renderable => await ExecuteRenderableContentAsync(
-                    renderable.Tile,
-                    renderable.Renderable,
-                    request,
-                    interactiveContext,
-                    cancellationToken).ConfigureAwait(false),
-                _ => throw new InvalidOperationException($"Unsupported prepared tile content type: {prepared.GetType().Name}")
-            };
-        }
-
-        private async Task<PlannerResult> ExecuteRenderableContentAsync(
-            TileSelectionResult tile,
-            RenderableContentProcessResult renderable,
-            TileRunRequest request,
-            InteractiveExecutionContext? interactiveContext,
-            CancellationToken cancellationToken)
-        {
-            IReadOnlyList<PlacedMeshPayload> placedMeshes = _meshPlacementService.Place(
-                tile,
-                renderable.Meshes,
-                request.PlacementReference,
-                request.Output.MeshParentSlotId);
-
-            if (request.Output.DryRun)
-            {
-                return new RenderableContentReadyResult(tile, placedMeshes.Count, [], renderable.AssetCopyright);
-            }
-
-            return await ExecuteStreamPlacedMeshesAsync(
-                new StreamPlacedMeshesCommand(tile, placedMeshes, renderable.AssetCopyright),
-                interactiveContext,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        private async Task<PlannerResult> ExecuteStreamPlacedMeshesAsync(
-            StreamPlacedMeshesCommand command,
-            InteractiveExecutionContext? interactiveContext,
             CancellationToken cancellationToken)
         {
             var streamedSlotIds = new List<string>();
@@ -304,33 +645,83 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                foreach (PlacedMeshPayload payload in command.Meshes)
+                foreach (PlacedMeshPayload payload in command.Content.Meshes)
                 {
-                    string? slotId = await _resoniteSession.StreamPlacedMeshAsync(payload, cancellationToken).ConfigureAwait(false);
+                    string? slotId = request.Output.DryRun
+                        ? null
+                        : await _resoniteSession.StreamPlacedMeshAsync(payload, cancellationToken).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(slotId))
                     {
                         streamedSlotIds.Add(slotId);
-                        interactiveContext?.TrackNewSlotId(slotId);
                     }
 
                     streamedMeshCount++;
                 }
 
-                return new RenderableContentReadyResult(command.Tile, streamedMeshCount, streamedSlotIds, command.AssetCopyright);
+                return new SendTileCompleted(command.Content, true, streamedMeshCount, streamedSlotIds);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                return new ContentFailedResult(command.Tile, ex, streamedMeshCount, streamedSlotIds, command.AssetCopyright);
+                if (streamedSlotIds.Count > 0)
+                {
+                    bool rolledBack = await TryRollbackPartialSendAsync(
+                        command.Content.Tile.TileId,
+                        streamedSlotIds,
+                        cancellationToken).ConfigureAwait(false);
+                    if (rolledBack)
+                    {
+                        streamedSlotIds.Clear();
+                        streamedMeshCount = 0;
+                    }
+                }
+
+                return new SendTileCompleted(command.Content, false, streamedMeshCount, streamedSlotIds, ex);
             }
         }
 
-        private async Task<PlannerResult> ExecuteRemoveSlotsAsync(
-            RemoveSlotsCommand command,
+        private async Task<bool> TryRollbackPartialSendAsync(
+            string tileId,
+            IReadOnlyList<string> streamedSlotIds,
+            CancellationToken cancellationToken)
+        {
+            bool rolledBack = true;
+
+            foreach (string slotId in streamedSlotIds)
+            {
+                try
+                {
+                    await _resoniteSession.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception rollbackEx)
+                {
+                    rolledBack = false;
+                    _logger.LogWarning(
+                        rollbackEx,
+                        "Failed to roll back partially streamed slot {SlotId} for tile {TileId}.",
+                        slotId,
+                        tileId);
+                }
+            }
+
+            return rolledBack;
+        }
+
+        private async Task<WriterCompletion> ExecuteRemoveAsync(
+            RemoveTileWriterCommand command,
             InteractiveExecutionContext? interactiveContext,
             CancellationToken cancellationToken)
         {
             int failedSlotCount = 0;
             Exception? firstError = null;
+            var remainingSlotIds = new List<string>();
             IReadOnlyList<string> immediateSlotIds = command.SlotIds;
 
             if (interactiveContext is not null)
@@ -340,56 +731,55 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             foreach (string slotId in immediateSlotIds)
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
                     await _resoniteSession.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
                     interactiveContext?.ForgetNewSlotId(slotId);
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     failedSlotCount++;
                     firstError ??= ex;
-                    _logger.LogWarning(ex, "Failed to remove parent tile slot {SlotId} for tile {TileId}.", slotId, command.TileId);
+                    remainingSlotIds.Add(slotId);
                 }
             }
 
-            return new SlotsRemovedResult(command.StateId, command.TileId, failedSlotCount == 0, failedSlotCount, firstError);
+            return new RemoveTileCompleted(
+                command.StableId,
+                command.TileId,
+                failedSlotCount == 0,
+                failedSlotCount,
+                remainingSlotIds,
+                firstError);
         }
 
-        private async Task<PlannerResult> ExecuteUpdateLicenseCreditAsync(UpdateLicenseCreditCommand command, CancellationToken cancellationToken)
+        private async Task<WriterCompletion> ExecuteSyncMetadataAsync(
+            TileRunRequest request,
+            SyncSessionMetadataWriterCommand command,
+            CancellationToken cancellationToken)
         {
             try
             {
-                await _resoniteSession.SetSessionLicenseCreditAsync(command.CreditString, cancellationToken).ConfigureAwait(false);
-                return new LicenseUpdatedResult(command.CreditString, true, null);
+                await _resoniteSession.SetSessionLicenseCreditAsync(command.LicenseCredit, cancellationToken).ConfigureAwait(false);
+                await _resoniteSession.SetProgressAsync(
+                    request.Output.MeshParentSlotId,
+                    command.ProgressValue,
+                    command.ProgressText,
+                    cancellationToken).ConfigureAwait(false);
+                return new SyncSessionMetadataCompleted(command.LicenseCredit, command.ProgressValue, command.ProgressText, true);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                return new LicenseUpdatedResult(command.CreditString, false, ex);
+                return new SyncSessionMetadataCompleted(command.LicenseCredit, command.ProgressValue, command.ProgressText, false, ex);
             }
-        }
-
-        private abstract record PreparedProcessTileCommand(TileSelectionResult Tile);
-
-        private sealed record PreparedPlannerResult(PlannerResult Result)
-            : PreparedProcessTileCommand(ResolveTile(Result));
-
-        private sealed record PreparedRenderableContent(
-            TileSelectionResult Tile,
-            RenderableContentProcessResult Renderable)
-            : PreparedProcessTileCommand(Tile);
-
-        private static TileSelectionResult ResolveTile(PlannerResult result)
-        {
-            return result switch
-            {
-                NestedTilesetLoadedResult nested => nested.Tile,
-                RenderableContentReadyResult renderable => renderable.Tile,
-                ContentSkippedResult skipped => skipped.Tile,
-                ContentFailedResult failed => failed.Tile,
-                _ => throw new InvalidOperationException($"Planner result does not carry tile context: {result.GetType().Name}")
-            };
         }
 
         private async Task<GoogleTilesAuth> BuildAuthAsync(TileRunRequest request, CancellationToken cancellationToken)
@@ -403,24 +793,31 @@ namespace ThreeDTilesLink.Core.Pipeline
             return new GoogleTilesAuth(null, token);
         }
 
-        private async Task<HashSet<string>> CommitInteractiveChangesAsync(
+        private async Task<IReadOnlyDictionary<string, RetainedTileState>> CommitInteractiveChangesAsync(
             InteractiveExecutionContext interactiveContext,
             IReadOnlySet<string> selectedTileStableIds,
             CancellationToken cancellationToken)
         {
-            var failedStateIds = new HashSet<string>(StringComparer.Ordinal);
+            var failedRetainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal);
 
             foreach (RetainedTileRemoval stagedRemoval in interactiveContext.GetStagedRetainedRemovals())
             {
-                if (!await TryRemoveSlotsAsync(stagedRemoval.TileId, stagedRemoval.SlotIds, cancellationToken).ConfigureAwait(false))
+                IReadOnlyList<string> failedSlotIds = await TryRemoveSlotsAsync(
+                    stagedRemoval.TileId,
+                    stagedRemoval.SlotIds,
+                    cancellationToken).ConfigureAwait(false);
+                if (failedSlotIds.Count > 0)
                 {
-                    _ = failedStateIds.Add(stagedRemoval.StateId);
+                    failedRetainedTiles[stagedRemoval.StateId] = stagedRemoval.RetainedTile with
+                    {
+                        SlotIds = failedSlotIds
+                    };
                 }
             }
 
             if (!interactiveContext.RemoveOutOfRangeTiles)
             {
-                return failedStateIds;
+                return failedRetainedTiles;
             }
 
             foreach ((string stableId, RetainedTileState retainedTile) in interactiveContext.RetainedTiles)
@@ -430,13 +827,20 @@ namespace ThreeDTilesLink.Core.Pipeline
                     continue;
                 }
 
-                if (!await TryRemoveSlotsAsync(retainedTile.TileId, retainedTile.SlotIds, cancellationToken).ConfigureAwait(false))
+                IReadOnlyList<string> failedSlotIds = await TryRemoveSlotsAsync(
+                    retainedTile.TileId,
+                    retainedTile.SlotIds,
+                    cancellationToken).ConfigureAwait(false);
+                if (failedSlotIds.Count > 0)
                 {
-                    _ = failedStateIds.Add(stableId);
+                    failedRetainedTiles[stableId] = retainedTile with
+                    {
+                        SlotIds = failedSlotIds
+                    };
                 }
             }
 
-            return failedStateIds;
+            return failedRetainedTiles;
         }
 
         private async Task RollbackInteractiveChangesAsync(
@@ -460,49 +864,51 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         private async Task<InteractiveTileRunResult> FinalizeCanceledInteractiveRunAsync(
             TileRunRequest request,
+            InteractiveRunInput interactive,
             InteractiveExecutionContext interactiveContext)
         {
-            IReadOnlyDictionary<string, RetainedTileState> nextRetainedTiles;
-            IReadOnlySet<string> selectedTileStableIds;
-            RunSummary summary;
+            IReadOnlyDictionary<string, RetainedTileState> nextRetainedTiles = new Dictionary<string, RetainedTileState>(interactive.RetainedTiles, StringComparer.Ordinal);
+            IReadOnlySet<string> selectedTileStableIds = new HashSet<string>(StringComparer.Ordinal);
+            InteractiveRunCheckpoint? checkpoint = interactive.Checkpoint;
+            RunSummary summary = new(0, 0, 0, 0);
 
-            if (interactiveContext.PlannerInitialized)
+            if (interactiveContext.LastState is not null)
             {
-                IReadOnlyDictionary<string, RetainedTileState> visibleTiles = _traversalPlanner.GetVisibleTiles();
-                selectedTileStableIds = _traversalPlanner.GetSelectedTileStableIds();
-                nextRetainedTiles = BuildCanceledRetainedTiles(interactiveContext.RetainedTiles, visibleTiles);
-                summary = _traversalPlanner.GetSummary();
-            }
-            else
-            {
-                nextRetainedTiles = new Dictionary<string, RetainedTileState>(interactiveContext.RetainedTiles, StringComparer.Ordinal);
-                selectedTileStableIds = new HashSet<string>(StringComparer.Ordinal);
-                summary = new RunSummary(0, 0, 0, 0);
+                nextRetainedTiles = BuildCanceledRetainedTiles(interactive.RetainedTiles, interactiveContext.LastState.VisibleTiles);
+                selectedTileStableIds = interactiveContext.LastState.SelectedTileStableIds;
+                checkpoint = interactiveContext.LastState.Checkpoint;
+                summary = interactiveContext.LastState.Summary;
             }
 
             await ApplyFinalLicenseCreditAsync(request, nextRetainedTiles, CancellationToken.None).ConfigureAwait(false);
-            return new InteractiveTileRunResult(summary, nextRetainedTiles, selectedTileStableIds);
+            return new InteractiveTileRunResult(summary, nextRetainedTiles, selectedTileStableIds, checkpoint);
         }
 
-        private async Task<bool> TryRemoveSlotsAsync(
+        private async Task<IReadOnlyList<string>> TryRemoveSlotsAsync(
             string tileId,
             IReadOnlyList<string> slotIds,
             CancellationToken cancellationToken)
         {
+            var failedSlotIds = new List<string>();
+
             foreach (string slotId in slotIds)
             {
                 try
                 {
                     await _resoniteSession.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to remove retained slot {SlotId} for tile {TileId}.", slotId, tileId);
-                    return false;
+                    failedSlotIds.Add(slotId);
                 }
             }
 
-            return true;
+            return failedSlotIds;
         }
 
         private async Task ApplyFinalLicenseCreditAsync(
@@ -526,7 +932,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                 _ = aggregator.Activate(owners);
             }
 
-            await _resoniteSession.SetSessionLicenseCreditAsync(aggregator.BuildCreditString(), cancellationToken).ConfigureAwait(false);
+            string built = aggregator.BuildCreditString();
+            await _resoniteSession.SetSessionLicenseCreditAsync(
+                string.IsNullOrWhiteSpace(built) ? "Google Maps" : built,
+                cancellationToken).ConfigureAwait(false);
         }
 
         private static IReadOnlyDictionary<string, RetainedTileState> BuildNextRetainedTiles(
@@ -534,7 +943,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             IReadOnlyDictionary<string, RetainedTileState> visibleTiles,
             IReadOnlySet<string> selectedTileStableIds,
             bool removeOutOfRangeTiles,
-            IReadOnlySet<string> failedRemovalStateIds)
+            IReadOnlyDictionary<string, RetainedTileState> failedRetainedTiles)
         {
             var next = new Dictionary<string, RetainedTileState>(visibleTiles, StringComparer.Ordinal);
 
@@ -545,9 +954,9 @@ namespace ThreeDTilesLink.Core.Pipeline
                     continue;
                 }
 
-                if (failedRemovalStateIds.Contains(stableId))
+                if (failedRetainedTiles.TryGetValue(stableId, out RetainedTileState? failedRetainedTile))
                 {
-                    next[stableId] = retainedTile;
+                    next[stableId] = failedRetainedTile;
                     continue;
                 }
 
@@ -571,104 +980,30 @@ namespace ThreeDTilesLink.Core.Pipeline
                 visibleTiles,
                 new HashSet<string>(StringComparer.Ordinal),
                 removeOutOfRangeTiles: false,
-                new HashSet<string>(StringComparer.Ordinal));
+                new Dictionary<string, RetainedTileState>(StringComparer.Ordinal));
         }
 
-        private async Task SetProgressAsync(TileRunRequest request, RunSummary summary, CancellationToken cancellationToken, bool completed = false)
+        private sealed record RunExecutionResult(
+            RunSummary Summary,
+            IReadOnlyDictionary<string, RetainedTileState> VisibleTiles,
+            IReadOnlySet<string> SelectedTileStableIds,
+            InteractiveRunCheckpoint Checkpoint);
+
+        private sealed class RunCounters
         {
-            if (request.Output.DryRun)
-            {
-                return;
-            }
+            public int ProcessedTiles { get; set; }
 
-            await _resoniteSession.SetProgressAsync(
-                request.Output.MeshParentSlotId,
-                BuildProgressValue(summary, completed),
-                BuildProgressText(summary, completed),
-                cancellationToken).ConfigureAwait(false);
-        }
+            public int StreamedMeshes { get; set; }
 
-        private async Task SetProgressAsync(TileRunRequest request, PlannerProgress progress, CancellationToken cancellationToken)
-        {
-            if (request.Output.DryRun)
-            {
-                return;
-            }
+            public int FailedTiles { get; set; }
 
-            await _resoniteSession.SetProgressAsync(
-                request.Output.MeshParentSlotId,
-                BuildProgressValue(progress),
-                BuildProgressText(progress),
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        private async Task SetProgressAsync(TileRunRequest request, float progress01, string progressText, CancellationToken cancellationToken)
-        {
-            if (request.Output.DryRun)
-            {
-                return;
-            }
-
-            await _resoniteSession.SetProgressAsync(request.Output.MeshParentSlotId, progress01, progressText, cancellationToken).ConfigureAwait(false);
-        }
-
-        private static float BuildProgressValue(RunSummary summary, bool completed)
-        {
-            if (completed)
-            {
-                return 1f;
-            }
-
-            if (summary.CandidateTiles <= 0)
-            {
-                return 0f;
-            }
-
-            int completedTiles = summary.ProcessedTiles + summary.FailedTiles;
-            return System.Math.Clamp((float)completedTiles / summary.CandidateTiles, 0f, 1f);
-        }
-
-        private static float BuildProgressValue(PlannerProgress progress)
-        {
-            int completedUnits = progress.ProcessedTiles + progress.FailedTiles;
-            int pendingUnits =
-                progress.PendingTilesets +
-                progress.PendingGlbTiles +
-                progress.DeferredGlbTiles +
-                progress.PendingTileCommands;
-            int totalUnits = completedUnits + pendingUnits;
-
-            if (totalUnits <= 0)
-            {
-                return 0f;
-            }
-
-            return System.Math.Clamp((float)completedUnits / totalUnits, 0f, 1f);
-        }
-
-        private static string BuildProgressText(RunSummary summary, bool completed)
-        {
-            string prefix = completed ? "Completed" : "Running";
-            return $"{prefix}: candidate={summary.CandidateTiles} processed={summary.ProcessedTiles} streamed={summary.StreamedMeshes} failed={summary.FailedTiles}";
-        }
-
-        private static string BuildProgressText(PlannerProgress progress)
-        {
-            return $"Running: candidate={progress.CandidateTiles} processed={progress.ProcessedTiles} streamed={progress.StreamedMeshes} failed={progress.FailedTiles}";
-        }
-
-        private static string ResolveStableId(TileSelectionResult tile)
-        {
-            return string.IsNullOrWhiteSpace(tile.StableId)
-                ? tile.TileId
-                : tile.StableId!;
+            public long NextPreparedOrder { get; set; }
         }
 
         private sealed class InteractiveExecutionContext
         {
             private readonly Dictionary<string, RetainedTileState> _retainedTiles = new(StringComparer.Ordinal);
             private readonly Dictionary<string, string> _stableIdByRetainedSlotId = new(StringComparer.Ordinal);
-            private readonly HashSet<string> _stableIdsWithRetainedDescendants = new(StringComparer.Ordinal);
             private readonly Dictionary<string, RetainedTileRemoval> _stagedRetainedRemovals = new(StringComparer.Ordinal);
             private readonly HashSet<string> _newSlotIds = new(StringComparer.Ordinal);
 
@@ -684,11 +1019,6 @@ namespace ThreeDTilesLink.Core.Pipeline
                     {
                         _stableIdByRetainedSlotId[slotId] = stableId;
                     }
-
-                    foreach (string ancestorStableId in retainedTile.AncestorStableIds)
-                    {
-                        _ = _stableIdsWithRetainedDescendants.Add(ancestorStableId);
-                    }
                 }
             }
 
@@ -696,23 +1026,11 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             public bool RemoveOutOfRangeTiles { get; }
 
-            public bool PlannerInitialized { get; private set; }
+            public RunExecutionResult? LastState { get; private set; }
 
-            public bool TryGetRetainedTile(TileSelectionResult tile, out RetainedTileState retainedTile)
+            public void UpdateState(RunExecutionResult state)
             {
-                if (_retainedTiles.TryGetValue(ResolveStableId(tile), out RetainedTileState? existing))
-                {
-                    retainedTile = existing;
-                    return true;
-                }
-
-                retainedTile = null!;
-                return false;
-            }
-
-            public bool HasRetainedVisibleDescendant(TileSelectionResult tile)
-            {
-                return _stableIdsWithRetainedDescendants.Contains(ResolveStableId(tile));
+                LastState = state;
             }
 
             public void TrackNewSlotId(string slotId)
@@ -764,11 +1082,6 @@ namespace ThreeDTilesLink.Core.Pipeline
             public IReadOnlyCollection<RetainedTileRemoval> GetStagedRetainedRemovals()
             {
                 return _stagedRetainedRemovals.Values.ToArray();
-            }
-
-            public void MarkPlannerInitialized()
-            {
-                PlannerInitialized = true;
             }
         }
 

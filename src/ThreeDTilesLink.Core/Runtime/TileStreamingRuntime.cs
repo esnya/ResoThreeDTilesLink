@@ -40,9 +40,7 @@ namespace ThreeDTilesLink.Core.Runtime
             var transformer = new GeographicCoordinateTransformer();
             var tilesSource = new HttpTilesSource(_httpClient);
             var selector = new TileSelector(transformer);
-            var traversalPlanner = new TraversalPlanner(
-                selector,
-                loggerFactory.CreateLogger<TraversalPlanner>());
+            var traversalCore = new TraversalCore(selector);
             var extractor = new GlbMeshExtractor();
             var contentProcessor = new TileContentProcessor(tilesSource, extractor);
             var meshPlacementService = new MeshPlacementService(transformer);
@@ -72,7 +70,7 @@ namespace ThreeDTilesLink.Core.Runtime
 
             RunCoordinator = new TileRunCoordinator(
                 tilesSource,
-                traversalPlanner,
+                traversalCore,
                 contentProcessor,
                 meshPlacementService,
                 resoniteSession,

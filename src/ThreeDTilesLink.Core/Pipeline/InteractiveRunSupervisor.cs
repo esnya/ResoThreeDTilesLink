@@ -37,6 +37,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             Task<InteractiveTileRunResult>? activeRunTask = null;
             CancellationTokenSource? activeRunCts = null;
             Dictionary<string, RetainedTileState> retainedTiles = new(StringComparer.Ordinal);
+            InteractiveRunCheckpoint? retainedCheckpoint = null;
             ProbeBinding? probeBinding = null;
             ProbeValues? lastProbeValues = null;
             ProbeValues? pendingProbeValues = null;
@@ -67,10 +68,11 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    (activeRunTask, activeRunCts, retainedTiles) = await ObserveActiveRunAsync(
+                    (activeRunTask, activeRunCts, retainedTiles, retainedCheckpoint) = await ObserveActiveRunAsync(
                         activeRunTask,
                         activeRunCts,
                         retainedTiles,
+                        retainedCheckpoint,
                         cancellationToken).ConfigureAwait(false);
 
                     string? currentSearch = await _probeMonitor.TryReadProbeSearchAsync(probeBinding, cancellationToken).ConfigureAwait(false);
@@ -151,10 +153,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                             bool overlaps = lastRequestedFootprint is not null &&
                                 Overlaps(lastRequestedFootprint, currentFootprint);
 
-                            (activeRunTask, activeRunCts, retainedTiles) = await CancelActiveRunAsync(
+                            (activeRunTask, activeRunCts, retainedTiles, retainedCheckpoint) = await CancelActiveRunAsync(
                                 activeRunTask,
                                 activeRunCts,
-                                retainedTiles).ConfigureAwait(false);
+                                retainedTiles,
+                                retainedCheckpoint).ConfigureAwait(false);
 
                             if (!overlaps || string.IsNullOrWhiteSpace(sessionSlotId) || placementReference is null)
                             {
@@ -168,6 +171,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                                     cancellationToken).ConfigureAwait(false);
                                 placementReference = selectionReference;
                                 retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal);
+                                retainedCheckpoint = null;
                             }
 
                             TileRunRequest runRequest = BuildRunRequest(
@@ -179,8 +183,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                             activeRunCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                             activeRunTask = _tileRunCoordinator.RunInteractiveAsync(
                                 runRequest,
-                                retainedTiles,
-                                overlaps && options.RemoveOutOfRange,
+                                new InteractiveRunInput(
+                                    retainedTiles,
+                                    overlaps && options.RemoveOutOfRange,
+                                    overlaps ? retainedCheckpoint : null),
                                 activeRunCts.Token);
                             lastRequestedFootprint = currentFootprint;
                             lastRunStartedAt = now;
@@ -204,14 +210,16 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
             finally
             {
-                (activeRunTask, activeRunCts, retainedTiles) = await CancelActiveRunAsync(
+                (activeRunTask, activeRunCts, retainedTiles, retainedCheckpoint) = await CancelActiveRunAsync(
                     activeRunTask,
                     activeRunCts,
-                    retainedTiles).ConfigureAwait(false);
+                    retainedTiles,
+                    retainedCheckpoint).ConfigureAwait(false);
 
                 _ = activeRunTask;
                 _ = activeRunCts;
                 _ = retainedTiles;
+                _ = retainedCheckpoint;
 
                 if (!string.IsNullOrWhiteSpace(sessionSlotId))
                 {
@@ -285,22 +293,24 @@ namespace ThreeDTilesLink.Core.Pipeline
                    MathF.Abs(probeValues.Longitude - (float)resolved.Longitude) <= coordinateTolerance;
         }
 
-        private async Task<(Task<InteractiveTileRunResult>? Task, CancellationTokenSource? Cts, Dictionary<string, RetainedTileState> RetainedTiles)> ObserveActiveRunAsync(
+        private async Task<(Task<InteractiveTileRunResult>? Task, CancellationTokenSource? Cts, Dictionary<string, RetainedTileState> RetainedTiles, InteractiveRunCheckpoint? Checkpoint)> ObserveActiveRunAsync(
             Task<InteractiveTileRunResult>? activeRunTask,
             CancellationTokenSource? activeRunCts,
             Dictionary<string, RetainedTileState> retainedTiles,
+            InteractiveRunCheckpoint? checkpoint,
             CancellationToken cancellationToken)
         {
             _ = cancellationToken;
             if (activeRunTask is null || !activeRunTask.IsCompleted)
             {
-                return (activeRunTask, activeRunCts, retainedTiles);
+                return (activeRunTask, activeRunCts, retainedTiles, checkpoint);
             }
 
             try
             {
                 InteractiveTileRunResult result = await activeRunTask.ConfigureAwait(false);
                 retainedTiles = new Dictionary<string, RetainedTileState>(result.VisibleTiles, StringComparer.Ordinal);
+                checkpoint = result.Checkpoint;
                 _logger.LogInformation(
                     "Run completed: retained={Retained} candidate={Candidate} processed={Processed} streamed={Streamed} failed={Failed}",
                     retainedTiles.Count,
@@ -321,17 +331,18 @@ namespace ThreeDTilesLink.Core.Pipeline
                 activeRunCts?.Dispose();
             }
 
-            return (null, null, retainedTiles);
+            return (null, null, retainedTiles, checkpoint);
         }
 
-        private async Task<(Task<InteractiveTileRunResult>? Task, CancellationTokenSource? Cts, Dictionary<string, RetainedTileState> RetainedTiles)> CancelActiveRunAsync(
+        private async Task<(Task<InteractiveTileRunResult>? Task, CancellationTokenSource? Cts, Dictionary<string, RetainedTileState> RetainedTiles, InteractiveRunCheckpoint? Checkpoint)> CancelActiveRunAsync(
             Task<InteractiveTileRunResult>? activeRunTask,
             CancellationTokenSource? activeRunCts,
-            Dictionary<string, RetainedTileState> retainedTiles)
+            Dictionary<string, RetainedTileState> retainedTiles,
+            InteractiveRunCheckpoint? checkpoint)
         {
             if (activeRunTask is null)
             {
-                return (null, null, retainedTiles);
+                return (null, null, retainedTiles, checkpoint);
             }
 
             if (!activeRunTask.IsCompleted)
@@ -343,6 +354,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 InteractiveTileRunResult result = await activeRunTask.ConfigureAwait(false);
                 retainedTiles = new Dictionary<string, RetainedTileState>(result.VisibleTiles, StringComparer.Ordinal);
+                checkpoint = result.Checkpoint;
             }
             catch (OperationCanceledException)
             {
@@ -356,7 +368,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 activeRunCts?.Dispose();
             }
 
-            return (null, null, retainedTiles);
+            return (null, null, retainedTiles, checkpoint);
         }
 
         private bool Overlaps(RangeFootprint previous, RangeFootprint current)
