@@ -278,8 +278,15 @@ namespace ThreeDTilesLink.Core.Resonite
             string effectiveParentSlotId = ResolveEffectiveParentSlotId(parentSlotId);
             string normalizedText = progressText.Trim();
             SlotProgressBinding binding = await EnsureProgressBindingAsync(effectiveParentSlotId).ConfigureAwait(false);
-            await UpdateNumericMemberAsync(binding.ProgressValueComponentId, DynamicValueVariableValueMemberName, normalizedProgress, cancellationToken).ConfigureAwait(false);
             await UpdateStringMemberAsync(binding.ProgressTextComponentId, DynamicValueVariableValueMemberName, normalizedText, cancellationToken).ConfigureAwait(false);
+            await UpdateNumericMemberAsync(binding.ProgressValueComponentId, DynamicValueVariableValueMemberName, normalizedProgress, cancellationToken).ConfigureAwait(false);
+
+            if (normalizedProgress >= 1f)
+            {
+                // Some observers react immediately to the terminal progress value. Reapply the final
+                // text after the numeric completion update so the completed snapshot is visible there too.
+                await UpdateStringMemberAsync(binding.ProgressTextComponentId, DynamicValueVariableValueMemberName, normalizedText, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         public async Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
