@@ -7,6 +7,12 @@ This `README.md` is the human-facing entry point. Current operational details an
 
 <img width="2560" height="1440" alt="2026-04-04 23 31 20" src="https://github.com/user-attachments/assets/3d52ad6c-7d7a-400e-a89a-46d1cf2d128e" />
 
+## Constraints
+
+- To comply with Google Map Tiles API policy, streamed tiles must remain non-persistent.
+- Saving streamed content into the Resonite inventory is not supported.
+- `SimpleAvatarProtection` is part of the Resonite-side mitigation for keeping the streamed content non-persistent.
+
 ## Prerequisites
 
 - `.NET SDK 10.0+`
