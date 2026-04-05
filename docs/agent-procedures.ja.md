@@ -31,5 +31,7 @@
 ## 検証
 
 - 通常は `dotnet test ThreeDTilesLink.slnx`
+- child node 向けの local IPC が禁止される制限付き agent sandbox では、`dotnet build ThreeDTilesLink.slnx --no-restore -m:1` を使う
+- 同じ環境では solution レベルの `dotnet test` が VSTest の socket 通信を必要とするため、`dotnet test tests/ThreeDTilesLink.Tests/ThreeDTilesLink.Tests.csproj --no-build` を優先する
 - 変更範囲が限定される場合は、まず関連テストを優先する
 - 実運用依存の確認が未実施なら、その不足を明示して終える

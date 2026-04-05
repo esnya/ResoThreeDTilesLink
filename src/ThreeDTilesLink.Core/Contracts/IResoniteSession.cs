@@ -2,7 +2,7 @@ using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Contracts
 {
-    public interface IResoniteSession
+    internal interface IResoniteSession
     {
         Task ConnectAsync(string host, int port, CancellationToken cancellationToken);
         Task<string> CreateSessionChildSlotAsync(string name, CancellationToken cancellationToken);

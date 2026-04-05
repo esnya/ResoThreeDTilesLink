@@ -4,9 +4,9 @@ using ThreeDTilesLink.Core.Runtime;
 
 namespace ThreeDTilesLink.Core.App
 {
-    public static class StreamCommandHandler
+    internal static class StreamCommandHandler
     {
-        public static TileRunRequest CreateRequest(StreamCommandOptions options, string apiKey)
+        internal static TileRunRequest CreateRequest(StreamCommandOptions options, string apiKey)
         {
             ArgumentNullException.ThrowIfNull(options);
 
@@ -25,7 +25,7 @@ namespace ThreeDTilesLink.Core.App
                 apiKey);
         }
 
-        public static async Task<int> RunAsync(
+        internal static async Task<int> RunAsync(
             StreamCommandOptions options,
             TileStreamingRuntime runtime,
             string apiKey,

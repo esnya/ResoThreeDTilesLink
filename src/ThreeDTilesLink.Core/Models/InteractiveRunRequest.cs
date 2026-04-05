@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    public sealed record InteractiveRunRequest(
+    internal sealed record InteractiveRunRequest(
         string ResoniteHost,
         int ResonitePort,
         double HeightOffsetM,

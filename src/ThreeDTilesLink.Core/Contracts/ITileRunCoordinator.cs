@@ -2,7 +2,7 @@ using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Contracts
 {
-    public interface ITileRunCoordinator
+    internal interface ITileRunCoordinator
     {
         Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken);
         Task<InteractiveTileRunResult> RunInteractiveAsync(

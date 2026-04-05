@@ -1,20 +1,20 @@
 namespace ThreeDTilesLink.Core.CommandLine
 {
-    public enum RootCommandKind
+    internal enum RootCommandKind
     {
         Stream,
         Interactive
     }
 
-    public sealed record RootCommandRoute(
+    internal sealed record RootCommandRoute(
         RootCommandKind Command,
         IReadOnlyList<string> Arguments);
 
-    public static class RootCommandLine
+    internal static class RootCommandLine
     {
         private const string Usage = "dotnet run --project src/ThreeDTilesLink -- <command> [options]";
 
-        public static CommandInvocation<RootCommandRoute> Parse(IReadOnlyList<string> args)
+        internal static CommandInvocation<RootCommandRoute> Parse(IReadOnlyList<string> args)
         {
             ArgumentNullException.ThrowIfNull(args);
 
@@ -30,10 +30,10 @@ namespace ThreeDTilesLink.Core.CommandLine
                 return new CommandInvocation<RootCommandRoute>(false, default, 0, RenderHelp(), false);
             }
 
-            RootCommandKind? kind = command.ToLowerInvariant() switch
+            RootCommandKind? kind = command switch
             {
-                "stream" => RootCommandKind.Stream,
-                "interactive" => RootCommandKind.Interactive,
+                _ when string.Equals(command, "stream", StringComparison.OrdinalIgnoreCase) => RootCommandKind.Stream,
+                _ when string.Equals(command, "interactive", StringComparison.OrdinalIgnoreCase) => RootCommandKind.Interactive,
                 _ => null
             };
 
@@ -50,7 +50,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 false);
         }
 
-        public static string RenderHelp()
+        internal static string RenderHelp()
         {
             string[] lines =
             [

@@ -3,7 +3,7 @@ using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Tiles
 {
-    public sealed class TileContentProcessor(
+    internal sealed class TileContentProcessor(
         ITilesSource tilesSource,
         IGlbMeshExtractor glbMeshExtractor) : IContentProcessor
     {
@@ -31,7 +31,7 @@ namespace ThreeDTilesLink.Core.Tiles
             };
         }
 
-        private ContentProcessResult ToRenderableResult(byte[] glbBytes)
+        private RenderableContentProcessResult ToRenderableResult(byte[] glbBytes)
         {
             GlbExtractResult extracted = _glbMeshExtractor.Extract(glbBytes);
             return new RenderableContentProcessResult(extracted.Meshes, extracted.AssetCopyright);

@@ -1,8 +1,8 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    public sealed record QueryRange(double RangeM)
+    internal sealed record QueryRange(double RangeM)
     {
-        public double Min => -RangeM;
-        public double Max => RangeM;
+        internal double Min => -RangeM;
+        internal double Max => RangeM;
     }
 }

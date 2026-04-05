@@ -5,7 +5,7 @@ using SMath = System.Math;
 
 namespace ThreeDTilesLink.Core.Tiles
 {
-    public sealed class TileSelector(ICoordinateTransformer transformer) : ITileSelector
+    internal sealed class TileSelector(ICoordinateTransformer transformer) : ITileSelector
     {
         private const double MaxBelowLocalPlaneM = 10000d;
 
@@ -282,9 +282,9 @@ namespace ThreeDTilesLink.Core.Tiles
         private void AppendRegionSamples(
             IReadOnlyList<double> region,
             GeoReference reference,
-            ICollection<double> eastValues,
-            ICollection<double> northValues,
-            ICollection<double> upValues)
+            List<double> eastValues,
+            List<double> northValues,
+            List<double> upValues)
         {
             double west = NormalizeLongitude(region[0], DegreesToRadians(reference.Longitude));
             double south = region[1];
@@ -319,9 +319,9 @@ namespace ThreeDTilesLink.Core.Tiles
             IReadOnlyList<double> box,
             Matrix4x4d world,
             GeoReference reference,
-            ICollection<double> eastValues,
-            ICollection<double> northValues,
-            ICollection<double> upValues)
+            List<double> eastValues,
+            List<double> northValues,
+            List<double> upValues)
         {
             Vector3d center = world.TransformPoint(new Vector3d(box[0], box[1], box[2]));
             Vector3d axisX = world.TransformDirection(new Vector3d(box[3], box[4], box[5]));
@@ -348,9 +348,9 @@ namespace ThreeDTilesLink.Core.Tiles
             IReadOnlyList<double> sphere,
             Matrix4x4d world,
             GeoReference reference,
-            ICollection<double> eastValues,
-            ICollection<double> northValues,
-            ICollection<double> upValues)
+            List<double> eastValues,
+            List<double> northValues,
+            List<double> upValues)
         {
             Vector3d center = world.TransformPoint(new Vector3d(sphere[0], sphere[1], sphere[2]));
             Vector3d enu = _transformer.EcefToEnu(center, reference);

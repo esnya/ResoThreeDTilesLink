@@ -11,12 +11,12 @@ using ThreeDTilesLink.Core.Tiles;
 
 namespace ThreeDTilesLink.Core.Runtime
 {
-    public sealed class TileStreamingRuntime : IAsyncDisposable
+    internal sealed class TileStreamingRuntime : IAsyncDisposable
     {
         private readonly HttpClient _httpClient;
         private bool _disposed;
 
-        public TileStreamingRuntime(
+        internal TileStreamingRuntime(
             ILoggerFactory loggerFactory,
             TimeSpan requestTimeout,
             int maxConcurrentTileProcessing = 8)
@@ -91,13 +91,13 @@ namespace ThreeDTilesLink.Core.Runtime
             Session = resoniteSession;
         }
 
-        public TileRunCoordinator RunCoordinator { get; }
+        internal TileRunCoordinator RunCoordinator { get; }
 
-        public InteractiveRunSupervisor InteractiveSupervisor { get; }
+        internal InteractiveRunSupervisor InteractiveSupervisor { get; }
 
-        public ResoniteSession Session { get; }
+        internal ResoniteSession Session { get; }
 
-        public Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)
+        internal Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)
         {
             return RunCoordinator.RunAsync(request, cancellationToken);
         }

@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    public sealed record RetainedTileState(
+    internal sealed record RetainedTileState(
         string StableId,
         string TileId,
         string? ParentStableId,

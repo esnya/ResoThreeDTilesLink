@@ -7,7 +7,7 @@ using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Mesh
 {
-    public sealed class GlbMeshExtractor : IGlbMeshExtractor
+    internal sealed class GlbMeshExtractor : IGlbMeshExtractor
     {
         public GlbExtractResult Extract(byte[] glbBytes)
         {
@@ -33,7 +33,7 @@ namespace ThreeDTilesLink.Core.Mesh
             return new GlbExtractResult(result, model.Asset?.Copyright);
         }
 
-        private static void ExtractNode(Node node, ICollection<MeshData> output)
+        private static void ExtractNode(Node node, List<MeshData> output)
         {
             if (node.Mesh is not null)
             {
@@ -152,13 +152,25 @@ namespace ThreeDTilesLink.Core.Mesh
                 }
             }
 
-            return image.Content.MimeType?.ToLowerInvariant() switch
+            if (!string.IsNullOrWhiteSpace(image.Content.MimeType))
             {
-                "image/png" => ".png",
-                "image/jpeg" => ".jpg",
-                "image/webp" => ".webp",
-                _ => ".png"
-            };
+                if (string.Equals(image.Content.MimeType, "image/png", StringComparison.OrdinalIgnoreCase))
+                {
+                    return ".png";
+                }
+
+                if (string.Equals(image.Content.MimeType, "image/jpeg", StringComparison.OrdinalIgnoreCase))
+                {
+                    return ".jpg";
+                }
+
+                if (string.Equals(image.Content.MimeType, "image/webp", StringComparison.OrdinalIgnoreCase))
+                {
+                    return ".webp";
+                }
+            }
+
+            return ".png";
         }
     }
 }

@@ -31,5 +31,7 @@ This document contains procedures for AI and coding agents. It keeps only decisi
 ## Verification
 
 - Normally run `dotnet test ThreeDTilesLink.slnx`.
+- In restricted agent sandboxes that block local IPC for child nodes, run `dotnet build ThreeDTilesLink.slnx --no-restore -m:1`.
+- In those same environments, prefer `dotnet test tests/ThreeDTilesLink.Tests/ThreeDTilesLink.Tests.csproj --no-build` because solution-level `dotnet test` requires VSTest socket communication.
 - If the change scope is limited, prioritize the relevant tests first.
 - If checks that depend on the live environment were not performed, finish by stating that gap explicitly.

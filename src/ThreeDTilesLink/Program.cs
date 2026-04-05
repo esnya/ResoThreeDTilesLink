@@ -1,5 +1,6 @@
 using DotNetEnv;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics.CodeAnalysis;
 using ThreeDTilesLink.Core.App;
 using ThreeDTilesLink.Core.CommandLine;
 using ThreeDTilesLink.Core.Runtime;
@@ -7,6 +8,10 @@ using ThreeDTilesLink.Core.Runtime;
 int exitCode = await RunAsync(args).ConfigureAwait(false);
 return exitCode;
 
+[SuppressMessage(
+    "Reliability",
+    "CA1031:DoNotCatchGeneralExceptionTypes",
+    Justification = "The top-level command entrypoint converts any unexpected failure into a user-visible message and non-zero exit code.")]
 static async Task<int> RunAsync(string[] args)
 {
     try
@@ -16,7 +21,7 @@ static async Task<int> RunAsync(string[] args)
         CommandInvocation<RootCommandRoute> rootInvocation = RootCommandLine.Parse(args);
         if (!rootInvocation.ShouldRun)
         {
-            WriteOutput(rootInvocation.Output, rootInvocation.WriteToError);
+            await WriteOutputAsync(rootInvocation.Output, rootInvocation.WriteToError).ConfigureAwait(false);
             return rootInvocation.ExitCode;
         }
 
@@ -30,7 +35,7 @@ static async Task<int> RunAsync(string[] args)
     }
     catch (Exception ex)
     {
-        Console.Error.WriteLine(ex.Message);
+        await Console.Error.WriteLineAsync(ex.Message).ConfigureAwait(false);
         return 1;
     }
 }
@@ -40,7 +45,7 @@ static async Task<int> RunStreamAsync(IReadOnlyList<string> args)
     CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(args);
     if (!invocation.ShouldRun)
     {
-        WriteOutput(invocation.Output, invocation.WriteToError);
+        await WriteOutputAsync(invocation.Output, invocation.WriteToError).ConfigureAwait(false);
         return invocation.ExitCode;
     }
 
@@ -63,7 +68,7 @@ static async Task<int> RunInteractiveAsync(IReadOnlyList<string> args)
     CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(args);
     if (!invocation.ShouldRun)
     {
-        WriteOutput(invocation.Output, invocation.WriteToError);
+        await WriteOutputAsync(invocation.Output, invocation.WriteToError).ConfigureAwait(false);
         return invocation.ExitCode;
     }
 
@@ -96,7 +101,7 @@ static ILoggerFactory CreateLoggerFactory(LogLevel logLevel)
     });
 }
 
-static void WriteOutput(string output, bool writeToError)
+static async Task WriteOutputAsync(string output, bool writeToError)
 {
     if (string.IsNullOrWhiteSpace(output))
     {
@@ -105,9 +110,9 @@ static void WriteOutput(string output, bool writeToError)
 
     if (writeToError)
     {
-        Console.Error.WriteLine(output);
+        await Console.Error.WriteLineAsync(output).ConfigureAwait(false);
         return;
     }
 
-    Console.WriteLine(output);
+    await Console.Out.WriteLineAsync(output).ConfigureAwait(false);
 }

@@ -2,7 +2,7 @@ using ThreeDTilesLink.Core.Math;
 
 namespace ThreeDTilesLink.Core.Models
 {
-    public sealed record MeshData(
+    internal sealed record MeshData(
         string Name,
         IReadOnlyList<Vector3d> Vertices,
         IReadOnlyList<int> Indices,
@@ -12,5 +12,5 @@ namespace ThreeDTilesLink.Core.Models
         byte[]? BaseColorTextureBytes,
         string? BaseColorTextureExtension);
 
-    public readonly record struct Vector2d(double X, double Y);
+    internal readonly record struct Vector2d(double X, double Y);
 }

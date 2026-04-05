@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ThreeDTilesLink.Core.CommandLine
 {
-    public sealed record StreamCommandOptions(
+    internal sealed record StreamCommandOptions(
         double Latitude,
         double Longitude,
         double HeightOffsetM,
@@ -17,7 +17,7 @@ namespace ThreeDTilesLink.Core.CommandLine
         bool DryRun,
         LogLevel LogLevel);
 
-    public static class StreamCommandLine
+    internal static class StreamCommandLine
     {
         private static readonly CommandSpecification Specification = new(
             "dotnet run --project src/ThreeDTilesLink -- stream [options]",
@@ -44,7 +44,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 ["--render-start-span-ratio"] = "--render-start-span-ratio is no longer supported."
             });
 
-        public static CommandInvocation<StreamCommandOptions> Parse(IReadOnlyList<string> args)
+        internal static CommandInvocation<StreamCommandOptions> Parse(IReadOnlyList<string> args)
         {
             ParsedCommand parsed = CommandLineParser.Parse(Specification, args);
             if (parsed.Status == CommandParseStatus.Help)
@@ -57,42 +57,54 @@ namespace ThreeDTilesLink.Core.CommandLine
                 return new CommandInvocation<StreamCommandOptions>(false, default, 1, parsed.Output, true);
             }
 
-            try
+            if (!TryGetValue(parsed, "--log-level", out string? logLevelRaw) ||
+                !Enum.TryParse(logLevelRaw, ignoreCase: true, out LogLevel logLevel))
             {
-                string logLevelRaw = (string)parsed.Values["--log-level"]!;
-                if (!Enum.TryParse(logLevelRaw, ignoreCase: true, out LogLevel logLevel))
-                {
-                    return Error($"Invalid value for --log-level: {logLevelRaw}");
-                }
-
-                int contentWorkers = (int)parsed.Values["--content-workers"]!;
-                if (contentWorkers <= 0)
-                {
-                    return Error($"Invalid value for --content-workers: {contentWorkers}");
-                }
-
-                return new CommandInvocation<StreamCommandOptions>(true, new StreamCommandOptions(
-                    (double)parsed.Values["--latitude"]!,
-                    (double)parsed.Values["--longitude"]!,
-                    (double)parsed.Values["--height-offset"]!,
-                    (double)parsed.Values["--range"]!,
-                    (string)parsed.Values["--resonite-host"]!,
-                    (int)parsed.Values["--resonite-port"]!,
-                    (int)parsed.Values["--tile-limit"]!,
-                    (int)parsed.Values["--depth-limit"]!,
-                    (double)parsed.Values["--detail"]!,
-                    contentWorkers,
-                    (int)parsed.Values["--timeout"]!,
-                    (bool)parsed.Values["--dry-run"]!,
-                    logLevel), 0, string.Empty, false);
+                return Error($"Invalid value for --log-level: {logLevelRaw}");
             }
-            catch (Exception ex)
+
+            if (!TryGetValue(parsed, "--content-workers", out int contentWorkers) || contentWorkers <= 0)
             {
-                return Error(ex.Message);
+                return Error($"Invalid value for --content-workers: {contentWorkers}");
             }
+
+            if (!TryGetValue(parsed, "--latitude", out double latitude) ||
+                !TryGetValue(parsed, "--longitude", out double longitude) ||
+                !TryGetValue(parsed, "--height-offset", out double heightOffsetM) ||
+                !TryGetValue(parsed, "--range", out double rangeM) ||
+                !TryGetValue(parsed, "--resonite-host", out string? resoniteHost) ||
+                !TryGetValue(parsed, "--resonite-port", out int resonitePort) ||
+                !TryGetValue(parsed, "--tile-limit", out int tileLimit) ||
+                !TryGetValue(parsed, "--depth-limit", out int depthLimit) ||
+                !TryGetValue(parsed, "--detail", out double detailTargetM) ||
+                !TryGetValue(parsed, "--timeout", out int timeoutSec) ||
+                !TryGetValue(parsed, "--dry-run", out bool dryRun))
+            {
+                return Error("Invalid command values.");
+            }
+
+            if (string.IsNullOrWhiteSpace(resoniteHost))
+            {
+                return Error("Invalid value for --resonite-host.");
+            }
+
+            return new CommandInvocation<StreamCommandOptions>(true, new StreamCommandOptions(
+                latitude,
+                longitude,
+                heightOffsetM,
+                rangeM,
+                resoniteHost,
+                resonitePort,
+                tileLimit,
+                depthLimit,
+                detailTargetM,
+                contentWorkers,
+                timeoutSec,
+                dryRun,
+                logLevel), 0, string.Empty, false);
         }
 
-        public static string RenderHelp()
+        internal static string RenderHelp()
         {
             return CommandLineParser.RenderHelp(Specification);
         }
@@ -105,6 +117,18 @@ namespace ThreeDTilesLink.Core.CommandLine
                 1,
                 $"{message}{Environment.NewLine}{Environment.NewLine}{RenderHelp()}",
                 true);
+        }
+
+        private static bool TryGetValue<T>(ParsedCommand parsed, string key, out T value)
+        {
+            if (parsed.Values.TryGetValue(key, out object? raw) && raw is T typed)
+            {
+                value = typed;
+                return true;
+            }
+
+            value = default!;
+            return false;
         }
     }
 }

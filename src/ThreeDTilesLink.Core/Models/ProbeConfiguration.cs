@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    public sealed record ProbeConfiguration(
+    internal sealed record ProbeConfiguration(
         string SlotName,
         string LatitudeVariablePath,
         string LongitudeVariablePath,

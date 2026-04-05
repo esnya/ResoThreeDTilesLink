@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Contracts
 {
-    public interface IClock
+    internal interface IClock
     {
         DateTimeOffset UtcNow { get; }
 

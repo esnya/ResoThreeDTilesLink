@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    public sealed record ResoniteOutputOptions(
+    internal sealed record ResoniteOutputOptions(
         string Host,
         int Port,
         bool DryRun,

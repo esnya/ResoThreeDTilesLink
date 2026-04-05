@@ -2,7 +2,7 @@ using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Contracts
 {
-    public interface IProbeStore
+    internal interface IProbeStore
     {
         Task<ProbeBinding> CreateProbeAsync(ProbeConfiguration configuration, CancellationToken cancellationToken);
         Task<ProbeValues?> ReadProbeValuesAsync(ProbeBinding binding, CancellationToken cancellationToken);

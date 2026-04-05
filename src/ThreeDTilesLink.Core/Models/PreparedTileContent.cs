@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    public sealed record PreparedTileContent(
+    internal sealed record PreparedTileContent(
         TileSelectionResult Tile,
         IReadOnlyList<PlacedMeshPayload> Meshes,
         string? AssetCopyright);

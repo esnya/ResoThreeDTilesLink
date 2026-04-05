@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using System.Diagnostics.CodeAnalysis;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
 
@@ -6,7 +7,7 @@ using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Pipeline
 {
-    public sealed class TileRunCoordinator(
+    internal sealed class TileRunCoordinator(
         ITilesSource tilesSource,
         TraversalCore traversalCore,
         IContentProcessor contentProcessor,
@@ -27,6 +28,108 @@ namespace ThreeDTilesLink.Core.Pipeline
             ? maxConcurrentTileProcessing
             : throw new ArgumentOutOfRangeException(nameof(maxConcurrentTileProcessing), "Tile content worker count must be positive.");
 
+        private static readonly Action<ILogger, string, int, Exception?> s_connectingToResonite =
+            LoggerMessage.Define<string, int>(
+                LogLevel.Information,
+                new EventId(1, "ConnectingToResonite"),
+                "Connecting to Resonite Link at {Host}:{Port}");
+
+        private static readonly Action<ILogger, Exception?> s_fetchingRootTileset =
+            LoggerMessage.Define(
+                LogLevel.Information,
+                new EventId(2, "FetchingRootTileset"),
+                "Fetching root tileset from Google Map Tiles API.");
+
+        private static readonly Action<ILogger, Exception?> s_failedToSetInitialFetchProgress =
+            LoggerMessage.Define(
+                LogLevel.Warning,
+                new EventId(3, "FailedToSetInitialFetchProgress"),
+                "Failed to set initial fetch progress.");
+
+        private static readonly Action<ILogger, string, Uri, Exception?> s_discoveryNestedLoaded =
+            LoggerMessage.Define<string, Uri>(
+                LogLevel.Information,
+                new EventId(4, "DiscoveryNestedLoaded"),
+                "Loaded nested tileset for tile {TileId} from {Uri}.");
+
+        private static readonly Action<ILogger, string, Uri, int, Exception?> s_discoveryTilePrepared =
+            LoggerMessage.Define<string, Uri, int>(
+                LogLevel.Information,
+                new EventId(5, "DiscoveryTilePrepared"),
+                "Prepared tile {TileId} from {Uri} with {MeshCount} meshes.");
+
+        private static readonly Action<ILogger, string, Uri, Exception?> s_discoverySkippedWithError =
+            LoggerMessage.Define<string, Uri>(
+                LogLevel.Warning,
+                new EventId(6, "DiscoverySkippedWithError"),
+                "Skipped tile {TileId} from {Uri} after fetch/process error.");
+
+        private static readonly Action<ILogger, string, Uri, string, Exception?> s_discoverySkipped =
+            LoggerMessage.Define<string, Uri, string>(
+                LogLevel.Information,
+                new EventId(7, "DiscoverySkipped"),
+                "Skipped tile {TileId} from {Uri}: {Reason}");
+
+        private static readonly Action<ILogger, string, Uri, Exception?> s_discoveryFailed =
+            LoggerMessage.Define<string, Uri>(
+                LogLevel.Warning,
+                new EventId(8, "DiscoveryFailed"),
+                "Failed to discover tile {TileId} from {Uri}.");
+
+        private static readonly Action<ILogger, string, int, int, Exception?> s_writerTileStreamed =
+            LoggerMessage.Define<string, int, int>(
+                LogLevel.Information,
+                new EventId(9, "WriterTileStreamed"),
+                "Streamed tile {TileId}: meshes={MeshCount}, slots={SlotCount}.");
+
+        private static readonly Action<ILogger, string, int, int, Exception?> s_writerTileFailed =
+            LoggerMessage.Define<string, int, int>(
+                LogLevel.Warning,
+                new EventId(10, "WriterTileFailed"),
+                "Failed to stream tile {TileId}: streamedMeshes={MeshCount}, slots={SlotCount}.");
+
+        private static readonly Action<ILogger, string, Exception?> s_writerTileRemoved =
+            LoggerMessage.Define<string>(
+                LogLevel.Information,
+                new EventId(11, "WriterTileRemoved"),
+                "Removed tile {TileId}.");
+
+        private static readonly Action<ILogger, string, int, Exception?> s_writerTileRemovalFailed =
+            LoggerMessage.Define<string, int>(
+                LogLevel.Warning,
+                new EventId(12, "WriterTileRemovalFailed"),
+                "Failed to fully remove tile {TileId}: remainingSlots={RemainingSlotCount}.");
+
+        private static readonly Action<ILogger, float, string, Exception?> s_writerMetadataUpdated =
+            LoggerMessage.Define<float, string>(
+                LogLevel.Information,
+                new EventId(13, "WriterMetadataUpdated"),
+                "Updated session metadata: progress={Progress:P0}, text={ProgressText}.");
+
+        private static readonly Action<ILogger, float, string, Exception?> s_writerMetadataFailed =
+            LoggerMessage.Define<float, string>(
+                LogLevel.Warning,
+                new EventId(14, "WriterMetadataFailed"),
+                "Failed to update session metadata: progress={Progress:P0}, text={ProgressText}.");
+
+        private static readonly Action<ILogger, string, string, Exception?> s_rollBackPartialSendFailed =
+            LoggerMessage.Define<string, string>(
+                LogLevel.Warning,
+                new EventId(15, "RollBackPartialSendFailed"),
+                "Failed to roll back partially streamed slot {SlotId} for tile {TileId}.");
+
+        private static readonly Action<ILogger, string, Exception?> s_rollbackStreamedSlotFailed =
+            LoggerMessage.Define<string>(
+                LogLevel.Warning,
+                new EventId(16, "RollbackStreamedSlotFailed"),
+                "Failed to rollback newly streamed slot {SlotId}.");
+
+        private static readonly Action<ILogger, string, string, Exception?> s_removeRetainedSlotFailed =
+            LoggerMessage.Define<string, string>(
+                LogLevel.Warning,
+                new EventId(17, "RemoveRetainedSlotFailed"),
+                "Failed to remove retained slot {SlotId} for tile {TileId}.");
+
         public async Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(request);
@@ -34,6 +137,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             return result.Summary;
         }
 
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "Interactive run intentionally degrades to rollback path and rethrows for any unexpected exception.")]
         public async Task<InteractiveTileRunResult> RunInteractiveAsync(
             TileRunRequest request,
             InteractiveRunInput interactive,
@@ -80,6 +187,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "Initial progress reporting intentionally tolerates transient session errors while continuing orchestration.")]
         private async Task<RunExecutionResult> RunCoreAsync(
             TileRunRequest request,
             InteractiveRunInput? interactiveInput,
@@ -89,7 +200,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             GoogleTilesAuth auth = await BuildAuthAsync(request, cancellationToken).ConfigureAwait(false);
             if (!request.Output.DryRun && request.Output.ManageConnection)
             {
-                _logger.LogInformation("Connecting to Resonite Link at {Host}:{Port}", request.Output.Host, request.Output.Port);
+                s_connectingToResonite(_logger, request.Output.Host, request.Output.Port, null);
                 await _resoniteSession.ConnectAsync(request.Output.Host, request.Output.Port, cancellationToken).ConfigureAwait(false);
             }
 
@@ -103,7 +214,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                _logger.LogInformation("Fetching root tileset from Google Map Tiles API.");
+                s_fetchingRootTileset(_logger, null);
                 if (!request.Output.DryRun)
                 {
                     try
@@ -116,7 +227,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
                     {
-                        _logger.LogWarning(ex, "Failed to set initial fetch progress.");
+                        s_failedToSetInitialFetchProgress(_logger, ex);
                     }
                 }
 
@@ -152,7 +263,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                             writerState,
                             desiredView,
                             progress,
-                            request.Output.DryRun);
+                            request.Output.DryRun,
+                            allowRemoval: discoveryTasks.Count == 0);
                         if (writerCommand is not null)
                         {
                             MarkWriterInFlight(writerState, writerCommand);
@@ -210,7 +322,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
             catch (OperationCanceledException) when (facts is not null && writerState is not null)
             {
-                workerCts.Cancel();
+                await workerCts.CancelAsync().ConfigureAwait(false);
                 writerTask = await ApplyCompletedWorkAsync(
                     facts,
                     writerState,
@@ -230,7 +342,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
             finally
             {
-                workerCts.Cancel();
+                await workerCts.CancelAsync().ConfigureAwait(false);
                 await ObserveOutstandingTasksAsync(discoveryTasks.Values, writerTask).ConfigureAwait(false);
 
                 if (!request.Output.DryRun && request.Output.ManageConnection)
@@ -351,6 +463,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             return writerTask;
         }
 
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "Outstanding writer/discovery failures are intentionally ignored to complete cleanup and surface cancellation.")]
         private async Task ObserveOutstandingTasksAsync(
             IEnumerable<Task<DiscoveryCompletion>> discoveryTasks,
             Task<WriterCompletion>? writerTask)
@@ -376,42 +492,45 @@ namespace ThreeDTilesLink.Core.Pipeline
             switch (completion)
             {
                 case NestedTilesetDiscovered nested:
-                    _logger.LogInformation(
-                        "Loaded nested tileset for tile {TileId} from {Uri}.",
+                    s_discoveryNestedLoaded(
+                        _logger,
                         nested.Tile.TileId,
-                        nested.Tile.ContentUri);
+                        nested.Tile.ContentUri,
+                        null);
                     break;
 
                 case TilePrepared prepared:
-                    _logger.LogInformation(
-                        "Prepared tile {TileId} from {Uri} with {MeshCount} meshes.",
+                    s_discoveryTilePrepared(
+                        _logger,
                         prepared.Tile.TileId,
                         prepared.Tile.ContentUri,
-                        prepared.Content.Meshes.Count);
+                        prepared.Content.Meshes.Count,
+                        null);
                     break;
 
                 case DiscoverySkipped skipped when skipped.Error is not null:
-                    _logger.LogWarning(
-                        skipped.Error,
-                        "Skipped tile {TileId} from {Uri} after fetch/process error.",
+                    s_discoverySkippedWithError(
+                        _logger,
                         skipped.Tile.TileId,
-                        skipped.Tile.ContentUri);
+                        skipped.Tile.ContentUri,
+                        skipped.Error);
                     break;
 
                 case DiscoverySkipped skipped:
-                    _logger.LogInformation(
-                        "Skipped tile {TileId} from {Uri}: {Reason}",
+                    s_discoverySkipped(
+                        _logger,
                         skipped.Tile.TileId,
                         skipped.Tile.ContentUri,
-                        skipped.Reason ?? "no reason");
+                        skipped.Reason ?? "no reason",
+                        null);
                     break;
 
                 case DiscoveryFailed failed:
-                    _logger.LogWarning(
-                        failed.Error,
-                        "Failed to discover tile {TileId} from {Uri}.",
+                    s_discoveryFailed(
+                        _logger,
                         failed.Tile.TileId,
-                        failed.Tile.ContentUri);
+                        failed.Tile.ContentUri,
+                        failed.Error);
                     break;
             }
         }
@@ -421,49 +540,52 @@ namespace ThreeDTilesLink.Core.Pipeline
             switch (completion)
             {
                 case SendTileCompleted sent when sent.Succeeded:
-                    _logger.LogInformation(
-                        "Streamed tile {TileId}: meshes={MeshCount}, slots={SlotCount}.",
+                    s_writerTileStreamed(
+                        _logger,
                         sent.Content.Tile.TileId,
                         sent.StreamedMeshCount,
-                        sent.SlotIds.Count);
+                        sent.SlotIds.Count,
+                        null);
                     break;
 
                 case SendTileCompleted sent:
-                    _logger.LogWarning(
-                        sent.Error,
-                        "Failed to stream tile {TileId}: streamedMeshes={MeshCount}, slots={SlotCount}.",
+                    s_writerTileFailed(
+                        _logger,
                         sent.Content.Tile.TileId,
                         sent.StreamedMeshCount,
-                        sent.SlotIds.Count);
+                        sent.SlotIds.Count,
+                        sent.Error);
                     break;
 
                 case RemoveTileCompleted removed when removed.Succeeded:
-                    _logger.LogInformation(
-                        "Removed tile {TileId}.",
-                        removed.TileId);
+                    s_writerTileRemoved(
+                        _logger,
+                        removed.TileId,
+                        null);
                     break;
 
                 case RemoveTileCompleted removed:
-                    _logger.LogWarning(
-                        removed.Error,
-                        "Failed to fully remove tile {TileId}: remainingSlots={RemainingSlotCount}.",
+                    s_writerTileRemovalFailed(
+                        _logger,
                         removed.TileId,
-                        removed.RemainingSlotIds.Count);
+                        removed.RemainingSlotIds.Count,
+                        removed.Error);
                     break;
 
                 case SyncSessionMetadataCompleted metadata when metadata.Succeeded:
-                    _logger.LogInformation(
-                        "Updated session metadata: progress={Progress:P0}, text={ProgressText}.",
+                    s_writerMetadataUpdated(
+                        _logger,
                         metadata.ProgressValue,
-                        metadata.ProgressText);
+                        metadata.ProgressText,
+                        null);
                     break;
 
                 case SyncSessionMetadataCompleted metadata:
-                    _logger.LogWarning(
-                        metadata.Error,
-                        "Failed to update session metadata: progress={Progress:P0}, text={ProgressText}.",
+                    s_writerMetadataFailed(
+                        _logger,
                         metadata.ProgressValue,
-                        metadata.ProgressText);
+                        metadata.ProgressText,
+                        metadata.Error);
                     break;
             }
         }
@@ -551,7 +673,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 counters.StreamedMeshes,
                 counters.FailedTiles);
             IReadOnlySet<string> selectedTileStableIds = facts.Branches.Keys.ToHashSet(StringComparer.Ordinal);
-            IReadOnlyDictionary<string, RetainedTileState> visibleTiles = _traversalCore.BuildVisibleTiles(writerState)
+            Dictionary<string, RetainedTileState> visibleTiles = _traversalCore.BuildVisibleTiles(writerState)
                 .Where(pair => facts.Branches.ContainsKey(pair.Key))
                 .ToDictionary(
                     static pair => pair.Key,
@@ -580,6 +702,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             interactiveContext.UpdateState(state);
         }
 
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "Tile discovery intentionally records unsupported processing failures as DiscoveryFailed.")]
         private async Task<DiscoveryCompletion> ExecuteDiscoveryAsync(
             DiscoveryWorkItem work,
             TileRunRequest request,
@@ -603,7 +729,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                                 request.Output.MeshParentSlotId),
                             renderable.AssetCopyright)),
                     SkippedContentProcessResult skipped => new DiscoverySkipped(work.Tile, skipped.Reason),
-                    _ => throw new InvalidOperationException($"Unsupported content process result: {content.GetType().Name}")
+                    _ => throw new InvalidOperationException("Unsupported content process result: " + content.GetType().Name)
                 };
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -630,11 +756,28 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 SendTileWriterCommand send => await ExecuteSendAsync(send, request, cancellationToken).ConfigureAwait(false),
                 RemoveTileWriterCommand remove => await ExecuteRemoveAsync(remove, interactiveContext, cancellationToken).ConfigureAwait(false),
+                DelayWriterCommand delay => await ExecuteDelayAsync(delay, cancellationToken).ConfigureAwait(false),
                 SyncSessionMetadataWriterCommand metadata => await ExecuteSyncMetadataAsync(request, metadata, cancellationToken).ConfigureAwait(false),
-                _ => throw new InvalidOperationException($"Unsupported writer command type: {command.GetType().Name}")
+                _ => throw new InvalidOperationException("Unsupported writer command type: " + command.GetType().Name)
             };
         }
 
+        private static async Task<WriterCompletion> ExecuteDelayAsync(
+            DelayWriterCommand command,
+            CancellationToken cancellationToken)
+        {
+            if (command.Delay > TimeSpan.Zero)
+            {
+                await Task.Delay(command.Delay, cancellationToken).ConfigureAwait(false);
+            }
+
+            return new DelayCompleted(command.Delay);
+        }
+
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "Send failures are intentionally converted to completion states to continue orchestration.")]
         private async Task<WriterCompletion> ExecuteSendAsync(
             SendTileWriterCommand command,
             TileRunRequest request,
@@ -683,6 +826,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "Slot rollback is best-effort; failures are captured as failed state.")]
         private async Task<bool> TryRollbackPartialSendAsync(
             string tileId,
             IReadOnlyList<string> streamedSlotIds,
@@ -703,17 +850,17 @@ namespace ThreeDTilesLink.Core.Pipeline
                 catch (Exception rollbackEx)
                 {
                     rolledBack = false;
-                    _logger.LogWarning(
-                        rollbackEx,
-                        "Failed to roll back partially streamed slot {SlotId} for tile {TileId}.",
-                        slotId,
-                        tileId);
+                    s_rollBackPartialSendFailed(_logger, slotId, tileId, rollbackEx);
                 }
             }
 
             return rolledBack;
         }
 
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "Tile removal captures slot failures to return retry-aware completion state.")]
         private async Task<WriterCompletion> ExecuteRemoveAsync(
             RemoveTileWriterCommand command,
             InteractiveExecutionContext? interactiveContext,
@@ -757,6 +904,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                 firstError);
         }
 
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "Metadata sync failures are intentionally surfaced in command completion result.")]
         private async Task<WriterCompletion> ExecuteSyncMetadataAsync(
             TileRunRequest request,
             SyncSessionMetadataWriterCommand command,
@@ -843,6 +994,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             return failedRetainedTiles;
         }
 
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "Interactive rollback is intentionally tolerant of transient session failures.")]
         private async Task RollbackInteractiveChangesAsync(
             TileRunRequest request,
             InteractiveExecutionContext interactiveContext)
@@ -855,7 +1010,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to rollback newly streamed slot {SlotId}.", slotId);
+                    s_rollbackStreamedSlotFailed(_logger, slotId, ex);
                 }
             }
 
@@ -884,6 +1039,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             return new InteractiveTileRunResult(summary, nextRetainedTiles, selectedTileStableIds, checkpoint);
         }
 
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "Best-effort retained slot removal captures failures for caller to handle.")]
         private async Task<IReadOnlyList<string>> TryRemoveSlotsAsync(
             string tileId,
             IReadOnlyList<string> slotIds,
@@ -903,7 +1062,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to remove retained slot {SlotId} for tile {TileId}.", slotId, tileId);
+                    s_removeRetainedSlotFailed(_logger, slotId, tileId, ex);
                     failedSlotIds.Add(slotId);
                 }
             }
@@ -938,7 +1097,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 cancellationToken).ConfigureAwait(false);
         }
 
-        private static IReadOnlyDictionary<string, RetainedTileState> BuildNextRetainedTiles(
+        private static Dictionary<string, RetainedTileState> BuildNextRetainedTiles(
             IReadOnlyDictionary<string, RetainedTileState> retainedTiles,
             IReadOnlyDictionary<string, RetainedTileState> visibleTiles,
             IReadOnlySet<string> selectedTileStableIds,
@@ -971,7 +1130,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             return next;
         }
 
-        private static IReadOnlyDictionary<string, RetainedTileState> BuildCanceledRetainedTiles(
+        private static Dictionary<string, RetainedTileState> BuildCanceledRetainedTiles(
             IReadOnlyDictionary<string, RetainedTileState> retainedTiles,
             IReadOnlyDictionary<string, RetainedTileState> visibleTiles)
         {
@@ -1049,12 +1208,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
             }
 
-            public IReadOnlyList<string> GetNewSlotIds()
+            public string[] GetNewSlotIds()
             {
-                return _newSlotIds.ToArray();
+                return [.. _newSlotIds];
             }
 
-            public IReadOnlyList<string> StageRetainedRemovals(string tileId, IReadOnlyList<string> slotIds)
+            public string[] StageRetainedRemovals(string tileId, IReadOnlyList<string> slotIds)
             {
                 var immediateSlotIds = new List<string>(slotIds.Count);
 
@@ -1076,12 +1235,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                     removal.AddSlot(slotId);
                 }
 
-                return immediateSlotIds;
+                return [.. immediateSlotIds];
             }
 
-            public IReadOnlyCollection<RetainedTileRemoval> GetStagedRetainedRemovals()
+            public RetainedTileRemoval[] GetStagedRetainedRemovals()
             {
-                return _stagedRetainedRemovals.Values.ToArray();
+                return [.. _stagedRetainedRemovals.Values];
             }
         }
 

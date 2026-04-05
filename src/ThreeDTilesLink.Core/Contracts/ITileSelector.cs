@@ -4,7 +4,7 @@ using ThreeDTilesLink.Core.Tiles;
 
 namespace ThreeDTilesLink.Core.Contracts
 {
-    public interface ITileSelector
+    internal interface ITileSelector
     {
         IReadOnlyList<TileSelectionResult> Select(
             Tileset tileset,

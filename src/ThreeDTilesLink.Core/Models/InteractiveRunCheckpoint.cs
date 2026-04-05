@@ -2,6 +2,6 @@ using ThreeDTilesLink.Core.Tiles;
 
 namespace ThreeDTilesLink.Core.Models
 {
-    public sealed record InteractiveRunCheckpoint(
+    internal sealed record InteractiveRunCheckpoint(
         IReadOnlyDictionary<string, Tileset> TilesetCache);
 }

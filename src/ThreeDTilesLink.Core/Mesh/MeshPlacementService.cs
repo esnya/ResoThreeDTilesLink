@@ -6,7 +6,7 @@ using SMath = System.Math;
 
 namespace ThreeDTilesLink.Core.Mesh
 {
-    public sealed class MeshPlacementService(ICoordinateTransformer coordinateTransformer) : IMeshPlacementService
+    internal sealed class MeshPlacementService(ICoordinateTransformer coordinateTransformer) : IMeshPlacementService
     {
         // 3D Tiles glTF content is Y-up; convert to tiles/world Z-up before tile transform application.
         private static readonly Matrix4x4d GltfYUpToZUp = new(

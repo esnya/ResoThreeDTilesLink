@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    public sealed record RunSummary(
+    internal sealed record RunSummary(
         int CandidateTiles,
         int ProcessedTiles,
         int StreamedMeshes,

@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace ThreeDTilesLink.Core.CommandLine
 {
-    public enum CommandOptionValueKind
+    internal enum CommandOptionValueKind
     {
         Text,
         WholeNumber,
@@ -10,14 +10,14 @@ namespace ThreeDTilesLink.Core.CommandLine
         Switch
     }
 
-    public enum CommandParseStatus
+    internal enum CommandParseStatus
     {
         Success,
         Help,
         Error
     }
 
-    public sealed record CommandOptionDefinition(
+    internal sealed record CommandOptionDefinition(
         string Name,
         CommandOptionValueKind ValueKind,
         string Description,
@@ -27,28 +27,28 @@ namespace ThreeDTilesLink.Core.CommandLine
         string ValueName = "value",
         IReadOnlyList<string>? RenamedFrom = null);
 
-    public sealed record CommandSpecification(
+    internal sealed record CommandSpecification(
         string Usage,
         string Summary,
         IReadOnlyList<CommandOptionDefinition> Options,
         IReadOnlyDictionary<string, string>? UnsupportedOptions = null);
 
-    public sealed record ParsedCommand(
+    internal sealed record ParsedCommand(
         CommandParseStatus Status,
         IReadOnlyDictionary<string, object?> Values,
         string Output,
         bool WriteToError);
 
-    public sealed record CommandInvocation<TOptions>(
+    internal sealed record CommandInvocation<TOptions>(
         bool ShouldRun,
         TOptions? Options,
         int ExitCode,
         string Output,
         bool WriteToError);
 
-    public static class CommandLineParser
+    internal static class CommandLineParser
     {
-        public static ParsedCommand Parse(CommandSpecification specification, IReadOnlyList<string> args)
+        internal static ParsedCommand Parse(CommandSpecification specification, IReadOnlyList<string> args)
         {
             ArgumentNullException.ThrowIfNull(specification);
             ArgumentNullException.ThrowIfNull(args);
@@ -152,7 +152,7 @@ namespace ThreeDTilesLink.Core.CommandLine
             return new ParsedCommand(CommandParseStatus.Success, values, string.Empty, false);
         }
 
-        public static string RenderHelp(CommandSpecification specification)
+        internal static string RenderHelp(CommandSpecification specification)
         {
             ArgumentNullException.ThrowIfNull(specification);
 

@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Resonite
 {
-    public sealed class ResoniteLinkNoResponseException : InvalidOperationException
+    internal sealed class ResoniteLinkNoResponseException : InvalidOperationException
     {
         public ResoniteLinkNoResponseException()
             : base("ResoniteLink request returned no response.")

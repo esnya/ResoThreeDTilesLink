@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Resonite
 {
-    public sealed class ResoniteLinkDisconnectedException : InvalidOperationException
+    internal sealed class ResoniteLinkDisconnectedException : InvalidOperationException
     {
         private const string DefaultMessage = "ResoniteLink is not connected.";
 

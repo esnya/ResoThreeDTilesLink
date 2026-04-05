@@ -2,7 +2,7 @@ using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Tiles
 {
-    public static class TileContentClassifier
+    internal static class TileContentClassifier
     {
         public static TileContentKind Classify(Uri contentUri)
         {

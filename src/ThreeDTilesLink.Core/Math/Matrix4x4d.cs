@@ -1,17 +1,17 @@
 namespace ThreeDTilesLink.Core.Math
 {
-    public readonly struct Matrix4x4d(
+    internal readonly struct Matrix4x4d(
         double m11, double m12, double m13, double m14,
         double m21, double m22, double m23, double m24,
         double m31, double m32, double m33, double m34,
         double m41, double m42, double m43, double m44) : IEquatable<Matrix4x4d>
     {
-        public double M11 { get; } = m11; public double M12 { get; } = m12; public double M13 { get; } = m13; public double M14 { get; } = m14;
-        public double M21 { get; } = m21; public double M22 { get; } = m22; public double M23 { get; } = m23; public double M24 { get; } = m24;
-        public double M31 { get; } = m31; public double M32 { get; } = m32; public double M33 { get; } = m33; public double M34 { get; } = m34;
-        public double M41 { get; } = m41; public double M42 { get; } = m42; public double M43 { get; } = m43; public double M44 { get; } = m44;
+        internal double M11 { get; } = m11; internal double M12 { get; } = m12; internal double M13 { get; } = m13; internal double M14 { get; } = m14;
+        internal double M21 { get; } = m21; internal double M22 { get; } = m22; internal double M23 { get; } = m23; internal double M24 { get; } = m24;
+        internal double M31 { get; } = m31; internal double M32 { get; } = m32; internal double M33 { get; } = m33; internal double M34 { get; } = m34;
+        internal double M41 { get; } = m41; internal double M42 { get; } = m42; internal double M43 { get; } = m43; internal double M44 { get; } = m44;
 
-        public static Matrix4x4d Identity => new(
+        internal static Matrix4x4d Identity => new(
             1d, 0d, 0d, 0d,
             0d, 1d, 0d, 0d,
             0d, 0d, 1d, 0d,
@@ -22,7 +22,7 @@ namespace ThreeDTilesLink.Core.Math
             return Multiply(left, right);
         }
 
-        public static Matrix4x4d FromCesiumColumnMajor(IReadOnlyList<double> values)
+        internal static Matrix4x4d FromCesiumColumnMajor(IReadOnlyList<double> values)
         {
             ArgumentNullException.ThrowIfNull(values);
             return values.Count != 16
@@ -34,7 +34,7 @@ namespace ThreeDTilesLink.Core.Math
                 values[12], values[13], values[14], values[15]);
         }
 
-        public static Matrix4x4d FromNumerics(System.Numerics.Matrix4x4 value)
+        internal static Matrix4x4d FromNumerics(System.Numerics.Matrix4x4 value)
         {
             return new Matrix4x4d(
                 value.M11, value.M12, value.M13, value.M14,
@@ -43,7 +43,7 @@ namespace ThreeDTilesLink.Core.Math
                 value.M41, value.M42, value.M43, value.M44);
         }
 
-        public static Matrix4x4d Multiply(Matrix4x4d left, Matrix4x4d right)
+        internal static Matrix4x4d Multiply(Matrix4x4d left, Matrix4x4d right)
         {
             return new Matrix4x4d(
                 (left.M11 * right.M11) + (left.M12 * right.M21) + (left.M13 * right.M31) + (left.M14 * right.M41),
@@ -67,7 +67,7 @@ namespace ThreeDTilesLink.Core.Math
                 (left.M41 * right.M14) + (left.M42 * right.M24) + (left.M43 * right.M34) + (left.M44 * right.M44));
         }
 
-        public Vector3d TransformPoint(Vector3d point)
+        internal Vector3d TransformPoint(Vector3d point)
         {
             double x = (point.X * M11) + (point.Y * M21) + (point.Z * M31) + M41;
             double y = (point.X * M12) + (point.Y * M22) + (point.Z * M32) + M42;
@@ -83,7 +83,7 @@ namespace ThreeDTilesLink.Core.Math
             return new Vector3d(x, y, z);
         }
 
-        public Vector3d TransformDirection(Vector3d direction)
+        internal Vector3d TransformDirection(Vector3d direction)
         {
             double x = (direction.X * M11) + (direction.Y * M21) + (direction.Z * M31);
             double y = (direction.X * M12) + (direction.Y * M22) + (direction.Z * M32);
@@ -91,7 +91,7 @@ namespace ThreeDTilesLink.Core.Math
             return new Vector3d(x, y, z);
         }
 
-        public double MaxLinearScale()
+        internal double MaxLinearScale()
         {
             double x = TransformDirection(new Vector3d(1d, 0d, 0d)).Length();
             double y = TransformDirection(new Vector3d(0d, 1d, 0d)).Length();

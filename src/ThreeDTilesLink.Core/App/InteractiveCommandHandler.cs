@@ -4,9 +4,9 @@ using ThreeDTilesLink.Core.Runtime;
 
 namespace ThreeDTilesLink.Core.App
 {
-    public static class InteractiveCommandHandler
+    internal static class InteractiveCommandHandler
     {
-        public static InteractiveRunRequest CreateRequest(InteractiveCommandOptions options, string apiKey)
+        internal static InteractiveRunRequest CreateRequest(InteractiveCommandOptions options, string apiKey)
         {
             ArgumentNullException.ThrowIfNull(options);
 
@@ -34,7 +34,7 @@ namespace ThreeDTilesLink.Core.App
                         $"{options.ProbePath}.Search")));
         }
 
-        public static async Task<int> RunAsync(
+        internal static async Task<int> RunAsync(
             InteractiveCommandOptions options,
             TileStreamingRuntime runtime,
             string apiKey,
@@ -53,7 +53,7 @@ namespace ThreeDTilesLink.Core.App
                 cancelHandler = (_, eventArgs) =>
                 {
                     eventArgs.Cancel = true;
-                    appCts.Cancel();
+                    _ = appCts.CancelAsync();
                 };
                 Console.CancelKeyPress += cancelHandler;
 

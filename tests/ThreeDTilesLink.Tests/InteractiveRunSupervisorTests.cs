@@ -533,7 +533,7 @@ namespace ThreeDTilesLink.Tests
                 UtcNow += delay <= TimeSpan.Zero ? TimeSpan.FromMilliseconds(10) : delay;
                 if (CancelAfterDelayCalls > 0 && _delayCalls >= CancelAfterDelayCalls)
                 {
-                    CancellationSource?.Cancel();
+                    return CancellationSource?.CancelAsync() ?? Task.CompletedTask;
                 }
 
                 return Task.CompletedTask;
@@ -541,7 +541,7 @@ namespace ThreeDTilesLink.Tests
 
             public void RequestCancellation()
             {
-                CancellationSource?.Cancel();
+                _ = CancellationSource?.CancelAsync();
             }
         }
     }

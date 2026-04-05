@@ -2,7 +2,7 @@ using ThreeDTilesLink.Core.Contracts;
 
 namespace ThreeDTilesLink.Core.Runtime
 {
-    public sealed class SystemClock : IClock
+    internal sealed class SystemClock : IClock
     {
         public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
 

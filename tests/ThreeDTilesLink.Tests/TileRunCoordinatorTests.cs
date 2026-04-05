@@ -465,7 +465,7 @@ namespace ThreeDTilesLink.Tests
             {
                 if (sendCount == 1)
                 {
-                    cts.Cancel();
+                    Task cancelTask = cts.CancelAsync();
                 }
             });
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
@@ -515,7 +515,7 @@ namespace ThreeDTilesLink.Tests
                 await Task.Delay(10);
             }
 
-            cts.Cancel();
+            await cts.CancelAsync();
             InteractiveTileRunResult result = await runTask.ConfigureAwait(true);
 
             _ = client.SendCount.Should().Be(1);
@@ -565,7 +565,7 @@ namespace ThreeDTilesLink.Tests
                 await Task.Delay(10);
             }
 
-            cts.Cancel();
+            await cts.CancelAsync();
             InteractiveTileRunResult result = await runTask.ConfigureAwait(true);
 
             _ = result.Checkpoint.Should().NotBeNull();

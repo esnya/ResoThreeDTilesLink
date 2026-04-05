@@ -3,7 +3,7 @@ using ThreeDTilesLink.Core.Contracts;
 
 namespace ThreeDTilesLink.Core.Auth
 {
-    public sealed class DefaultCredentialAccessTokenProvider : IGoogleAccessTokenProvider
+    internal sealed class DefaultCredentialAccessTokenProvider : IGoogleAccessTokenProvider
     {
         private static readonly string[] Scopes = ["https://www.googleapis.com/auth/cloud-platform"];
 

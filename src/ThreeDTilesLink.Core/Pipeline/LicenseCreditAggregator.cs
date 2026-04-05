@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Pipeline
 {
-    public sealed class LicenseCreditAggregator
+    internal sealed class LicenseCreditAggregator
     {
         private readonly List<string> _attributionOrder = [];
         private readonly HashSet<string> _knownAttributions = new(StringComparer.Ordinal);

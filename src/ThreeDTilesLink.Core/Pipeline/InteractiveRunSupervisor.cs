@@ -1,4 +1,7 @@
 using System.Globalization;
+using System.Net.WebSockets;
+using System.Text.Json;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Google;
@@ -7,7 +10,18 @@ using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Pipeline
 {
-    public sealed class InteractiveRunSupervisor(
+    /// <summary>
+    /// Coordinates interactive tile runs driven by probe input and search requests.
+    /// </summary>
+    /// <param name="tileRunCoordinator">The tile-run coordinator used to execute runs.</param>
+    /// <param name="resoniteSession">Resonite session operations for slot management.</param>
+    /// <param name="probeStore">Probe state accessor.</param>
+    /// <param name="searchResolver">Optional search resolver for geographic queries.</param>
+    /// <param name="coordinateTransformer">Coordinate utility used to compare footprints.</param>
+    /// <param name="clock">Clock abstraction for testability and cancellation-aware timing.</param>
+    /// <param name="probeMonitor">Monitor helper for probe reads.</param>
+    /// <param name="logger">Logger.</param>
+    internal sealed partial class InteractiveRunSupervisor(
         ITileRunCoordinator tileRunCoordinator,
         IResoniteSession resoniteSession,
         IProbeStore probeStore,
@@ -26,6 +40,12 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly ProbeMonitor _probeMonitor = probeMonitor;
         private readonly ILogger<InteractiveRunSupervisor> _logger = logger;
 
+        /// <summary>
+        /// Runs the interactive loop, launching and superseding tile runs based on live probe updates.
+        /// </summary>
+        /// <param name="options">Interactive run options.</param>
+        /// <param name="cancellationToken">Token that signals when interactive mode should stop.</param>
+        /// <returns>Task that completes when the interactive session ends.</returns>
         public async Task RunAsync(InteractiveRunRequest options, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(options);
@@ -52,13 +72,13 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                _logger.LogInformation("Connecting to Resonite Link at {Host}:{Port}", options.ResoniteHost, options.ResonitePort);
+                Log.ConnectingToResonite(_logger, options.ResoniteHost, options.ResonitePort);
                 await _resoniteSession.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
                 connected = true;
 
                 probeBinding = await _probeStore.CreateProbeAsync(options.ProbeWatch.Probe, cancellationToken).ConfigureAwait(false);
-                _logger.LogInformation(
-                    "Probe DV attached: slotId={SlotId} ownsSlot={OwnsSlot} lat={LatPath} lon={LonPath} range={RangePath} search={SearchPath}",
+                Log.ProbeBindingAttached(
+                    _logger,
                     probeBinding.SlotId,
                     probeBinding.OwnsSlot,
                     options.ProbeWatch.Probe.LatitudeVariablePath,
@@ -90,7 +110,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                         {
                             pendingSearch = currentSearch;
                             pendingSearchChangedAt = _clock.UtcNow;
-                            _logger.LogInformation("Search query changed: {Query}", currentSearch);
+                            Log.SearchQueryChanged(_logger, currentSearch);
                         }
                     }
 
@@ -126,16 +146,16 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
 
                     if (currentProbe is not null && ProbeMonitor.HasMeaningfulChange(lastProbeValues, currentProbe))
-                    {
-                        pendingProbeValues = currentProbe;
-                        pendingChangedAt = _clock.UtcNow;
-                        lastProbeValues = currentProbe;
-                        _logger.LogInformation(
-                            "Probe changed: lat={Lat:F7} lon={Lon:F7} range={Range:F1}m",
-                            currentProbe.Latitude,
-                            currentProbe.Longitude,
-                            currentProbe.RangeM);
-                    }
+                        {
+                            pendingProbeValues = currentProbe;
+                            pendingChangedAt = _clock.UtcNow;
+                            lastProbeValues = currentProbe;
+                            Log.ProbeChanged(
+                                _logger,
+                                currentProbe.Latitude,
+                                currentProbe.Longitude,
+                                currentProbe.RangeM);
+                        }
 
                     if (pendingProbeValues is not null && pendingChangedAt is not null)
                     {
@@ -190,8 +210,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                                 activeRunCts.Token);
                             lastRequestedFootprint = currentFootprint;
                             lastRunStartedAt = now;
-                            _logger.LogInformation(
-                                "Run started: slot={SlotId} selectionLat={Lat:F7} selectionLon={Lon:F7} placementLat={PlacementLat:F7} placementLon={PlacementLon:F7} range={Range:F1}m overlap={Overlap}",
+                            Log.RunStarted(
+                                _logger,
                                 sessionSlotId,
                                 pendingProbeValues.Latitude,
                                 pendingProbeValues.Longitude,
@@ -233,14 +253,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 if (connected)
                 {
-                    try
-                    {
-                        await _resoniteSession.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to disconnect Resonite Link cleanly.");
-                    }
+                    await TryDisconnectResoniteAsync().ConfigureAwait(false);
                 }
             }
         }
@@ -253,7 +266,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             if (string.IsNullOrWhiteSpace(options.ApiKey))
             {
-                _logger.LogWarning("Search query ignored because GOOGLE_MAPS_API_KEY is not set: query={Query}", searchText);
+                Log.SearchIgnored(_logger, searchText);
                 return null;
             }
 
@@ -262,13 +275,13 @@ namespace ThreeDTilesLink.Core.Pipeline
                 LocationSearchResult? result = await _searchResolver.SearchAsync(options.ApiKey, searchText, cancellationToken).ConfigureAwait(false);
                 if (result is null)
                 {
-                    _logger.LogWarning("Search query returned no result: query={Query}", searchText);
+                    Log.SearchNoResult(_logger, searchText);
                     return null;
                 }
 
                 await _probeStore.UpdateProbeCoordinatesAsync(probeBinding, result.Latitude, result.Longitude, cancellationToken).ConfigureAwait(false);
-                _logger.LogInformation(
-                    "Search resolved: query={Query} name={Name} lat={Lat:F7} lon={Lon:F7}",
+                Log.SearchResolved(
+                    _logger,
                     searchText,
                     result.FormattedAddress,
                     result.Latitude,
@@ -279,9 +292,49 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (ArgumentException ex)
             {
-                _logger.LogWarning(ex, "Failed to resolve search query: {Query}", searchText);
+                Log.SearchResolutionFailed(_logger, ex, searchText);
+                return null;
+            }
+            catch (HttpRequestException ex)
+            {
+                Log.SearchResolutionFailed(_logger, ex, searchText);
+                return null;
+            }
+            catch (JsonException ex)
+            {
+                Log.SearchResolutionFailed(_logger, ex, searchText);
+                return null;
+            }
+            catch (TimeoutException ex)
+            {
+                Log.SearchResolutionFailed(_logger, ex, searchText);
+                return null;
+            }
+            catch (NotSupportedException ex)
+            {
+                Log.SearchResolutionFailed(_logger, ex, searchText);
+                return null;
+            }
+            catch (ObjectDisposedException ex)
+            {
+                Log.SearchResolutionFailed(_logger, ex, searchText);
+                return null;
+            }
+            catch (WebSocketException ex)
+            {
+                Log.SearchResolutionFailed(_logger, ex, searchText);
+                return null;
+            }
+            catch (UriFormatException ex)
+            {
+                Log.SearchResolutionFailed(_logger, ex, searchText);
+                return null;
+            }
+            catch (InvalidOperationException ex)
+            {
+                Log.SearchResolutionFailed(_logger, ex, searchText);
                 return null;
             }
         }
@@ -306,30 +359,25 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return (activeRunTask, activeRunCts, retainedTiles, checkpoint);
             }
 
-            try
+            if (activeRunTask.IsCompletedSuccessfully)
             {
                 InteractiveTileRunResult result = await activeRunTask.ConfigureAwait(false);
                 retainedTiles = new Dictionary<string, RetainedTileState>(result.VisibleTiles, StringComparer.Ordinal);
                 checkpoint = result.Checkpoint;
-                _logger.LogInformation(
-                    "Run completed: retained={Retained} candidate={Candidate} processed={Processed} streamed={Streamed} failed={Failed}",
+                Log.RunCompleted(
+                    _logger,
                     retainedTiles.Count,
                     result.Summary.CandidateTiles,
                     result.Summary.ProcessedTiles,
                     result.Summary.StreamedMeshes,
                     result.Summary.FailedTiles);
             }
-            catch (OperationCanceledException)
+            else if (TryGetNonCancellationFailure(activeRunTask) is { } nonCancellationFailure)
             {
+                Log.RunFailed(_logger, nonCancellationFailure);
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Run failed.");
-            }
-            finally
-            {
-                activeRunCts?.Dispose();
-            }
+
+            activeRunCts?.Dispose();
 
             return (null, null, retainedTiles, checkpoint);
         }
@@ -347,26 +395,26 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             if (!activeRunTask.IsCompleted)
             {
-                activeRunCts?.Cancel();
+                if (activeRunCts is not null)
+                {
+                    await activeRunCts.CancelAsync().ConfigureAwait(false);
+                }
+
+                await ObserveCompletionAsync(activeRunTask).ConfigureAwait(false);
             }
 
-            try
+            if (activeRunTask.IsCompletedSuccessfully)
             {
                 InteractiveTileRunResult result = await activeRunTask.ConfigureAwait(false);
                 retainedTiles = new Dictionary<string, RetainedTileState>(result.VisibleTiles, StringComparer.Ordinal);
                 checkpoint = result.Checkpoint;
             }
-            catch (OperationCanceledException)
+            else if (TryGetNonCancellationFailure(activeRunTask) is { } nonCancellationFailure)
             {
+                Log.RunSupersededFailed(_logger, nonCancellationFailure);
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Run finished with error while superseding.");
-            }
-            finally
-            {
-                activeRunCts?.Dispose();
-            }
+
+            activeRunCts?.Dispose();
 
             return (null, null, retainedTiles, checkpoint);
         }
@@ -385,13 +433,56 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         private async Task TryRemoveSlotAsync(string slotId, CancellationToken cancellationToken)
         {
+            Task removeTask = _resoniteSession.RemoveSlotAsync(slotId, cancellationToken);
+            await ObserveCompletionAsync(removeTask).ConfigureAwait(false);
+
+            if (TryGetNonCancellationFailure(removeTask) is { } removeFailure)
+            {
+                Log.SlotRemovalFailed(_logger, removeFailure, slotId);
+            }
+        }
+
+        private async Task TryDisconnectResoniteAsync()
+        {
+            Task disconnectTask = _resoniteSession.DisconnectAsync(CancellationToken.None);
+            await ObserveCompletionAsync(disconnectTask).ConfigureAwait(false);
+
+            if (TryGetNonCancellationFailure(disconnectTask) is { } disconnectFailure)
+            {
+                Log.DisconnectFailed(_logger, disconnectFailure);
+            }
+        }
+
+        private static Exception? TryGetNonCancellationFailure(Task task)
+        {
+            if (task.Exception is null)
+            {
+                return null;
+            }
+
+            foreach (Exception exception in task.Exception.Flatten().InnerExceptions)
+            {
+                if (exception is not OperationCanceledException)
+                {
+                    return exception;
+                }
+            }
+
+            return null;
+        }
+
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "The caller inspects the completed task to log only non-cancellation failures without rethrowing during cleanup paths.")]
+        private static async Task ObserveCompletionAsync(Task task)
+        {
             try
             {
-                await _resoniteSession.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
+                await task.ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _logger.LogWarning(ex, "Failed to remove slot {SlotId}.", slotId);
             }
         }
 
@@ -426,6 +517,89 @@ namespace ThreeDTilesLink.Core.Pipeline
             string lon = probeValues.Longitude.ToString("F5", CultureInfo.InvariantCulture);
             string range = probeValues.RangeM.ToString("F0", CultureInfo.InvariantCulture);
             return $"Run {lat}, {lon}, {range}m";
+        }
+
+        private static partial class Log
+        {
+            [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Connecting to Resonite Link at {Host}:{Port}.")]
+            public static partial void ConnectingToResonite(ILogger logger, string host, int port);
+
+            [LoggerMessage(
+                EventId = 2,
+                Level = LogLevel.Information,
+                Message = "Probe DV attached: slotId={SlotId} ownsSlot={OwnsSlot} lat={LatPath} lon={LonPath} range={RangePath} search={SearchPath}")]
+            public static partial void ProbeBindingAttached(ILogger logger, string slotId, bool ownsSlot, string latPath, string lonPath, string rangePath, string searchPath);
+
+            [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Search query changed: {Query}")]
+            public static partial void SearchQueryChanged(ILogger logger, string query);
+
+            [LoggerMessage(
+                EventId = 4,
+                Level = LogLevel.Information,
+                Message = "Probe changed: lat={Lat:F7} lon={Lon:F7} range={Range:F1}m")]
+            public static partial void ProbeChanged(ILogger logger, double lat, double lon, double range);
+
+            [LoggerMessage(EventId = 5, Level = LogLevel.Information, Message = "Search resolved: query={Query} name={Name} lat={Latitude:F7} lon={Longitude:F7}")]
+            public static partial void SearchResolved(ILogger logger, string query, string name, double latitude, double longitude);
+
+            [LoggerMessage(
+                EventId = 6,
+                Level = LogLevel.Warning,
+                Message = "Failed to resolve search query: {Query}")]
+            public static partial void SearchResolutionFailed(ILogger logger, Exception exception, string query);
+
+            [LoggerMessage(
+                EventId = 7,
+                Level = LogLevel.Information,
+                Message = "Run started: slot={SlotId} selectionLat={Lat:F7} selectionLon={Lon:F7} placementLat={PlacementLat:F7} placementLon={PlacementLon:F7} range={Range:F1}m overlap={Overlap}")]
+            public static partial void RunStarted(
+                ILogger logger,
+                string slotId,
+                double lat,
+                double lon,
+                double placementLat,
+                double placementLon,
+                double range,
+                bool overlap);
+
+            [LoggerMessage(
+                EventId = 8,
+                Level = LogLevel.Information,
+                Message = "Run completed: retained={Retained} candidate={Candidate} processed={Processed} streamed={Streamed} failed={Failed}")]
+            public static partial void RunCompleted(
+                ILogger logger,
+                int retained,
+                int candidate,
+                int processed,
+                int streamed,
+                int failed);
+
+            [LoggerMessage(EventId = 9, Level = LogLevel.Warning, Message = "Run failed.")]
+            public static partial void RunFailed(ILogger logger, Exception exception);
+
+            [LoggerMessage(EventId = 10, Level = LogLevel.Warning, Message = "Run finished with error while superseding.")]
+            public static partial void RunSupersededFailed(ILogger logger, Exception exception);
+
+            [LoggerMessage(EventId = 11, Level = LogLevel.Warning, Message = "Failed to remove slot {SlotId}.")]
+            public static partial void SlotRemovalFailed(ILogger logger, Exception exception, string slotId);
+
+            [LoggerMessage(
+                EventId = 12,
+                Level = LogLevel.Warning,
+                Message = "Failed to disconnect Resonite Link cleanly.")]
+            public static partial void DisconnectFailed(ILogger logger, Exception exception);
+
+            [LoggerMessage(
+                EventId = 13,
+                Level = LogLevel.Warning,
+                Message = "Search query ignored because GOOGLE_MAPS_API_KEY is not set: query={Query}")]
+            public static partial void SearchIgnored(ILogger logger, string query);
+
+            [LoggerMessage(
+                EventId = 14,
+                Level = LogLevel.Warning,
+                Message = "Search query returned no result: query={Query}")]
+            public static partial void SearchNoResult(ILogger logger, string query);
         }
 
         private sealed record RangeFootprint(GeoReference Reference, double RangeM);

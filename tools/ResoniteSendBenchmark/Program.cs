@@ -1,68 +1,85 @@
 // Diagnostic console tool; localized resources are unnecessary here.
 #pragma warning disable CA1303
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Numerics;
 using Microsoft.Extensions.Logging.Abstractions;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Resonite;
 
-BenchmarkOptions options = BenchmarkOptions.Parse(args);
+return await RunAsync(args).ConfigureAwait(false);
 
-ResoniteLink.LinkInterface? linkInterface = null;
-ResoniteSession session;
-try
+[SuppressMessage(
+    "Reliability",
+    "CA1031:DoNotCatchGeneralExceptionTypes",
+    Justification = "The benchmark intentionally aggregates send failures without aborting the entire case.")]
+static async Task<int> RunAsync(string[] args)
 {
-#pragma warning disable CA2000
-    linkInterface = new ResoniteLink.LinkInterface();
-#pragma warning restore CA2000
-    session = new ResoniteSession(
-        linkInterface,
-        NullLogger<ResoniteSession>.Instance);
-}
-catch
-{
-    linkInterface?.Dispose();
-    throw;
-}
+    BenchmarkOptions options = BenchmarkOptions.Parse(args);
 
-await using (session.ConfigureAwait(false))
-{
-    await session.ConnectAsync(options.Host, options.Port, CancellationToken.None).ConfigureAwait(false);
-
+    ResoniteLink.LinkInterface? linkInterface = null;
+    ResoniteSession session;
     try
     {
-        if (!string.IsNullOrWhiteSpace(options.RemoveSlotId))
+#pragma warning disable CA2000
+        linkInterface = new ResoniteLink.LinkInterface();
+#pragma warning restore CA2000
+        session = new ResoniteSession(
+            linkInterface,
+            NullLogger<ResoniteSession>.Instance);
+    }
+    catch (Exception)
+    {
+        linkInterface?.Dispose();
+        throw;
+    }
+
+    await using (session.ConfigureAwait(false))
+    {
+        await session.ConnectAsync(options.Host, options.Port, CancellationToken.None).ConfigureAwait(false);
+
+        try
         {
-            await session.RemoveSlotAsync(options.RemoveSlotId, CancellationToken.None).ConfigureAwait(false);
-            Console.WriteLine($"Removed slot {options.RemoveSlotId}");
-            return;
-        }
-
-        Console.WriteLine($"Connected ws://{options.Host}:{options.Port}/");
-        Console.WriteLine($"MeshCount={options.MeshCount} Parallelisms={string.Join(",", options.Parallelisms)}");
-        Console.WriteLine("Each case creates and removes its own benchmark parent slot.");
-        Console.WriteLine();
-
-        foreach (int parallelism in options.Parallelisms)
-        {
-            BenchmarkCaseResult result = await RunCaseAsync(session, parallelism, options.MeshCount).ConfigureAwait(false);
-            Console.WriteLine(
-                $"Parallelism={result.Parallelism} Sent={result.SentCount} Failed={result.FailedCount} " +
-                $"ElapsedMs={result.Elapsed.TotalMilliseconds.ToString("F1", CultureInfo.InvariantCulture)}");
-
-            if (result.Errors.Count > 0)
+            if (!string.IsNullOrWhiteSpace(options.RemoveSlotId))
             {
-                Console.WriteLine($"  FirstError={result.Errors[0].GetType().Name}: {result.Errors[0].Message}");
+                await session.RemoveSlotAsync(options.RemoveSlotId, CancellationToken.None).ConfigureAwait(false);
+                await Console.Out.WriteLineAsync($"Removed slot {options.RemoveSlotId}").ConfigureAwait(false);
+                return 0;
+            }
+
+            await Console.Out.WriteLineAsync($"Connected ws://{options.Host}:{options.Port}/").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"MeshCount={options.MeshCount} Parallelisms={string.Join(",", options.Parallelisms)}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync("Each case creates and removes its own benchmark parent slot.").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync().ConfigureAwait(false);
+
+            foreach (int parallelism in options.Parallelisms)
+            {
+                BenchmarkCaseResult result = await RunCaseAsync(session, parallelism, options.MeshCount).ConfigureAwait(false);
+                await Console.Out.WriteLineAsync(
+                    $"Parallelism={result.Parallelism} Sent={result.SentCount} Failed={result.FailedCount} " +
+                    $"ElapsedMs={result.Elapsed.TotalMilliseconds.ToString("F1", CultureInfo.InvariantCulture)}").ConfigureAwait(false);
+
+                if (result.Errors.Count > 0)
+                {
+                    await Console.Out.WriteLineAsync(
+                        $"  FirstError={result.Errors[0].GetType().Name}: {result.Errors[0].Message}").ConfigureAwait(false);
+                }
             }
         }
+        finally
+        {
+            await session.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        }
     }
-    finally
-    {
-        await session.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
-    }
+
+    return 0;
 }
 
+[SuppressMessage(
+    "Reliability",
+    "CA1031:DoNotCatchGeneralExceptionTypes",
+    Justification = "The benchmark intentionally records individual send failures and continues gathering timings.")]
 static async Task<BenchmarkCaseResult> RunCaseAsync(
     ResoniteSession session,
     int parallelism,
@@ -163,7 +180,7 @@ internal sealed record BenchmarkOptions(
     string Host,
     int Port,
     int MeshCount,
-    IReadOnlyList<int> Parallelisms,
+    int[] Parallelisms,
     string? RemoveSlotId)
 {
     public static BenchmarkOptions Parse(IReadOnlyList<string> args)
@@ -171,7 +188,7 @@ internal sealed record BenchmarkOptions(
         string host = "localhost";
         int port = 49379;
         int meshCount = 8;
-        IReadOnlyList<int> parallelisms = [1, 2, 4, 8];
+        int[] parallelisms = [1, 2, 4, 8];
         string? removeSlotId = null;
 
         for (int i = 0; i < args.Count; i++)
@@ -216,7 +233,7 @@ internal sealed record BenchmarkOptions(
             throw new InvalidOperationException($"Mesh count must be positive: {meshCount}");
         }
 
-        if (parallelisms.Count == 0 || parallelisms.Any(static value => value <= 0))
+        if (parallelisms.Length == 0 || parallelisms.Any(static value => value <= 0))
         {
             throw new InvalidOperationException("Parallelism values must all be positive.");
         }

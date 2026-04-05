@@ -1,3 +1,4 @@
+using System.Net.WebSockets;
 using Microsoft.Extensions.Logging;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
@@ -5,36 +6,55 @@ using ThreeDTilesLink.Core.Resonite;
 
 namespace ThreeDTilesLink.Core.Pipeline
 {
-    public sealed class ProbeMonitor(
+    internal sealed partial class ProbeMonitor(
         IProbeStore probeStore,
         ILogger<ProbeMonitor> logger)
     {
         private readonly IProbeStore _probeStore = probeStore;
         private readonly ILogger<ProbeMonitor> _logger = logger;
 
-        public async Task<string?> TryReadProbeSearchAsync(ProbeBinding probeBinding, CancellationToken cancellationToken)
+        internal async Task<string?> TryReadProbeSearchAsync(ProbeBinding probeBinding, CancellationToken cancellationToken)
         {
             try
             {
                 return NormalizeSearchText(await _probeStore.ReadProbeSearchAsync(probeBinding, cancellationToken).ConfigureAwait(false));
             }
-            catch (Exception ex) when (ShouldPropagate(ex))
+            catch (OperationCanceledException)
             {
                 throw;
             }
-            catch (Exception ex) when (IsTransientProbeReadFailure(ex))
+            catch (ResoniteLinkDisconnectedException)
             {
-                _logger.LogDebug(ex, "Probe search query read returned no response.");
+                throw;
+            }
+            catch (ResoniteLinkNoResponseException ex)
+            {
+                Log.SearchReadNoResponse(_logger, ex);
                 return null;
             }
-            catch (Exception ex)
+            catch (ObjectDisposedException ex)
             {
-                _logger.LogWarning(ex, "Failed to read probe search query.");
+                Log.SearchReadWarning(_logger, ex);
+                return null;
+            }
+            catch (TimeoutException ex)
+            {
+                Log.SearchReadWarning(_logger, ex);
+                return null;
+            }
+            catch (WebSocketException ex)
+            {
+                Log.SearchReadWarning(_logger, ex);
+                return null;
+            }
+            catch (InvalidOperationException ex)
+            {
+                Log.SearchReadWarning(_logger, ex);
                 return null;
             }
         }
 
-        public async Task<ProbeValues?> TryReadProbeValuesAsync(ProbeBinding probeBinding, CancellationToken cancellationToken)
+        internal async Task<ProbeValues?> TryReadProbeValuesAsync(ProbeBinding probeBinding, CancellationToken cancellationToken)
         {
             try
             {
@@ -46,23 +66,42 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 return values;
             }
-            catch (Exception ex) when (ShouldPropagate(ex))
+            catch (OperationCanceledException)
             {
                 throw;
             }
-            catch (Exception ex) when (IsTransientProbeReadFailure(ex))
+            catch (ResoniteLinkDisconnectedException)
             {
-                _logger.LogDebug(ex, "Probe values read returned no response.");
+                throw;
+            }
+            catch (ResoniteLinkNoResponseException ex)
+            {
+                Log.ValuesReadNoResponse(_logger, ex);
                 return null;
             }
-            catch (Exception ex)
+            catch (ObjectDisposedException ex)
             {
-                _logger.LogWarning(ex, "Failed to read probe values.");
+                Log.ValuesReadWarning(_logger, ex);
+                return null;
+            }
+            catch (TimeoutException ex)
+            {
+                Log.ValuesReadWarning(_logger, ex);
+                return null;
+            }
+            catch (WebSocketException ex)
+            {
+                Log.ValuesReadWarning(_logger, ex);
+                return null;
+            }
+            catch (InvalidOperationException ex)
+            {
+                Log.ValuesReadWarning(_logger, ex);
                 return null;
             }
         }
 
-        public static bool HasMeaningfulChange(ProbeValues? previous, ProbeValues current)
+        internal static bool HasMeaningfulChange(ProbeValues? previous, ProbeValues current)
         {
             ArgumentNullException.ThrowIfNull(current);
             return previous is null ||
@@ -71,7 +110,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 System.Math.Abs(previous.RangeM - current.RangeM) > 0.1f;
         }
 
-        public static void ValidateIntervals(ProbeWatchOptions options)
+        internal static void ValidateIntervals(ProbeWatchOptions options)
         {
             ArgumentNullException.ThrowIfNull(options);
             if (options.PollInterval <= TimeSpan.Zero)
@@ -100,14 +139,19 @@ namespace ThreeDTilesLink.Core.Pipeline
             return input.Trim();
         }
 
-        private static bool ShouldPropagate(Exception exception)
+        private static partial class Log
         {
-            return exception is OperationCanceledException or ResoniteLinkDisconnectedException;
-        }
+            [LoggerMessage(EventId = 1, Level = LogLevel.Debug, Message = "Probe search query read returned no response.")]
+            public static partial void SearchReadNoResponse(ILogger logger, Exception exception);
 
-        private static bool IsTransientProbeReadFailure(Exception exception)
-        {
-            return exception is ResoniteLinkNoResponseException;
+            [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Failed to read probe search query.")]
+            public static partial void SearchReadWarning(ILogger logger, Exception exception);
+
+            [LoggerMessage(EventId = 3, Level = LogLevel.Debug, Message = "Probe values read returned no response.")]
+            public static partial void ValuesReadNoResponse(ILogger logger, Exception exception);
+
+            [LoggerMessage(EventId = 4, Level = LogLevel.Warning, Message = "Failed to read probe values.")]
+            public static partial void ValuesReadWarning(ILogger logger, Exception exception);
         }
     }
 }

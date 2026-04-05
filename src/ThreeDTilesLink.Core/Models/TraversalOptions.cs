@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    public sealed record TraversalOptions(
+    internal sealed record TraversalOptions(
         double RangeM,
         int MaxTiles,
         int MaxDepth,

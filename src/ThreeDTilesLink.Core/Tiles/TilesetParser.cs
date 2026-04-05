@@ -4,7 +4,7 @@ using System.Web;
 
 namespace ThreeDTilesLink.Core.Tiles
 {
-    public sealed class TilesetParser
+    internal sealed class TilesetParser
     {
         public static Tileset Parse(string json, Uri sourceUri)
         {
@@ -71,7 +71,7 @@ namespace ThreeDTilesLink.Core.Tiles
                 };
         }
 
-        private static IReadOnlyList<double>? ParseDoubleArray(JsonElement parent, string name)
+        private static List<double>? ParseDoubleArray(JsonElement parent, string name)
         {
             if (!parent.TryGetProperty(name, out JsonElement element) || element.ValueKind != JsonValueKind.Array)
             {
@@ -180,7 +180,7 @@ namespace ThreeDTilesLink.Core.Tiles
             return builder.Uri;
         }
 
-        private static IReadOnlyList<string> ParseCopyrights(JsonElement root)
+        private static List<string> ParseCopyrights(JsonElement root)
         {
             var output = new List<string>();
             var seen = new HashSet<string>(StringComparer.Ordinal);

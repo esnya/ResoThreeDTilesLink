@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    public sealed record ProbeWatchOptions(
+    internal sealed record ProbeWatchOptions(
         TimeSpan PollInterval,
         TimeSpan Debounce,
         TimeSpan Throttle,

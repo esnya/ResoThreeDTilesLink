@@ -9,11 +9,70 @@ using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Resonite
 {
-    public sealed class ResoniteSession(
+    internal sealed partial class ResoniteSession(
         LinkInterface resoniteLink,
         ILogger<ResoniteSession> logger,
         Func<LinkInterface>? linkInterfaceFactory = null) : IResoniteSession, IProbeStore, IAsyncDisposable
     {
+        private static partial class Log
+        {
+            [LoggerMessage(
+                EventId = 2001,
+                Level = LogLevel.Debug,
+                Message = "Opening Resonite Link session to {Host}:{Port}.")]
+            public static partial void OpeningSession(ILogger logger, string host, int port);
+
+            [LoggerMessage(
+                EventId = 2002,
+                Level = LogLevel.Information,
+                Message = "Reconnected to Resonite Link at {Host}:{Port}; reusing session root {SlotId}.")]
+            public static partial void ReconnectedSession(
+                ILogger logger,
+                string host,
+                int port,
+                string? slotId);
+
+            [LoggerMessage(
+                EventId = 2003,
+                Level = LogLevel.Debug,
+                Message = "Closing Resonite Link transport.")]
+            public static partial void ClosingSession(ILogger logger);
+
+            [LoggerMessage(
+                EventId = 2004,
+                Level = LogLevel.Warning,
+                Message = "Resonite Link transport is disconnected. Reconnecting to {Host}:{Port}.")]
+            public static partial void ReconnectingSession(ILogger logger, string host, int port);
+
+            [LoggerMessage(
+                EventId = 2005,
+                Level = LogLevel.Warning,
+                Message = "Resonite Link transport failed. Reconnecting to {Host}:{Port}.")]
+            public static partial void ReconnectingSession(
+                ILogger logger,
+                string host,
+                int port,
+                Exception exception);
+
+            [LoggerMessage(
+                EventId = 2006,
+                Level = LogLevel.Information,
+                Message = "Reconnected to Resonite Link at {Host}:{Port}.")]
+            public static partial void ReconnectedTransport(ILogger logger, string host, int port);
+
+            [LoggerMessage(
+                EventId = 2007,
+                Level = LogLevel.Warning,
+                Message = "Failed to update mirrored numeric alias component {ComponentId}.")]
+            public static partial void MirroredNumericAliasUpdateFailed(ILogger logger, Exception exception, string componentId);
+
+            [LoggerMessage(
+                EventId = 2008,
+                Level = LogLevel.Warning,
+                Message = "Failed to update mirrored string alias component {ComponentId}.")]
+            public static partial void MirroredStringAliasUpdateFailed(ILogger logger, Exception exception, string componentId);
+        }
+
         private const string SlotWorkerType = "[FrooxEngine]FrooxEngine.Slot";
         private const string StaticMeshComponentType = "[FrooxEngine]FrooxEngine.StaticMesh";
         private const string StaticTextureComponentType = "[FrooxEngine]FrooxEngine.StaticTexture2D";
@@ -108,7 +167,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 }
 
                 _connectionUri = endpoint;
-                _logger.LogDebug("Opening Resonite Link session to {Host}:{Port}.", host, port);
+                Log.OpeningSession(_logger, host, port);
                 await ConnectTransportAsync(endpoint, cancellationToken).ConfigureAwait(false);
                 reusedExistingSessionState = !string.IsNullOrWhiteSpace(_sessionRootSlotId);
             }
@@ -119,8 +178,8 @@ namespace ThreeDTilesLink.Core.Resonite
 
             if (reusedExistingSessionState)
             {
-                _logger.LogInformation(
-                    "Reconnected to Resonite Link at {Host}:{Port}; reusing session root {SlotId}.",
+                Log.ReconnectedSession(
+                    _logger,
                     host,
                     port,
                     _sessionRootSlotId);
@@ -138,18 +197,39 @@ namespace ThreeDTilesLink.Core.Resonite
                 await AttachAvatarProtectionAsync(_sessionRootSlotId).ConfigureAwait(false);
                 await AttachPackageExportableAsync(_sessionRootSlotId, cancellationToken).ConfigureAwait(false);
             }
-            catch
+            catch (OperationCanceledException)
             {
-                await _connectionGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-                try
-                {
-                    DisposeDirectLink(clearSessionState: true);
-                }
-                finally
-                {
-                    _ = _connectionGate.Release();
-                }
-
+                await CleanupConnectInitializationFailureAsync().ConfigureAwait(false);
+                throw;
+            }
+            catch (ResoniteLinkNoResponseException)
+            {
+                await CleanupConnectInitializationFailureAsync().ConfigureAwait(false);
+                throw;
+            }
+            catch (ResoniteLinkDisconnectedException)
+            {
+                await CleanupConnectInitializationFailureAsync().ConfigureAwait(false);
+                throw;
+            }
+            catch (TimeoutException)
+            {
+                await CleanupConnectInitializationFailureAsync().ConfigureAwait(false);
+                throw;
+            }
+            catch (ObjectDisposedException)
+            {
+                await CleanupConnectInitializationFailureAsync().ConfigureAwait(false);
+                throw;
+            }
+            catch (WebSocketException)
+            {
+                await CleanupConnectInitializationFailureAsync().ConfigureAwait(false);
+                throw;
+            }
+            catch (InvalidOperationException)
+            {
+                await CleanupConnectInitializationFailureAsync().ConfigureAwait(false);
                 throw;
             }
         }
@@ -157,6 +237,19 @@ namespace ThreeDTilesLink.Core.Resonite
         public Task DisconnectAsync(CancellationToken cancellationToken)
         {
             return DisconnectCoreAsync(cancellationToken);
+        }
+
+        private async Task CleanupConnectInitializationFailureAsync()
+        {
+            await _connectionGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                DisposeDirectLink(clearSessionState: true);
+            }
+            finally
+            {
+                _ = _connectionGate.Release();
+            }
         }
 
         public async Task<string> CreateSessionChildSlotAsync(string name, CancellationToken cancellationToken)
@@ -367,8 +460,6 @@ namespace ThreeDTilesLink.Core.Resonite
 
             if (normalizedProgress >= 1f)
             {
-                // Some observers react immediately to the terminal progress value. Reapply the final
-                // text after the numeric completion update so the completed snapshot is visible there too.
                 await UpdateMirroredStringMemberAsync(
                     binding.ProgressTextComponentId,
                     DynamicValueVariableValueMemberName,
@@ -570,7 +661,7 @@ namespace ThreeDTilesLink.Core.Resonite
             await _connectionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                _logger.LogDebug("Closing Resonite Link transport.");
+                Log.ClosingSession(_logger);
                 CleanupTemporaryFiles();
                 DisposeDirectLink(clearSessionState: false);
             }
@@ -653,7 +744,27 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 throw;
             }
-            catch
+            catch (ObjectDisposedException)
+            {
+                return null;
+            }
+            catch (ResoniteLinkNoResponseException)
+            {
+                return null;
+            }
+            catch (ResoniteLinkDisconnectedException)
+            {
+                return null;
+            }
+            catch (TimeoutException)
+            {
+                return null;
+            }
+            catch (WebSocketException)
+            {
+                return null;
+            }
+            catch (InvalidOperationException)
             {
                 return null;
             }
@@ -688,7 +799,27 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 throw;
             }
-            catch
+            catch (ObjectDisposedException)
+            {
+                return null;
+            }
+            catch (ResoniteLinkNoResponseException)
+            {
+                return null;
+            }
+            catch (ResoniteLinkDisconnectedException)
+            {
+                return null;
+            }
+            catch (TimeoutException)
+            {
+                return null;
+            }
+            catch (WebSocketException)
+            {
+                return null;
+            }
+            catch (InvalidOperationException)
             {
                 return null;
             }
@@ -723,7 +854,27 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 throw;
             }
-            catch
+            catch (ObjectDisposedException)
+            {
+                return null;
+            }
+            catch (ResoniteLinkNoResponseException)
+            {
+                return null;
+            }
+            catch (ResoniteLinkDisconnectedException)
+            {
+                return null;
+            }
+            catch (TimeoutException)
+            {
+                return null;
+            }
+            catch (WebSocketException)
+            {
+                return null;
+            }
+            catch (InvalidOperationException)
             {
                 return null;
             }
@@ -764,7 +915,27 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 throw;
             }
-            catch
+            catch (ObjectDisposedException)
+            {
+                return null;
+            }
+            catch (ResoniteLinkNoResponseException)
+            {
+                return null;
+            }
+            catch (ResoniteLinkDisconnectedException)
+            {
+                return null;
+            }
+            catch (TimeoutException)
+            {
+                return null;
+            }
+            catch (WebSocketException)
+            {
+                return null;
+            }
+            catch (InvalidOperationException)
             {
                 return null;
             }
@@ -805,7 +976,27 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 throw;
             }
-            catch
+            catch (ObjectDisposedException)
+            {
+                return null;
+            }
+            catch (ResoniteLinkNoResponseException)
+            {
+                return null;
+            }
+            catch (ResoniteLinkDisconnectedException)
+            {
+                return null;
+            }
+            catch (TimeoutException)
+            {
+                return null;
+            }
+            catch (WebSocketException)
+            {
+                return null;
+            }
+            catch (InvalidOperationException)
             {
                 return null;
             }
@@ -919,9 +1110,29 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (ObjectDisposedException ex)
             {
-                _logger.LogWarning(ex, "Failed to update mirrored numeric alias component {ComponentId}.", componentId);
+                Log.MirroredNumericAliasUpdateFailed(_logger, ex, componentId);
+            }
+            catch (ResoniteLinkNoResponseException ex)
+            {
+                Log.MirroredNumericAliasUpdateFailed(_logger, ex, componentId);
+            }
+            catch (ResoniteLinkDisconnectedException ex)
+            {
+                Log.MirroredNumericAliasUpdateFailed(_logger, ex, componentId);
+            }
+            catch (TimeoutException ex)
+            {
+                Log.MirroredNumericAliasUpdateFailed(_logger, ex, componentId);
+            }
+            catch (WebSocketException ex)
+            {
+                Log.MirroredNumericAliasUpdateFailed(_logger, ex, componentId);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Log.MirroredNumericAliasUpdateFailed(_logger, ex, componentId);
             }
         }
 
@@ -975,9 +1186,29 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (ObjectDisposedException ex)
             {
-                _logger.LogWarning(ex, "Failed to update mirrored string alias component {ComponentId}.", componentId);
+                Log.MirroredStringAliasUpdateFailed(_logger, ex, componentId);
+            }
+            catch (ResoniteLinkNoResponseException ex)
+            {
+                Log.MirroredStringAliasUpdateFailed(_logger, ex, componentId);
+            }
+            catch (ResoniteLinkDisconnectedException ex)
+            {
+                Log.MirroredStringAliasUpdateFailed(_logger, ex, componentId);
+            }
+            catch (TimeoutException ex)
+            {
+                Log.MirroredStringAliasUpdateFailed(_logger, ex, componentId);
+            }
+            catch (WebSocketException ex)
+            {
+                Log.MirroredStringAliasUpdateFailed(_logger, ex, componentId);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Log.MirroredStringAliasUpdateFailed(_logger, ex, componentId);
             }
         }
 
@@ -1085,7 +1316,27 @@ namespace ThreeDTilesLink.Core.Resonite
                 _materialTextureFieldName = textureFields.First();
                 return _materialTextureFieldName;
             }
-            catch
+            catch (ObjectDisposedException)
+            {
+                return null;
+            }
+            catch (ResoniteLinkNoResponseException)
+            {
+                return null;
+            }
+            catch (ResoniteLinkDisconnectedException)
+            {
+                return null;
+            }
+            catch (TimeoutException)
+            {
+                return null;
+            }
+            catch (WebSocketException)
+            {
+                return null;
+            }
+            catch (InvalidOperationException)
             {
                 return null;
             }
@@ -1340,7 +1591,22 @@ namespace ThreeDTilesLink.Core.Resonite
                 {
                     throw;
                 }
-                catch
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (ResoniteLinkNoResponseException)
+                {
+                }
+                catch (ResoniteLinkDisconnectedException)
+                {
+                }
+                catch (TimeoutException)
+                {
+                }
+                catch (WebSocketException)
+                {
+                }
+                catch (InvalidOperationException)
                 {
                 }
             }
@@ -1502,7 +1768,33 @@ namespace ThreeDTilesLink.Core.Resonite
                         timeout ?? DefaultLinkRequestTimeout,
                         cancellationToken).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
+                catch (TimeoutException ex)
+                    when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
+                {
+                    await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException ex)
+                    when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
+                {
+                    await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
+                }
+                catch (WebSocketException ex)
+                    when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
+                {
+                    await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
+                }
+                catch (ResoniteLinkNoResponseException ex)
+                    when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
+                {
+                    await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
+                }
+                catch (ResoniteLinkDisconnectedException ex)
+                    when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
+                {
+                    await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
+                }
+                catch (InvalidOperationException ex)
+                    when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
                 {
                     await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
                 }
@@ -1567,23 +1859,23 @@ namespace ThreeDTilesLink.Core.Resonite
 
                 if (reason is null)
                 {
-                    _logger.LogWarning(
-                        "Resonite Link transport is disconnected. Reconnecting to {Host}:{Port}.",
+                    Log.ReconnectingSession(
+                        _logger,
                         _connectionUri.Host,
                         _connectionUri.Port);
                 }
                 else
                 {
-                    _logger.LogWarning(
-                        reason,
-                        "Resonite Link transport failed. Reconnecting to {Host}:{Port}.",
+                    Log.ReconnectingSession(
+                        _logger,
                         _connectionUri.Host,
-                        _connectionUri.Port);
+                        _connectionUri.Port,
+                        reason);
                 }
 
                 DisposeDirectLink(clearSessionState: false);
                 await ConnectTransportAsync(_connectionUri, cancellationToken).ConfigureAwait(false);
-                _logger.LogInformation("Reconnected to Resonite Link at {Host}:{Port}.", _connectionUri.Host, _connectionUri.Port);
+                Log.ReconnectedTransport(_logger, _connectionUri.Host, _connectionUri.Port);
             }
             finally
             {
@@ -1598,7 +1890,27 @@ namespace ThreeDTilesLink.Core.Resonite
                 await _linkInterface.Connect(endpoint, cancellationToken).ConfigureAwait(false);
                 _directClientInitialized = true;
             }
-            catch
+            catch (TimeoutException)
+            {
+                DisposeDirectLink(clearSessionState: false);
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                DisposeDirectLink(clearSessionState: false);
+                throw;
+            }
+            catch (ObjectDisposedException)
+            {
+                DisposeDirectLink(clearSessionState: false);
+                throw;
+            }
+            catch (WebSocketException)
+            {
+                DisposeDirectLink(clearSessionState: false);
+                throw;
+            }
+            catch (InvalidOperationException)
             {
                 DisposeDirectLink(clearSessionState: false);
                 throw;
@@ -1646,7 +1958,10 @@ namespace ThreeDTilesLink.Core.Resonite
                     _linkInterface.Dispose();
                 }
             }
-            catch
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (InvalidOperationException)
             {
             }
             finally
@@ -1672,7 +1987,10 @@ namespace ThreeDTilesLink.Core.Resonite
                         File.Delete(textureFile);
                     }
                 }
-                catch
+                catch (IOException)
+                {
+                }
+                catch (UnauthorizedAccessException)
                 {
                 }
             }

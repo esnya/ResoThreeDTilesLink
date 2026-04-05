@@ -2,11 +2,11 @@ using System.Text.Json;
 
 namespace ThreeDTilesLink.Core.Google
 {
-    public sealed class GoogleGeocodingClient(HttpClient httpClient)
+    internal sealed class GoogleGeocodingClient(HttpClient httpClient)
     {
         private readonly HttpClient _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
 
-        public async Task<LocationSearchResult?> SearchAsync(string apiKey, string query, CancellationToken cancellationToken)
+        internal async Task<LocationSearchResult?> SearchAsync(string apiKey, string query, CancellationToken cancellationToken)
         {
             string normalizedApiKey = apiKey?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(normalizedApiKey))
@@ -70,7 +70,7 @@ namespace ThreeDTilesLink.Core.Google
         }
     }
 
-    public sealed record LocationSearchResult(
+    internal sealed record LocationSearchResult(
         string FormattedAddress,
         double Latitude,
         double Longitude);

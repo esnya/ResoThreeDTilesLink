@@ -2,7 +2,7 @@ using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Contracts
 {
-    public interface IMeshPlacementService
+    internal interface IMeshPlacementService
     {
         IReadOnlyList<PlacedMeshPayload> Place(
             TileSelectionResult tile,

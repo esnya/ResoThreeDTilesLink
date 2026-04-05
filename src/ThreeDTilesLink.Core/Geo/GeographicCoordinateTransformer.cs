@@ -5,7 +5,7 @@ using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Geo
 {
-    public sealed class GeographicCoordinateTransformer : ICoordinateTransformer
+    internal sealed class GeographicCoordinateTransformer : ICoordinateTransformer
     {
         private readonly Geocentric _earth = Geocentric.WGS84;
 

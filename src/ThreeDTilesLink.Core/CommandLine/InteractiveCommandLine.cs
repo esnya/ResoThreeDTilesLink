@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ThreeDTilesLink.Core.CommandLine
 {
-    public sealed record InteractiveCommandOptions(
+    internal sealed record InteractiveCommandOptions(
         double HeightOffsetM,
         string ResoniteHost,
         int ResonitePort,
@@ -20,7 +20,7 @@ namespace ThreeDTilesLink.Core.CommandLine
         string ProbePath,
         LogLevel LogLevel);
 
-    public static class InteractiveCommandLine
+    internal static class InteractiveCommandLine
     {
         private static readonly CommandSpecification Specification = new(
             "dotnet run --project src/ThreeDTilesLink -- interactive [options]",
@@ -52,7 +52,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 ["--render-start-span-ratio"] = "--render-start-span-ratio is no longer supported."
             });
 
-        public static CommandInvocation<InteractiveCommandOptions> Parse(IReadOnlyList<string> args)
+        internal static CommandInvocation<InteractiveCommandOptions> Parse(IReadOnlyList<string> args)
         {
             ParsedCommand parsed = CommandLineParser.Parse(Specification, args);
             if (parsed.Status == CommandParseStatus.Help)
@@ -65,46 +65,80 @@ namespace ThreeDTilesLink.Core.CommandLine
                 return new CommandInvocation<InteractiveCommandOptions>(false, default, 1, parsed.Output, true);
             }
 
+            if (!TryGetValue(parsed, "--log-level", out string? logLevelRaw) ||
+                !Enum.TryParse(logLevelRaw, ignoreCase: true, out LogLevel logLevel))
+            {
+                return Error($"Invalid value for --log-level: {logLevelRaw}");
+            }
+
+            if (!TryGetValue(parsed, "--content-workers", out int contentWorkers) || contentWorkers <= 0)
+            {
+                return Error($"Invalid value for --content-workers: {contentWorkers}");
+            }
+
+            if (!TryGetValue(parsed, "--height-offset", out double heightOffsetM) ||
+                !TryGetValue(parsed, "--resonite-host", out string? resoniteHost) ||
+                !TryGetValue(parsed, "--resonite-port", out int resonitePort) ||
+                !TryGetValue(parsed, "--tile-limit", out int tileLimit) ||
+                !TryGetValue(parsed, "--depth-limit", out int depthLimit) ||
+                !TryGetValue(parsed, "--detail", out double detailTargetM) ||
+                !TryGetValue(parsed, "--timeout", out int timeoutSec) ||
+                !TryGetValue(parsed, "--poll-interval", out int pollIntervalMs) ||
+                !TryGetValue(parsed, "--debounce", out int debounceMs) ||
+                !TryGetValue(parsed, "--throttle", out int throttleMs) ||
+                !TryGetValue(parsed, "--remove-out-of-range", out bool removeOutOfRange) ||
+                !TryGetValue(parsed, "--dry-run", out bool dryRun) ||
+                !TryGetValue(parsed, "--probe-name", out string? probeName) ||
+                !TryGetValue(parsed, "--probe-path", out string? probePath))
+            {
+                return Error("Invalid command values.");
+            }
+
+            if (string.IsNullOrWhiteSpace(resoniteHost))
+            {
+                return Error("Invalid value for --resonite-host.");
+            }
+
+            if (string.IsNullOrWhiteSpace(probeName))
+            {
+                return Error("Invalid value for --probe-name.");
+            }
+
+            if (string.IsNullOrWhiteSpace(probePath))
+            {
+                return Error("Invalid value for --probe-path.");
+            }
+
+            string normalizedProbePath;
             try
             {
-                string logLevelRaw = (string)parsed.Values["--log-level"]!;
-                if (!Enum.TryParse(logLevelRaw, ignoreCase: true, out LogLevel logLevel))
-                {
-                    return Error($"Invalid value for --log-level: {logLevelRaw}");
-                }
-
-                int contentWorkers = (int)parsed.Values["--content-workers"]!;
-                if (contentWorkers <= 0)
-                {
-                    return Error($"Invalid value for --content-workers: {contentWorkers}");
-                }
-
-                string probePath = NormalizeProbePath((string)parsed.Values["--probe-path"]!);
-                return new CommandInvocation<InteractiveCommandOptions>(true, new InteractiveCommandOptions(
-                    (double)parsed.Values["--height-offset"]!,
-                    (string)parsed.Values["--resonite-host"]!,
-                    (int)parsed.Values["--resonite-port"]!,
-                    (int)parsed.Values["--tile-limit"]!,
-                    (int)parsed.Values["--depth-limit"]!,
-                    (double)parsed.Values["--detail"]!,
-                    contentWorkers,
-                    (int)parsed.Values["--timeout"]!,
-                    (int)parsed.Values["--poll-interval"]!,
-                    (int)parsed.Values["--debounce"]!,
-                    (int)parsed.Values["--throttle"]!,
-                    (bool)parsed.Values["--remove-out-of-range"]!,
-                    (bool)parsed.Values["--dry-run"]!,
-                    (string)parsed.Values["--probe-name"]!,
-                    probePath,
-                    logLevel), 0, string.Empty, false);
+                normalizedProbePath = NormalizeProbePath(probePath);
             }
-            catch (Exception ex)
+            catch (InvalidOperationException ex)
             {
                 return Error(ex.Message);
             }
+
+            return new CommandInvocation<InteractiveCommandOptions>(true, new InteractiveCommandOptions(
+                heightOffsetM,
+                resoniteHost,
+                resonitePort,
+                tileLimit,
+                depthLimit,
+                detailTargetM,
+                contentWorkers,
+                timeoutSec,
+                pollIntervalMs,
+                debounceMs,
+                throttleMs,
+                removeOutOfRange,
+                dryRun,
+                probeName,
+                normalizedProbePath,
+                logLevel), 0, string.Empty, false);
         }
 
-        public static string RenderHelp()
+        internal static string RenderHelp()
         {
             return CommandLineParser.RenderHelp(Specification);
         }
@@ -169,6 +203,18 @@ namespace ThreeDTilesLink.Core.CommandLine
             }
 
             return string.Join('.', normalizedSegments);
+        }
+
+        private static bool TryGetValue<T>(ParsedCommand parsed, string key, out T value)
+        {
+            if (parsed.Values.TryGetValue(key, out object? raw) && raw is T typed)
+            {
+                value = typed;
+                return true;
+            }
+
+            value = default!;
+            return false;
         }
 
         private static CommandInvocation<InteractiveCommandOptions> Error(string message)
