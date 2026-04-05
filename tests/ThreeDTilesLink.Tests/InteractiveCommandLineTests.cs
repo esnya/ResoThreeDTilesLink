@@ -7,7 +7,7 @@ namespace ThreeDTilesLink.Tests
     public sealed class InteractiveCommandLineTests
     {
         [Fact]
-        public void Parse_Help_IncludesProbeAndTimingOptions()
+        public void Parse_Help_IncludesWatchAndTimingOptions()
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(["--help"]);
 
@@ -17,7 +17,7 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.Output.Should().Contain("--poll-interval <value>");
             _ = invocation.Output.Should().Contain("--content-workers <value>");
             _ = invocation.Output.Should().Contain("--remove-out-of-range");
-            _ = invocation.Output.Should().Contain("--probe-path <path>");
+            _ = invocation.Output.Should().Contain("--watch-path <path>");
             _ = invocation.Output.Should().Contain("dotnet run --project src/ThreeDTilesLink -- interactive [options]");
             _ = invocation.Output.Should().Contain("Default: localhost.");
             _ = invocation.Output.Should().Contain("Unit: ms.");
@@ -41,8 +41,8 @@ namespace ThreeDTilesLink.Tests
                 "--debounce=800",
                 "--throttle", "3000",
                 "--remove-out-of-range",
-                "--probe-path", "World/ThreeDTilesLink/Probe/",
-                "--probe-name", "3DTilesLink Probe",
+                "--watch-path", "World/ThreeDTilesLink/Watch/",
+                "--watch-name", "3DTilesLink Watch",
                 "--dry-run",
                 "--log-level", "Trace"
             ]);
@@ -55,8 +55,8 @@ namespace ThreeDTilesLink.Tests
             _ = parsed.DebounceMs.Should().Be(800);
             _ = parsed.ThrottleMs.Should().Be(3000);
             _ = parsed.RemoveOutOfRange.Should().BeTrue();
-            _ = parsed.ProbePath.Should().Be("World/ThreeDTilesLink.Probe");
-            _ = parsed.ProbeName.Should().Be("3DTilesLink Probe");
+            _ = parsed.WatchPath.Should().Be("World/ThreeDTilesLink.Watch");
+            _ = parsed.WatchName.Should().Be("3DTilesLink Watch");
             _ = parsed.LogLevel.Should().Be(LogLevel.Trace);
         }
 

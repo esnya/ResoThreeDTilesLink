@@ -6,18 +6,25 @@ using ThreeDTilesLink.Core.Resonite;
 
 namespace ThreeDTilesLink.Core.Pipeline
 {
-    internal sealed partial class ProbeMonitor(
-        IProbeStore probeStore,
-        ILogger<ProbeMonitor> logger)
+    internal sealed partial class SelectionInputReader(
+        IWatchStore watchStore,
+        ILogger<SelectionInputReader> logger)
     {
-        private readonly IProbeStore _probeStore = probeStore;
-        private readonly ILogger<ProbeMonitor> _logger = logger;
+        private readonly IWatchStore _watchStore = watchStore;
+        private readonly ILogger<SelectionInputReader> _logger = logger;
 
-        internal async Task<string?> TryReadProbeSearchAsync(ProbeBinding probeBinding, CancellationToken cancellationToken)
+        internal async Task<SelectionInputSnapshot> ReadAsync(WatchBinding watchBinding, CancellationToken cancellationToken)
+        {
+            SelectionInputValues? values = await TryReadSelectionInputValuesAsync(watchBinding, cancellationToken).ConfigureAwait(false);
+            string? searchText = await TryReadWatchSearchAsync(watchBinding, cancellationToken).ConfigureAwait(false);
+            return new SelectionInputSnapshot(searchText, values);
+        }
+
+        internal async Task<string?> TryReadWatchSearchAsync(WatchBinding watchBinding, CancellationToken cancellationToken)
         {
             try
             {
-                return NormalizeSearchText(await _probeStore.ReadProbeSearchAsync(probeBinding, cancellationToken).ConfigureAwait(false));
+                return NormalizeSearchText(await _watchStore.ReadWatchSearchAsync(watchBinding, cancellationToken).ConfigureAwait(false));
             }
             catch (OperationCanceledException)
             {
@@ -54,11 +61,11 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        internal async Task<ProbeValues?> TryReadProbeValuesAsync(ProbeBinding probeBinding, CancellationToken cancellationToken)
+        internal async Task<SelectionInputValues?> TryReadSelectionInputValuesAsync(WatchBinding watchBinding, CancellationToken cancellationToken)
         {
             try
             {
-                ProbeValues? values = await _probeStore.ReadProbeValuesAsync(probeBinding, cancellationToken).ConfigureAwait(false);
+                SelectionInputValues? values = await _watchStore.ReadSelectionInputValuesAsync(watchBinding, cancellationToken).ConfigureAwait(false);
                 if (values is null || values.RangeM <= 0d)
                 {
                     return null;
@@ -101,7 +108,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        internal static bool HasMeaningfulChange(ProbeValues? previous, ProbeValues current)
+        internal static bool HasMeaningfulChange(SelectionInputValues? previous, SelectionInputValues current)
         {
             ArgumentNullException.ThrowIfNull(current);
             return previous is null ||
@@ -110,7 +117,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 System.Math.Abs(previous.RangeM - current.RangeM) > 0.1f;
         }
 
-        internal static void ValidateIntervals(ProbeWatchOptions options)
+        internal static void ValidateIntervals(WatchOptions options)
         {
             ArgumentNullException.ThrowIfNull(options);
             if (options.PollInterval <= TimeSpan.Zero)
@@ -141,16 +148,16 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         private static partial class Log
         {
-            [LoggerMessage(EventId = 1, Level = LogLevel.Debug, Message = "Probe search query read returned no response.")]
+            [LoggerMessage(EventId = 1, Level = LogLevel.Debug, Message = "Watch search query read returned no response.")]
             public static partial void SearchReadNoResponse(ILogger logger, Exception exception);
 
-            [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Failed to read probe search query.")]
+            [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Failed to read watch search query.")]
             public static partial void SearchReadWarning(ILogger logger, Exception exception);
 
-            [LoggerMessage(EventId = 3, Level = LogLevel.Debug, Message = "Probe values read returned no response.")]
+            [LoggerMessage(EventId = 3, Level = LogLevel.Debug, Message = "Selection input read returned no response.")]
             public static partial void ValuesReadNoResponse(ILogger logger, Exception exception);
 
-            [LoggerMessage(EventId = 4, Level = LogLevel.Warning, Message = "Failed to read probe values.")]
+            [LoggerMessage(EventId = 4, Level = LogLevel.Warning, Message = "Failed to read selection input values.")]
             public static partial void ValuesReadWarning(ILogger logger, Exception exception);
         }
     }

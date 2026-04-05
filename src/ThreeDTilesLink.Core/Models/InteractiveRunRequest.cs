@@ -8,5 +8,5 @@ namespace ThreeDTilesLink.Core.Models
         bool DryRun,
         string? ApiKey,
         bool RemoveOutOfRange,
-        ProbeWatchOptions ProbeWatch);
+        WatchOptions Watch);
 }

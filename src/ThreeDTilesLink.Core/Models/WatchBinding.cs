@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    internal sealed record ProbeBinding(
+    internal sealed record WatchBinding(
         string SlotId,
         bool OwnsSlot,
         string LatitudeComponentId,

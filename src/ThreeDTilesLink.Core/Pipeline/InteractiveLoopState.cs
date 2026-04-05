@@ -1,0 +1,55 @@
+using ThreeDTilesLink.Core.Google;
+using ThreeDTilesLink.Core.Models;
+
+namespace ThreeDTilesLink.Core.Pipeline
+{
+    internal sealed record InteractiveActiveRun(
+        Task<InteractiveTileRunResult> Task,
+        CancellationTokenSource CancellationSource);
+
+    internal sealed record InteractiveRangeFootprint(
+        GeoReference Reference,
+        double RangeM);
+
+    internal sealed record InteractiveLoopState(
+        string? SessionSlotId,
+        GeoReference? PlacementReference,
+        InteractiveRangeFootprint? LastRequestedFootprint,
+        InteractiveActiveRun? ActiveRun,
+        Dictionary<string, RetainedTileState> RetainedTiles,
+        InteractiveRunCheckpoint? Checkpoint,
+        WatchBinding? WatchBinding,
+        SelectionInputValues? LastObservedValues,
+        SelectionInputValues? PendingValues,
+        DateTimeOffset? PendingValuesChangedAt,
+        string? LastObservedSearch,
+        string? LastResolvedSearch,
+        string? PendingSearch,
+        DateTimeOffset? PendingSearchChangedAt,
+        LocationSearchResult? AwaitingResolvedCoordinates,
+        DateTimeOffset LastRunStartedAt,
+        bool Connected)
+    {
+        internal static InteractiveLoopState CreateInitial()
+        {
+            return new InteractiveLoopState(
+                SessionSlotId: null,
+                PlacementReference: null,
+                LastRequestedFootprint: null,
+                ActiveRun: null,
+                RetainedTiles: new Dictionary<string, RetainedTileState>(StringComparer.Ordinal),
+                Checkpoint: null,
+                WatchBinding: null,
+                LastObservedValues: null,
+                PendingValues: null,
+                PendingValuesChangedAt: null,
+                LastObservedSearch: null,
+                LastResolvedSearch: null,
+                PendingSearch: null,
+                PendingSearchChangedAt: null,
+                AwaitingResolvedCoordinates: null,
+                LastRunStartedAt: DateTimeOffset.MinValue,
+                Connected: false);
+        }
+    }
+}

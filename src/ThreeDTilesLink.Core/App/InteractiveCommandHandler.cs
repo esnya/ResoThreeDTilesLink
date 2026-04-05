@@ -22,16 +22,16 @@ namespace ThreeDTilesLink.Core.App
                 options.DryRun,
                 apiKey,
                 options.RemoveOutOfRange,
-                new ProbeWatchOptions(
+                new WatchOptions(
                     TimeSpan.FromMilliseconds(options.PollIntervalMs),
                     TimeSpan.FromMilliseconds(options.DebounceMs),
                     TimeSpan.FromMilliseconds(options.ThrottleMs),
-                    new ProbeConfiguration(
-                        options.ProbeName,
-                        $"{options.ProbePath}.Latitude",
-                        $"{options.ProbePath}.Longitude",
-                        $"{options.ProbePath}.Range",
-                        $"{options.ProbePath}.Search")));
+                    new WatchConfiguration(
+                        options.WatchName,
+                        $"{options.WatchPath}.Latitude",
+                        $"{options.WatchPath}.Longitude",
+                        $"{options.WatchPath}.Range",
+                        $"{options.WatchPath}.Search")));
         }
 
         internal static async Task<int> RunAsync(
@@ -58,7 +58,7 @@ namespace ThreeDTilesLink.Core.App
                 Console.CancelKeyPress += cancelHandler;
 
                 await output.WriteLineAsync(
-                    $"Interactive mode started. Probe={options.ProbePath} (lat/lon/range/search). Poll={options.PollIntervalMs}ms Debounce={options.DebounceMs}ms Throttle={options.ThrottleMs}ms. Press Ctrl+C to stop.")
+                    $"Interactive mode started. Watch={options.WatchPath} (lat/lon/range/search). Poll={options.PollIntervalMs}ms Debounce={options.DebounceMs}ms Throttle={options.ThrottleMs}ms. Press Ctrl+C to stop.")
                     .ConfigureAwait(false);
                 await runtime.InteractiveSupervisor.RunAsync(CreateRequest(options, apiKey), appCts.Token).ConfigureAwait(false);
                 return 0;

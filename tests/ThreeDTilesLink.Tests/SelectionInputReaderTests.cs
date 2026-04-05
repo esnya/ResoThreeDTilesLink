@@ -7,44 +7,44 @@ using ThreeDTilesLink.Core.Resonite;
 
 namespace ThreeDTilesLink.Tests
 {
-    public sealed class ProbeMonitorTests
+    public sealed class SelectionInputReaderTests
     {
         [Fact]
-        public async Task TryReadProbeSearchAsync_ReturnsNull_AndDoesNotWarn_WhenResponseIsMissing()
+        public async Task TryReadWatchSearchAsync_ReturnsNull_AndDoesNotWarn_WhenResponseIsMissing()
         {
-            var logger = new ListLogger<ProbeMonitor>();
-            var monitor = new ProbeMonitor(
-                new ThrowingProbeStore(new ResoniteLinkNoResponseException(), null),
+            var logger = new ListLogger<SelectionInputReader>();
+            var monitor = new SelectionInputReader(
+                new ThrowingWatchStore(new ResoniteLinkNoResponseException(), null),
                 logger);
 
-            string? result = await monitor.TryReadProbeSearchAsync(CreateBinding(), CancellationToken.None);
+            string? result = await monitor.TryReadWatchSearchAsync(CreateBinding(), CancellationToken.None);
 
             _ = result.Should().BeNull();
             _ = logger.Entries.Should().ContainSingle();
             _ = logger.Entries[0].Level.Should().Be(LogLevel.Debug);
-            _ = logger.Entries[0].Message.Should().Be("Probe search query read returned no response.");
+            _ = logger.Entries[0].Message.Should().Be("Watch search query read returned no response.");
         }
 
         [Fact]
-        public async Task TryReadProbeValuesAsync_ReturnsNull_AndDoesNotWarn_WhenResponseIsMissing()
+        public async Task TryReadSelectionInputValuesAsync_ReturnsNull_AndDoesNotWarn_WhenResponseIsMissing()
         {
-            var logger = new ListLogger<ProbeMonitor>();
-            var monitor = new ProbeMonitor(
-                new ThrowingProbeStore(null, new ResoniteLinkNoResponseException()),
+            var logger = new ListLogger<SelectionInputReader>();
+            var monitor = new SelectionInputReader(
+                new ThrowingWatchStore(null, new ResoniteLinkNoResponseException()),
                 logger);
 
-            ProbeValues? result = await monitor.TryReadProbeValuesAsync(CreateBinding(), CancellationToken.None);
+            SelectionInputValues? result = await monitor.TryReadSelectionInputValuesAsync(CreateBinding(), CancellationToken.None);
 
             _ = result.Should().BeNull();
             _ = logger.Entries.Should().ContainSingle();
             _ = logger.Entries[0].Level.Should().Be(LogLevel.Debug);
-            _ = logger.Entries[0].Message.Should().Be("Probe values read returned no response.");
+            _ = logger.Entries[0].Message.Should().Be("Selection input read returned no response.");
         }
 
-        private static ProbeBinding CreateBinding()
+        private static WatchBinding CreateBinding()
         {
-            return new ProbeBinding(
-                "probe",
+            return new WatchBinding(
+                "watch",
                 false,
                 "lat",
                 "Value",
@@ -64,31 +64,31 @@ namespace ThreeDTilesLink.Tests
                 "Value");
         }
 
-        private sealed class ThrowingProbeStore(Exception? searchException, Exception? valuesException) : IProbeStore
+        private sealed class ThrowingWatchStore(Exception? searchException, Exception? valuesException) : IWatchStore
         {
             private readonly Exception? _searchException = searchException;
             private readonly Exception? _valuesException = valuesException;
 
-            public Task<ProbeBinding> CreateProbeAsync(ProbeConfiguration configuration, CancellationToken cancellationToken)
+            public Task<WatchBinding> CreateWatchAsync(WatchConfiguration configuration, CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }
 
-            public Task<ProbeValues?> ReadProbeValuesAsync(ProbeBinding binding, CancellationToken cancellationToken)
+            public Task<SelectionInputValues?> ReadSelectionInputValuesAsync(WatchBinding binding, CancellationToken cancellationToken)
             {
                 return _valuesException is null
-                    ? Task.FromResult<ProbeValues?>(null)
-                    : Task.FromException<ProbeValues?>(_valuesException);
+                    ? Task.FromResult<SelectionInputValues?>(null)
+                    : Task.FromException<SelectionInputValues?>(_valuesException);
             }
 
-            public Task<string?> ReadProbeSearchAsync(ProbeBinding binding, CancellationToken cancellationToken)
+            public Task<string?> ReadWatchSearchAsync(WatchBinding binding, CancellationToken cancellationToken)
             {
                 return _searchException is null
                     ? Task.FromResult<string?>(null)
                     : Task.FromException<string?>(_searchException);
             }
 
-            public Task UpdateProbeCoordinatesAsync(ProbeBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
+            public Task UpdateWatchCoordinatesAsync(WatchBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }

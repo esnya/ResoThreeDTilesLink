@@ -13,16 +13,16 @@ namespace ThreeDTilesLink.Tests
     public sealed class InteractiveRunSupervisorTests
     {
         [Fact]
-        public async Task RunAsync_StartsRun_WhenProbeValuesChange()
+        public async Task RunAsync_StartsRun_WhenSelectionInputValuesChange()
         {
             var session = new FakeSession();
-            var probeStore = new FakeProbeStore
+            var watchStore = new FakeWatchStore
             {
-                ProbeValues = new Queue<ProbeValues?>([new ProbeValues(35f, 139f, 400f), new ProbeValues(35f, 139f, 400f)])
+                SelectionInputValues = new Queue<SelectionInputValues?>([new SelectionInputValues(35f, 139f, 400f), new SelectionInputValues(35f, 139f, 400f)])
             };
             var clock = new FakeClock { CancelAfterDelayCalls = 3 };
             var coordinator = new FakeTileRunCoordinator(_ => clock.RequestCancellation());
-            var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock);
 
             using var cts = new CancellationTokenSource();
             clock.CancellationSource = cts;
@@ -40,19 +40,19 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_ReusesSessionSlot_AndPlacementReference_WhenRangesOverlap()
         {
             var session = new FakeSession();
-            var probeStore = new FakeProbeStore
+            var watchStore = new FakeWatchStore
             {
-                ProbeValues = new Queue<ProbeValues?>(
+                SelectionInputValues = new Queue<SelectionInputValues?>(
                 [
-                    new ProbeValues(35f, 139f, 400f),
-                    new ProbeValues(35f, 139f, 400f),
-                    new ProbeValues(36f, 140f, 400f),
-                    new ProbeValues(36f, 140f, 400f)
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(36f, 140f, 400f),
+                    new SelectionInputValues(36f, 140f, 400f)
                 ])
             };
             var clock = new FakeClock { CancelAfterDelayCalls = 4 };
             var coordinator = new FakeTileRunCoordinator(_ => { });
-            var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock);
 
             using var cts = new CancellationTokenSource();
             clock.CancellationSource = cts;
@@ -72,19 +72,19 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_RecreatesSessionSlot_WhenRangesDoNotOverlap()
         {
             var session = new FakeSession();
-            var probeStore = new FakeProbeStore
+            var watchStore = new FakeWatchStore
             {
-                ProbeValues = new Queue<ProbeValues?>(
+                SelectionInputValues = new Queue<SelectionInputValues?>(
                 [
-                    new ProbeValues(35f, 139f, 400f),
-                    new ProbeValues(35f, 139f, 400f),
-                    new ProbeValues(2000f, 2000f, 400f),
-                    new ProbeValues(2000f, 2000f, 400f)
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(2000f, 2000f, 400f),
+                    new SelectionInputValues(2000f, 2000f, 400f)
                 ])
             };
             var clock = new FakeClock { CancelAfterDelayCalls = 4 };
             var coordinator = new FakeTileRunCoordinator(_ => { });
-            var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock);
 
             using var cts = new CancellationTokenSource();
             clock.CancellationSource = cts;
@@ -103,13 +103,13 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_CancellationKeepsCurrentSessionSlot()
         {
             var session = new FakeSession();
-            var probeStore = new FakeProbeStore
+            var watchStore = new FakeWatchStore
             {
-                ProbeValues = new Queue<ProbeValues?>([new ProbeValues(35f, 139f, 400f), new ProbeValues(35f, 139f, 400f)])
+                SelectionInputValues = new Queue<SelectionInputValues?>([new SelectionInputValues(35f, 139f, 400f), new SelectionInputValues(35f, 139f, 400f)])
             };
             var clock = new FakeClock { CancelAfterDelayCalls = 3 };
             var coordinator = new FakeTileRunCoordinator(_ => clock.RequestCancellation());
-            var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock);
 
             using var cts = new CancellationTokenSource();
             clock.CancellationSource = cts;
@@ -124,14 +124,14 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_SupersededOverlapRun_CarriesPartialVisibleTilesIntoNextRun()
         {
             var session = new FakeSession();
-            var probeStore = new FakeProbeStore
+            var watchStore = new FakeWatchStore
             {
-                ProbeValues = new Queue<ProbeValues?>(
+                SelectionInputValues = new Queue<SelectionInputValues?>(
                 [
-                    new ProbeValues(35f, 139f, 400f),
-                    new ProbeValues(35f, 139f, 400f),
-                    new ProbeValues(36f, 140f, 400f),
-                    new ProbeValues(36f, 140f, 400f)
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(36f, 140f, 400f),
+                    new SelectionInputValues(36f, 140f, 400f)
                 ])
             };
             var clock = new FakeClock { CancelAfterDelayCalls = 4 };
@@ -167,7 +167,7 @@ namespace ThreeDTilesLink.Tests
                         new HashSet<string>(interactive.RetainedTiles.Keys, StringComparer.Ordinal),
                         null);
                 });
-            var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock);
 
             using var cts = new CancellationTokenSource();
             clock.CancellationSource = cts;
@@ -184,50 +184,50 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_IgnoresSearchWithoutApiKey()
         {
             var session = new FakeSession();
-            var probeStore = new FakeProbeStore
+            var watchStore = new FakeWatchStore
             {
                 SearchValues = new Queue<string?>(["Shibuya", "Shibuya"]),
-                ProbeValues = new Queue<ProbeValues?>([null, null])
+                SelectionInputValues = new Queue<SelectionInputValues?>([null, null])
             };
             var clock = new FakeClock { CancelAfterDelayCalls = 3 };
             var coordinator = new FakeTileRunCoordinator(_ => clock.RequestCancellation());
-            var supervisor = CreateSupervisor(coordinator, session, probeStore, new FakeSearchResolver(), clock);
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock);
 
             using var cts = new CancellationTokenSource();
             clock.CancellationSource = cts;
 
             await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
 
-            _ = probeStore.UpdatedCoordinates.Should().BeEmpty();
+            _ = watchStore.UpdatedCoordinates.Should().BeEmpty();
             _ = coordinator.Requests.Should().BeEmpty();
         }
 
         [Fact]
-        public async Task RunAsync_WaitsForProbeToReflectResolvedSearchCoordinates_BeforeStartingRun()
+        public async Task RunAsync_WaitsForWatchToReflectResolvedSearchCoordinates_BeforeStartingRun()
         {
             var session = new FakeSession();
-            var probeStore = new FakeProbeStore
+            var watchStore = new FakeWatchStore
             {
                 SearchValues = new Queue<string?>(["Asakusa", "Asakusa", "Asakusa", "Asakusa"]),
-                ProbeValues = new Queue<ProbeValues?>(
+                SelectionInputValues = new Queue<SelectionInputValues?>(
                 [
-                    new ProbeValues(35f, 139f, 400f),
-                    new ProbeValues(35f, 139f, 400f),
-                    new ProbeValues(35.7147651f, 139.7966553f, 400f),
-                    new ProbeValues(35.7147651f, 139.7966553f, 400f)
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(35.7147651f, 139.7966553f, 400f),
+                    new SelectionInputValues(35.7147651f, 139.7966553f, 400f)
                 ])
             };
             var clock = new FakeClock();
             var coordinator = new FakeTileRunCoordinator(_ => clock.RequestCancellation());
             var searchResolver = new FakeSearchResolver(new LocationSearchResult("Asakusa", 35.7147651d, 139.7966553d));
-            var supervisor = CreateSupervisor(coordinator, session, probeStore, searchResolver, clock);
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, searchResolver, clock);
 
             using var cts = new CancellationTokenSource();
             clock.CancellationSource = cts;
 
             await supervisor.RunAsync(CreateRequest(apiKey: "key"), cts.Token);
 
-            _ = probeStore.UpdatedCoordinates.Should().ContainSingle()
+            _ = watchStore.UpdatedCoordinates.Should().ContainSingle()
                 .Which.Should().Be((35.7147651d, 139.7966553d));
             _ = coordinator.Requests.Should().ContainSingle();
             _ = coordinator.Requests[0].SelectionReference.Latitude.Should().BeApproximately(35.7147651d, 1e-5);
@@ -238,17 +238,17 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task RunAsync_Throws_WhenProbeSearchReadDetectsDisconnectedSession()
+        public async Task RunAsync_Throws_WhenWatchSearchReadDetectsDisconnectedSession()
         {
             var session = new FakeSession();
-            var probeStore = new FakeProbeStore
+            var watchStore = new FakeWatchStore
             {
                 SearchReadException = new ResoniteLinkDisconnectedException()
             };
             var supervisor = CreateSupervisor(
                 new FakeTileRunCoordinator(static _ => { }),
                 session,
-                probeStore,
+                watchStore,
                 new FakeSearchResolver(),
                 new FakeClock());
 
@@ -262,16 +262,16 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_PropagatesCancellation_WhenSearchResolutionIsCanceled()
         {
             var session = new FakeSession();
-            var probeStore = new FakeProbeStore
+            var watchStore = new FakeWatchStore
             {
                 SearchValues = new Queue<string?>(["Asakusa", "Asakusa"]),
-                ProbeValues = new Queue<ProbeValues?>([null, null])
+                SelectionInputValues = new Queue<SelectionInputValues?>([null, null])
             };
             var cancellation = new OperationCanceledException("canceled");
             var supervisor = CreateSupervisor(
                 new FakeTileRunCoordinator(static _ => { }),
                 session,
-                probeStore,
+                watchStore,
                 new FakeSearchResolver(exception: cancellation),
                 new FakeClock());
 
@@ -284,18 +284,18 @@ namespace ThreeDTilesLink.Tests
         private static InteractiveRunSupervisor CreateSupervisor(
             FakeTileRunCoordinator coordinator,
             FakeSession session,
-            FakeProbeStore probeStore,
+            FakeWatchStore watchStore,
             FakeSearchResolver searchResolver,
             FakeClock clock)
         {
             return new InteractiveRunSupervisor(
                 coordinator,
                 session,
-                probeStore,
+                watchStore,
                 searchResolver,
                 new FakeTransformer(),
                 clock,
-                new ProbeMonitor(probeStore, NullLogger<ProbeMonitor>.Instance),
+                new SelectionInputReader(watchStore, NullLogger<SelectionInputReader>.Instance),
                 NullLogger<InteractiveRunSupervisor>.Instance);
         }
 
@@ -309,12 +309,12 @@ namespace ThreeDTilesLink.Tests
                 false,
                 apiKey,
                 false,
-                new ProbeWatchOptions(
+                new WatchOptions(
                     TimeSpan.FromMilliseconds(10),
                     TimeSpan.FromMilliseconds(10),
                     TimeSpan.Zero,
-                    new ProbeConfiguration(
-                        "Probe",
+                    new WatchConfiguration(
+                        "Watch",
                         "World/ThreeDTilesLink.Latitude",
                         "World/ThreeDTilesLink.Longitude",
                         "World/ThreeDTilesLink.Range",
@@ -426,18 +426,18 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
-        private sealed class FakeProbeStore : IProbeStore
+        private sealed class FakeWatchStore : IWatchStore
         {
-            public Queue<ProbeValues?> ProbeValues { get; init; } = new();
+            public Queue<SelectionInputValues?> SelectionInputValues { get; init; } = new();
             public Queue<string?> SearchValues { get; init; } = new();
             public List<(double Latitude, double Longitude)> UpdatedCoordinates { get; } = [];
-            public Exception? ProbeValuesReadException { get; init; }
+            public Exception? SelectionInputValuesReadException { get; init; }
             public Exception? SearchReadException { get; init; }
 
-            public Task<ProbeBinding> CreateProbeAsync(ProbeConfiguration configuration, CancellationToken cancellationToken)
+            public Task<WatchBinding> CreateWatchAsync(WatchConfiguration configuration, CancellationToken cancellationToken)
             {
-                return Task.FromResult(new ProbeBinding(
-                    "probe",
+                return Task.FromResult(new WatchBinding(
+                    "watch",
                     false,
                     "lat",
                     "Value",
@@ -457,17 +457,17 @@ namespace ThreeDTilesLink.Tests
                     "Value"));
             }
 
-            public Task<ProbeValues?> ReadProbeValuesAsync(ProbeBinding binding, CancellationToken cancellationToken)
+            public Task<SelectionInputValues?> ReadSelectionInputValuesAsync(WatchBinding binding, CancellationToken cancellationToken)
             {
-                if (ProbeValuesReadException is not null)
+                if (SelectionInputValuesReadException is not null)
                 {
-                    throw ProbeValuesReadException;
+                    throw SelectionInputValuesReadException;
                 }
 
-                return Task.FromResult(ProbeValues.Count > 0 ? ProbeValues.Dequeue() : null);
+                return Task.FromResult(SelectionInputValues.Count > 0 ? SelectionInputValues.Dequeue() : null);
             }
 
-            public Task<string?> ReadProbeSearchAsync(ProbeBinding binding, CancellationToken cancellationToken)
+            public Task<string?> ReadWatchSearchAsync(WatchBinding binding, CancellationToken cancellationToken)
             {
                 if (SearchReadException is not null)
                 {
@@ -477,7 +477,7 @@ namespace ThreeDTilesLink.Tests
                 return Task.FromResult(SearchValues.Count > 0 ? SearchValues.Dequeue() : null);
             }
 
-            public Task UpdateProbeCoordinatesAsync(ProbeBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
+            public Task UpdateWatchCoordinatesAsync(WatchBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
             {
                 UpdatedCoordinates.Add((latitude, longitude));
                 return Task.CompletedTask;

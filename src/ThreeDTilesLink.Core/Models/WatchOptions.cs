@@ -1,8 +1,8 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    internal sealed record ProbeWatchOptions(
+    internal sealed record WatchOptions(
         TimeSpan PollInterval,
         TimeSpan Debounce,
         TimeSpan Throttle,
-        ProbeConfiguration Probe);
+        WatchConfiguration Configuration);
 }

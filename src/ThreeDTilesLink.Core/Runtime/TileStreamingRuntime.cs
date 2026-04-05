@@ -64,9 +64,9 @@ namespace ThreeDTilesLink.Core.Runtime
                 throw;
             }
 
-            var probeMonitor = new ProbeMonitor(
+            var selectionInputReader = new SelectionInputReader(
                 resoniteSession,
-                loggerFactory.CreateLogger<ProbeMonitor>());
+                loggerFactory.CreateLogger<SelectionInputReader>());
 
             RunCoordinator = new TileRunCoordinator(
                 tilesSource,
@@ -85,7 +85,7 @@ namespace ThreeDTilesLink.Core.Runtime
                 searchResolver,
                 transformer,
                 new SystemClock(),
-                probeMonitor,
+                selectionInputReader,
                 loggerFactory.CreateLogger<InteractiveRunSupervisor>());
 
             Session = resoniteSession;

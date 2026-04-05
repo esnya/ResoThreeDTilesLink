@@ -12,7 +12,7 @@ namespace ThreeDTilesLink.Core.Resonite
     internal sealed partial class ResoniteSession(
         LinkInterface resoniteLink,
         ILogger<ResoniteSession> logger,
-        Func<LinkInterface>? linkInterfaceFactory = null) : IResoniteSession, IProbeStore, IAsyncDisposable
+        Func<LinkInterface>? linkInterfaceFactory = null) : IResoniteSession, IWatchStore, IAsyncDisposable
     {
         private static partial class Log
         {
@@ -263,7 +263,7 @@ namespace ThreeDTilesLink.Core.Resonite
             return await CreateSlotAsync(name, _sessionRootSlotId, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task<ProbeBinding> CreateProbeAsync(ProbeConfiguration configuration, CancellationToken cancellationToken)
+        public async Task<WatchBinding> CreateWatchAsync(WatchConfiguration configuration, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(configuration);
             cancellationToken.ThrowIfCancellationRequested();
@@ -319,7 +319,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 writeBack: true,
                 cancellationToken).ConfigureAwait(false);
 
-            return new ProbeBinding(
+            return new WatchBinding(
                 _sessionRootSlotId,
                 false,
                 latBinding.ComponentId,
@@ -340,7 +340,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 DynamicValueVariableValueMemberName);
         }
 
-        public async Task<ProbeValues?> ReadProbeValuesAsync(ProbeBinding binding, CancellationToken cancellationToken)
+        public async Task<SelectionInputValues?> ReadSelectionInputValuesAsync(WatchBinding binding, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(binding);
 
@@ -353,17 +353,17 @@ namespace ThreeDTilesLink.Core.Resonite
                 return null;
             }
 
-            return new ProbeValues(lat, lon, range);
+            return new SelectionInputValues(lat, lon, range);
         }
 
-        public async Task<string?> ReadProbeSearchAsync(ProbeBinding binding, CancellationToken cancellationToken)
+        public async Task<string?> ReadWatchSearchAsync(WatchBinding binding, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(binding);
 
             return await ReadStringMemberAsync(binding.SearchComponentId, binding.SearchValueMemberName, cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task UpdateProbeCoordinatesAsync(ProbeBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
+        public async Task UpdateWatchCoordinatesAsync(WatchBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(binding);
 
@@ -371,7 +371,7 @@ namespace ThreeDTilesLink.Core.Resonite
             float lon = checked((float)longitude);
             if (!float.IsFinite(lat) || !float.IsFinite(lon))
             {
-                throw new InvalidOperationException("Probe coordinates must be finite values.");
+                throw new InvalidOperationException("Watch coordinates must be finite values.");
             }
 
             await UpdateMirroredNumericMemberAsync(

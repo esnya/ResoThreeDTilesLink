@@ -58,8 +58,8 @@ namespace ThreeDTilesLink.Tests
                 3000,
                 true,
                 true,
-                "3DTilesLink Probe",
-                "World/ThreeDTilesLink.Probe",
+                "3DTilesLink Watch",
+                "World/ThreeDTilesLink.Watch",
                 LogLevel.Trace);
 
             var request = InteractiveCommandHandler.CreateRequest(options, "key");
@@ -74,14 +74,14 @@ namespace ThreeDTilesLink.Tests
             _ = request.DryRun.Should().BeTrue();
             _ = request.ApiKey.Should().Be("key");
             _ = request.RemoveOutOfRange.Should().BeTrue();
-            _ = request.ProbeWatch.PollInterval.Should().Be(TimeSpan.FromMilliseconds(250));
-            _ = request.ProbeWatch.Debounce.Should().Be(TimeSpan.FromMilliseconds(800));
-            _ = request.ProbeWatch.Throttle.Should().Be(TimeSpan.FromMilliseconds(3000));
-            _ = request.ProbeWatch.Probe.SlotName.Should().Be("3DTilesLink Probe");
-            _ = request.ProbeWatch.Probe.LatitudeVariablePath.Should().Be("World/ThreeDTilesLink.Probe.Latitude");
-            _ = request.ProbeWatch.Probe.LongitudeVariablePath.Should().Be("World/ThreeDTilesLink.Probe.Longitude");
-            _ = request.ProbeWatch.Probe.RangeVariablePath.Should().Be("World/ThreeDTilesLink.Probe.Range");
-            _ = request.ProbeWatch.Probe.SearchVariablePath.Should().Be("World/ThreeDTilesLink.Probe.Search");
+            _ = request.Watch.PollInterval.Should().Be(TimeSpan.FromMilliseconds(250));
+            _ = request.Watch.Debounce.Should().Be(TimeSpan.FromMilliseconds(800));
+            _ = request.Watch.Throttle.Should().Be(TimeSpan.FromMilliseconds(3000));
+            _ = request.Watch.Configuration.SlotName.Should().Be("3DTilesLink Watch");
+            _ = request.Watch.Configuration.LatitudeVariablePath.Should().Be("World/ThreeDTilesLink.Watch.Latitude");
+            _ = request.Watch.Configuration.LongitudeVariablePath.Should().Be("World/ThreeDTilesLink.Watch.Longitude");
+            _ = request.Watch.Configuration.RangeVariablePath.Should().Be("World/ThreeDTilesLink.Watch.Range");
+            _ = request.Watch.Configuration.SearchVariablePath.Should().Be("World/ThreeDTilesLink.Watch.Search");
         }
     }
 }

@@ -64,7 +64,7 @@ Required Google APIs by operation:
 - Tile streaming from `Latitude` / `Longitude` / `Range`: Google Map Tiles API
 - Free-text search from `Search`: Google Geocoding API
 
-At connection time, the app attaches probe `DynamicValueVariable<T>` values to the session root and watches:
+At connection time, the app attaches watch `DynamicValueVariable<T>` values to the session root and watches:
 
 - `World/ThreeDTilesLink.Latitude`
 - `World/ThreeDTilesLink.Longitude`
@@ -78,7 +78,7 @@ For observation-only aliases such as progress and credit text, `ValueCopy.WriteB
 
 Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and old run slots are removed.
 If `Search` is updated to a non-empty string, the app resolves it with the Google Geocoding API and writes the resulting coordinates back into `Latitude` / `Longitude`.
-If probe `Range` is `0` or less, no streaming run is started.
+If watch `Range` is `0` or less, no streaming run is started.
 
 ```bash
 dotnet run --project src/ThreeDTilesLink -- interactive \
@@ -86,8 +86,8 @@ dotnet run --project src/ThreeDTilesLink -- interactive \
   --poll-interval 250 \
   --debounce 800 \
   --throttle 3000 \
-  --probe-path World/ThreeDTilesLink \
-  --probe-name "3DTilesLink Probe"
+  --watch-path World/ThreeDTilesLink \
+  --watch-name "3DTilesLink Watch"
 ```
 
 Run `dotnet run --project src/ThreeDTilesLink -- interactive --help` for units and defaults.

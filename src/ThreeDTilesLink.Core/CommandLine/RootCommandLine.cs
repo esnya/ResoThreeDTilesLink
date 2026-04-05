@@ -59,7 +59,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 string.Empty,
                 "Commands:",
                 "  stream       Fetch Google Photorealistic 3D Tiles around a center point and stream them to Resonite Link.",
-                "  interactive  Attach probe variables in Resonite and keep streaming tiles as the probe values change.",
+                "  interactive  Attach watch variables in Resonite and keep streaming tiles as the selection input values change.",
                 string.Empty,
                 "Run '<command> --help' for command-specific options."
             ];
