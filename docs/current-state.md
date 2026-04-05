@@ -8,18 +8,17 @@ This document contains only current operational information that is difficult to
 - Persistent storage, assetization, and maintenance of design documents are not project goals.
 - The version baseline for official releases is standardized on `git tag` values in the form `v1.2.3`.
 - Builds from commits without a tag are treated as prereleases and kept distinct from official releases.
-- For authentication, prefer an API key when `GOOGLE_MAPS_API_KEY` is present; otherwise use ADC.
+- For authentication, use an API key through `GOOGLE_MAPS_API_KEY`.
 - The required APIs differ by feature as follows.
 - CLI tile fetch: Google Map Tiles API
 - Interactive tile fetch based on `Latitude` / `Longitude` / `Range`: Google Map Tiles API
 - Interactive free-text search (`World/... .Search`): Google Geocoding API
-- Interactive free-text search requires `GOOGLE_MAPS_API_KEY` and does not support ADC.
+- Interactive free-text search requires `GOOGLE_MAPS_API_KEY`.
 - The CLI auto-loads `.env` with parent-directory discovery and does not overwrite existing environment variables.
 
 ## Environment Variables
 
 - `GOOGLE_MAPS_API_KEY`: set this when using the Google Map Tiles API and Google Geocoding API with an API key
-- `GOOGLE_APPLICATION_CREDENTIALS`: use this to specify an explicit ADC path
 - `THREEDTILESLINK_DUMP_MESH_JSON`: use this when a JSON dump of mesh transmission contents is needed
 
 ## Handling Resonite Integration

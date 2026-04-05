@@ -8,18 +8,17 @@
 - 永続保存、アセット化、設計資料の保守は目的にしない
 - 正式リリースのバージョン起点は `v1.2.3` 形式の `git tag` に統一する
 - タグなしコミットのビルドはプレリリース扱いにし、正式版とは区別する
-- 認証は `GOOGLE_MAPS_API_KEY` があれば API キーを優先し、なければ ADC を使う
+- 認証は `GOOGLE_MAPS_API_KEY` の API キーを使う
 - 機能ごとの必要 API は次の通り
 - CLI のタイル取得: Google Map Tiles API
 - Interactive の `Latitude` / `Longitude` / `Range` ベースのタイル取得: Google Map Tiles API
 - Interactive の自由検索 (`World/... .Search`): Google Geocoding API
-- Interactive の自由検索は `GOOGLE_MAPS_API_KEY` が必要で、ADC では扱わない
+- Interactive の自由検索は `GOOGLE_MAPS_API_KEY` が必要
 - CLI は `.env` を上位ディレクトリ探索付きで自動ロードし、既存の環境変数は上書きしない
 
 ## 環境変数
 
 - `GOOGLE_MAPS_API_KEY`: Google Map Tiles API と Google Geocoding API を API キーで使うときに設定する
-- `GOOGLE_APPLICATION_CREDENTIALS`: ADC の明示パス指定に使う
 - `THREEDTILESLINK_DUMP_MESH_JSON`: メッシュ送信内容の JSON ダンプが必要なときに使う
 
 ## Resonite 連携の扱い

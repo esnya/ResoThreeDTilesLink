@@ -44,7 +44,7 @@ namespace ThreeDTilesLink.Core.Runtime
             var extractor = new GlbMeshExtractor();
             var contentProcessor = new TileContentProcessor(tilesSource, extractor);
             var meshPlacementService = new MeshPlacementService(transformer);
-            var tokenProvider = new AdcAccessTokenProvider();
+            var tokenProvider = new DefaultCredentialAccessTokenProvider();
             var geocodingClient = new GoogleGeocodingClient(_httpClient);
             var searchResolver = new SearchResolver(geocodingClient);
             LinkInterface? linkInterface = null;
