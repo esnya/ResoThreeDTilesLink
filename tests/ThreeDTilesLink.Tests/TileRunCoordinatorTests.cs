@@ -688,7 +688,7 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task Run_TileLimitReached_KeepsParentVisible()
+        public async Task Run_TileLimitReached_WithoutCoverageHints_CanStopAtLeaf()
         {
             var tileset = new Tileset(new Tile
             {
@@ -724,9 +724,58 @@ namespace ThreeDTilesLink.Tests
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 2), CancellationToken.None);
 
-            _ = summary.StreamedMeshes.Should().Be(2);
+            _ = summary.StreamedMeshes.Should().Be(1);
             _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
             _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_c_m", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task Run_TileLimitReached_StreamsIntermediateTileBeforeLeaf()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 1200d),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "c",
+                                ContentUri = new Uri("https://example.com/c.glb"),
+                                BoundingVolume = CreateBox(0d, 0d, 0d, 240d),
+                                Children =
+                                [
+                                    new Tile
+                                    {
+                                        Id = "g",
+                                        ContentUri = new Uri("https://example.com/g.glb"),
+                                        BoundingVolume = CreateBox(0d, 0d, 0d, 60d)
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+
+            RunSummary summary = await coordinator.RunAsync(
+                CreateRequest(dryRun: false, maxTiles: 2, maxDepth: 16, bootstrapRangeMultiplier: 0.5d),
+                CancellationToken.None).ConfigureAwait(true);
+
+            _ = summary.StreamedMeshes.Should().Be(3);
+            _ = client.Payloads.Should().HaveCount(3);
+            _ = client.Payloads[0].Name.Should().Contain("tile_p_");
+            _ = client.Payloads[1].Name.Should().Contain("tile_c_");
+            _ = client.Payloads[2].Name.Should().Contain("tile_g_");
         }
 
         [Fact]
@@ -935,6 +984,46 @@ namespace ThreeDTilesLink.Tests
             _ = client.Payloads[0].Name.Should().Contain("tile_p_");
             _ = client.Payloads[1].Name.Should().Contain("tile_c_");
             _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task Run_Bootstrap_StillDiscoversDetailedChild_WhenParentAlreadyMeetsBootstrapCoverageThreshold()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 100d),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "c",
+                                ContentUri = new Uri("https://example.com/c.glb"),
+                                BoundingVolume = CreateBox(0d, 0d, 0d, 10d)
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+
+            RunSummary summary = await coordinator.RunAsync(
+                CreateRequest(dryRun: false, maxDepth: 16, bootstrapRangeMultiplier: 0.5d),
+                CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(1);
+            _ = client.Payloads.Should().ContainSingle();
+            _ = client.Payloads[0].Name.Should().Contain("tile_c_");
+            _ = client.Payloads[0].Name.Should().NotContain("tile_p_");
+            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
         }
 
         [Fact]
