@@ -6,6 +6,9 @@
 
 - このプロジェクトは Google Photorealistic 3D Tiles を Resonite Link へ非永続に流し込む用途を前提にする
 - 永続保存、アセット化、設計資料の保守は目的にしない
+- live 検証で観測した Google 3D Tiles のレスポンスは、query string の `session` だけでなく `datasets/.../files/...` のパス自体も session ごとに変わるため、run をまたぐ file cache の再利用は実質的に起きない
+- そのため、Google 3D Tiles 向けの永続 file cache は、レスポンスヘッダ上は cacheable でも、無駄な複雑さとして運用目標にしない
+- タイル取得の HTTP キャッシュは、ヘッダ準拠の process-local reuse に限定し、user ごとの disk 永続化は前提にしない
 - 正式リリースのバージョン起点は `v1.2.3` 形式の `git tag` に統一する
 - タグなしコミットのビルドはプレリリース扱いにし、正式版とは区別する
 - 認証は `GOOGLE_MAPS_API_KEY` の API キーを使う
@@ -48,6 +51,10 @@
 - raw JSON 送信は `tools/ResoniteRawJson` を使う
 - WSL からは `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" <command> localhost <port> ...` の形で host 側実行に寄せる
 - 例で使うポート番号はその時点の live な Resonite Link に合わせる。固定値として扱わない
+- Git worktree から検証する場合は、その worktree にも `.env` を置く。アプリは現在の working tree から親ディレクトリ探索で `.env` を読むため、main checkout 側の `.env` は自動では拾われない
+- WSL から `send-json` の `-JsonFile` を使う場合は Windows パスを渡す。`/tmp/...` のような Linux パスは host 側 `dotnet.exe` から読めない
+- worktree 配下で host 実行すると、MinVer が project directory を Git working directory と見なせず warning を出すことがある。バージョン計算自体を検証対象にしていない限り、この warning は非 blocking として扱う
+- live のメッシュ送信や remove 挙動の確認は、`stream` や `interactive` などアプリ本体の entry point を優先する。`send-json` は主に接続確認と焦点を絞った message 確認に使う
 
 例:
 

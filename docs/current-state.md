@@ -6,6 +6,9 @@ This document contains only current operational information that is difficult to
 
 - This project assumes the use case of streaming Google Photorealistic 3D Tiles into Resonite Link non-persistently.
 - Persistent storage, assetization, and maintenance of design documents are not project goals.
+- Google 3D Tiles responses observed in live verification are session-scoped not only in query strings but also in `datasets/.../files/...` paths, so cross-run file cache reuse is effectively absent.
+- Because of that, persistent file caching for Google 3D Tiles is treated as wasted complexity and is not an operational goal even when response headers are cacheable.
+- Any HTTP caching for tile fetches should be limited to header-compliant process-local reuse, not per-user disk persistence.
 - The version baseline for official releases is standardized on `git tag` values in the form `v1.2.3`.
 - Builds from commits without a tag are treated as prereleases and kept distinct from official releases.
 - For authentication, use an API key through `GOOGLE_MAPS_API_KEY`.
@@ -48,6 +51,10 @@ This document contains only current operational information that is difficult to
 - Use `tools/ResoniteRawJson` for raw JSON transmission.
 - From WSL, invoke host-side commands in the form `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" <command> localhost <port> ...`.
 - The port numbers used in examples must match the live Resonite Link at that moment; do not treat them as fixed values.
+- When verifying from a Git worktree, place `.env` in that worktree as well. The app loads `.env` by parent-directory discovery from the current working tree, so the main checkout's `.env` is not picked up automatically.
+- When `send-json` uses `-JsonFile` from WSL, pass a Windows path. A Linux path such as `/tmp/...` is not readable from the host-side `dotnet.exe`.
+- In worktree-based host runs, MinVer may warn that a project directory is not a valid Git working directory. Treat that warning as non-blocking unless version calculation itself is the subject of the verification.
+- For live mesh transmission and removal behavior, prefer the application entry points such as `stream` or `interactive`. Use `send-json` mainly for connection checks and focused message inspection.
 
 Example:
 
