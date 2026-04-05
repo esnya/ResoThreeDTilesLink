@@ -26,13 +26,13 @@ static async Task<int> RunAsync(string[] args)
         RootCommandRoute route = rootInvocation.Options!;
         return route.Command switch
         {
-            RootCommandKind.Stream => await CommandHost.RunAsync(
+            RootCommandKind.Stream => await ThreeDTilesLink.CommandHost.RunAsync(
                 route.Arguments,
                 StreamCommandLine.Parse,
                 StreamCommandHandler.RunAsync,
                 Console.Out,
                 CancellationToken.None).ConfigureAwait(false),
-            RootCommandKind.Interactive => await CommandHost.RunAsync(
+            RootCommandKind.Interactive => await ThreeDTilesLink.CommandHost.RunAsync(
                 route.Arguments,
                 InteractiveCommandLine.Parse,
                 ConsoleInteractiveHost.RunAsync,
@@ -50,5 +50,5 @@ static async Task<int> RunAsync(string[] args)
 
 static async Task WriteOutputAsync(string output, bool writeToError)
 {
-    await CommandHost.WriteOutputAsync(Console.Out, output, writeToError).ConfigureAwait(false);
+    await ThreeDTilesLink.CommandHost.WriteOutputAsync(Console.Out, output, writeToError).ConfigureAwait(false);
 }

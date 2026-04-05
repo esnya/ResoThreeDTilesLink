@@ -1,13 +1,4 @@
-using ThreeDTilesLink.Core.Models;
-
 namespace ThreeDTilesLink.Core.Contracts
 {
-    internal interface ITileRunCoordinator
-    {
-        Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken);
-        Task<InteractiveTileRunResult> RunInteractiveAsync(
-            TileRunRequest request,
-            InteractiveRunInput interactive,
-            CancellationToken cancellationToken);
-    }
+    internal interface ITileRunCoordinator : ITileSelectionService;
 }

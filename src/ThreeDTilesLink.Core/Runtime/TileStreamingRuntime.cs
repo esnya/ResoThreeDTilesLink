@@ -64,22 +64,23 @@ namespace ThreeDTilesLink.Core.Runtime
                 throw;
             }
 
+            var selectedTileProjector = new ResoniteSelectedTileProjector(resoniteSession);
             var selectionInputReader = new SelectionInputReader(
                 resoniteSession,
                 loggerFactory.CreateLogger<SelectionInputReader>());
 
-            RunCoordinator = new TileRunCoordinator(
+            SelectionService = new TileSelectionService(
                 tilesSource,
                 traversalCore,
                 contentProcessor,
                 meshPlacementService,
-                resoniteSession,
+                selectedTileProjector,
                 tokenProvider,
-                loggerFactory.CreateLogger<TileRunCoordinator>(),
+                loggerFactory.CreateLogger<TileSelectionService>(),
                 maxConcurrentTileProcessing);
 
             InteractiveSupervisor = new InteractiveRunSupervisor(
-                RunCoordinator,
+                SelectionService,
                 resoniteSession,
                 resoniteSession,
                 searchResolver,
@@ -91,7 +92,7 @@ namespace ThreeDTilesLink.Core.Runtime
             Session = resoniteSession;
         }
 
-        internal TileRunCoordinator RunCoordinator { get; }
+        internal TileSelectionService SelectionService { get; }
 
         internal InteractiveRunSupervisor InteractiveSupervisor { get; }
 
@@ -99,7 +100,7 @@ namespace ThreeDTilesLink.Core.Runtime
 
         internal Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)
         {
-            return RunCoordinator.RunAsync(request, cancellationToken);
+            return SelectionService.RunAsync(request, cancellationToken);
         }
 
         public async ValueTask DisposeAsync()

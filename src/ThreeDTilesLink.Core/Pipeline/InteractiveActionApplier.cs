@@ -11,14 +11,14 @@ using ThreeDTilesLink.Core.Models;
 namespace ThreeDTilesLink.Core.Pipeline
 {
     internal sealed class InteractiveActionApplier(
-        ITileRunCoordinator tileRunCoordinator,
+        ITileSelectionService tileRunCoordinator,
         IResoniteSession resoniteSession,
         IWatchStore watchStore,
         ISearchResolver searchResolver,
         ICoordinateTransformer coordinateTransformer,
         ILogger<InteractiveRunSupervisor> logger)
     {
-        private readonly ITileRunCoordinator _tileRunCoordinator = tileRunCoordinator;
+        private readonly ITileSelectionService _tileRunCoordinator = tileRunCoordinator;
         private readonly IResoniteSession _resoniteSession = resoniteSession;
         private readonly IWatchStore _watchStore = watchStore;
         private readonly ISearchResolver _searchResolver = searchResolver;

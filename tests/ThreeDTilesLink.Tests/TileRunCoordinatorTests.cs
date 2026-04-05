@@ -1475,7 +1475,7 @@ namespace ThreeDTilesLink.Tests
             bool ignoreCancellationDuringStream = false,
             string? failOnRemoveContains = null,
             bool failProgressUpdates = false,
-            bool failLicenseUpdates = false) : IResoniteSession
+            bool failLicenseUpdates = false) : ISelectedTileProjector
         {
             private readonly bool _failFirstSend = failFirstSend;
             private readonly string? _failOnNameContains = failOnNameContains;
@@ -1503,11 +1503,6 @@ namespace ThreeDTilesLink.Tests
             {
                 ConnectCount++;
                 return Task.CompletedTask;
-            }
-
-            public Task<string> CreateSessionChildSlotAsync(string name, CancellationToken cancellationToken)
-            {
-                return Task.FromResult($"session_{name}");
             }
 
             public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)

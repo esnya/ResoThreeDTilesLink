@@ -15,7 +15,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly ILogger<InteractiveRunSupervisor> _logger;
 
         internal InteractiveRunSupervisor(
-            ITileRunCoordinator tileRunCoordinator,
+            ITileSelectionService tileRunCoordinator,
             IResoniteSession resoniteSession,
             IWatchStore watchStore,
             ISearchResolver searchResolver,
