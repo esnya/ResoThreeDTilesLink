@@ -23,25 +23,25 @@ namespace ThreeDTilesLink.Core.CommandLine
     public static class InteractiveCommandLine
     {
         private static readonly CommandSpecification Specification = new(
-            "dotnet run --project src/ThreeDTilesLink.Interactive -- [options]",
+            "dotnet run --project src/ThreeDTilesLink -- interactive [options]",
             "Attach probe variables in Resonite and keep streaming tiles as the probe latitude/longitude/range values change.",
             [
-                new("--height-offset", CommandOptionValueKind.DecimalNumber, "Height offset applied to streamed geometry.", DefaultValue: 0d, Unit: "m", RenamedFrom: ["--height-offset-m"]),
-                new("--resonite-host", CommandOptionValueKind.Text, "Resonite Link host name or IP address.", DefaultValue: "localhost", ValueName: "host", RenamedFrom: ["--link-host"]),
-                new("--resonite-port", CommandOptionValueKind.WholeNumber, "Resonite Link port.", Required: true, ValueName: "port", RenamedFrom: ["--link-port"]),
-                new("--tile-limit", CommandOptionValueKind.WholeNumber, "Maximum number of tiles to stream per run.", DefaultValue: 2048, RenamedFrom: ["--max-tiles"]),
-                new("--depth-limit", CommandOptionValueKind.WholeNumber, "Maximum traversal depth per run.", DefaultValue: 32, RenamedFrom: ["--max-depth"]),
-                new("--detail", CommandOptionValueKind.DecimalNumber, "Target tile detail before traversal stops descending renderable GLB tiles.", DefaultValue: 30d, Unit: "m", RenamedFrom: ["--detail-target-m"]),
-                new("--content-workers", CommandOptionValueKind.WholeNumber, "Maximum number of tile content fetch/decode workers per run.", DefaultValue: 8),
-                new("--timeout", CommandOptionValueKind.WholeNumber, "Request timeout.", DefaultValue: 120, Unit: "sec", RenamedFrom: ["--timeout-sec"]),
+                CommonCommandOptions.HeightOffset(),
+                CommonCommandOptions.ResoniteHost(),
+                CommonCommandOptions.ResonitePort(),
+                CommonCommandOptions.TileLimit("Maximum number of tiles to stream per run."),
+                CommonCommandOptions.DepthLimit("Maximum traversal depth per run."),
+                CommonCommandOptions.DetailTarget(),
+                CommonCommandOptions.ContentWorkers("Maximum number of tile content fetch/decode workers per run."),
+                CommonCommandOptions.Timeout(),
                 new("--poll-interval", CommandOptionValueKind.WholeNumber, "Probe polling interval.", DefaultValue: 250, Unit: "ms", RenamedFrom: ["--poll-ms"]),
                 new("--debounce", CommandOptionValueKind.WholeNumber, "Delay after probe changes before starting a run.", DefaultValue: 800, Unit: "ms", RenamedFrom: ["--debounce-ms"]),
                 new("--throttle", CommandOptionValueKind.WholeNumber, "Minimum time between run starts.", DefaultValue: 3000, Unit: "ms", RenamedFrom: ["--throttle-ms"]),
                 new("--remove-out-of-range", CommandOptionValueKind.Switch, "During overlapping updates, remove retained tiles that fall outside the latest range.", DefaultValue: false),
                 new("--probe-path", CommandOptionValueKind.Text, "Probe variable path prefix.", DefaultValue: "World/ThreeDTilesLink", ValueName: "path", RenamedFrom: ["--probe-path-prefix"]),
                 new("--probe-name", CommandOptionValueKind.Text, "Probe slot name.", DefaultValue: "3DTilesLink Probe", ValueName: "name", RenamedFrom: ["--probe-slot-name"]),
-                new("--dry-run", CommandOptionValueKind.Switch, "Fetch and convert tiles without sending anything to Resonite.", DefaultValue: false),
-                new("--log-level", CommandOptionValueKind.Text, "Logging level.", DefaultValue: "Information", ValueName: "level")
+                CommonCommandOptions.DryRun(),
+                CommonCommandOptions.LogLevelOption()
             ],
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {

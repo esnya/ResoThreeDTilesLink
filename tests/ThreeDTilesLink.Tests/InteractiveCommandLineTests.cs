@@ -13,10 +13,12 @@ namespace ThreeDTilesLink.Tests
 
             _ = invocation.ShouldRun.Should().BeFalse();
             _ = invocation.ExitCode.Should().Be(0);
+            _ = invocation.WriteToError.Should().BeFalse();
             _ = invocation.Output.Should().Contain("--poll-interval <value>");
             _ = invocation.Output.Should().Contain("--content-workers <value>");
             _ = invocation.Output.Should().Contain("--remove-out-of-range");
             _ = invocation.Output.Should().Contain("--probe-path <path>");
+            _ = invocation.Output.Should().Contain("dotnet run --project src/ThreeDTilesLink -- interactive [options]");
             _ = invocation.Output.Should().Contain("Default: localhost.");
             _ = invocation.Output.Should().Contain("Unit: ms.");
             _ = invocation.Output.Should().Contain("Default: World/ThreeDTilesLink.");

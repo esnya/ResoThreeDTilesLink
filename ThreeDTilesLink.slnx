@@ -1,8 +1,7 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/ThreeDTilesLink.Cli/ThreeDTilesLink.Cli.csproj" />
     <Project Path="src/ThreeDTilesLink.Core/ThreeDTilesLink.Core.csproj" />
-    <Project Path="src/ThreeDTilesLink.Interactive/ThreeDTilesLink.Interactive.csproj" />
+    <Project Path="src/ThreeDTilesLink/ThreeDTilesLink.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ThreeDTilesLink.Tests/ThreeDTilesLink.Tests.csproj" />

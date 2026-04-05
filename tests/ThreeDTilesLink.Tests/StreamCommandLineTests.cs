@@ -4,12 +4,12 @@ using ThreeDTilesLink.Core.CommandLine;
 
 namespace ThreeDTilesLink.Tests
 {
-    public sealed class CliCommandLineTests
+    public sealed class StreamCommandLineTests
     {
         [Fact]
         public void Parse_Help_IncludesNewNamesUnitsAndDefaults()
         {
-            CommandInvocation<CliCommandOptions> invocation = CliCommandLine.Parse(["--help"]);
+            CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(["--help"]);
 
             _ = invocation.ShouldRun.Should().BeFalse();
             _ = invocation.ExitCode.Should().Be(0);
@@ -17,6 +17,7 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.Output.Should().Contain("--latitude <value>");
             _ = invocation.Output.Should().Contain("--range <value>");
             _ = invocation.Output.Should().Contain("--content-workers <value>");
+            _ = invocation.Output.Should().Contain("dotnet run --project src/ThreeDTilesLink -- stream [options]");
             _ = invocation.Output.Should().Contain("Default: localhost.");
             _ = invocation.Output.Should().Contain("Unit: m.");
             _ = invocation.Output.Should().Contain("Default: 120.");
@@ -26,7 +27,7 @@ namespace ThreeDTilesLink.Tests
         [Fact]
         public void Parse_AcceptsSeparatedAndEqualsForms()
         {
-            CommandInvocation<CliCommandOptions> invocation = CliCommandLine.Parse(
+            CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
             [
                 "--latitude=35.65858",
                 "--longitude", "139.745433",
@@ -44,7 +45,7 @@ namespace ThreeDTilesLink.Tests
             ]);
 
             _ = invocation.ShouldRun.Should().BeTrue();
-            CliCommandOptions parsed = invocation.Options!;
+            StreamCommandOptions parsed = invocation.Options!;
             _ = parsed.Latitude.Should().Be(35.65858d);
             _ = parsed.Longitude.Should().Be(139.745433d);
             _ = parsed.HeightOffsetM.Should().Be(20d);
@@ -63,7 +64,7 @@ namespace ThreeDTilesLink.Tests
         [Fact]
         public void Parse_DefaultsResoniteHostToLocalhost()
         {
-            CommandInvocation<CliCommandOptions> invocation = CliCommandLine.Parse(
+            CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
             [
                 "--latitude", "35.65858",
                 "--longitude", "139.745433",
@@ -72,14 +73,14 @@ namespace ThreeDTilesLink.Tests
             ]);
 
             _ = invocation.ShouldRun.Should().BeTrue();
-            CliCommandOptions parsed = invocation.Options!;
+            StreamCommandOptions parsed = invocation.Options!;
             _ = parsed.ResoniteHost.Should().Be("localhost");
         }
 
         [Fact]
         public void Parse_DefaultsTileLimitTo2048()
         {
-            CommandInvocation<CliCommandOptions> invocation = CliCommandLine.Parse(
+            CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
             [
                 "--latitude", "35.65858",
                 "--longitude", "139.745433",
@@ -88,14 +89,14 @@ namespace ThreeDTilesLink.Tests
             ]);
 
             _ = invocation.ShouldRun.Should().BeTrue();
-            CliCommandOptions parsed = invocation.Options!;
+            StreamCommandOptions parsed = invocation.Options!;
             _ = parsed.TileLimit.Should().Be(2048);
         }
 
         [Fact]
         public void Parse_RejectsRenamedArgument()
         {
-            CommandInvocation<CliCommandOptions> invocation = CliCommandLine.Parse(
+            CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
             [
                 "--latitude", "35.0",
                 "--longitude", "139.0",
@@ -112,7 +113,7 @@ namespace ThreeDTilesLink.Tests
         [Fact]
         public void Parse_RejectsNonPositiveContentWorkers()
         {
-            CommandInvocation<CliCommandOptions> invocation = CliCommandLine.Parse(
+            CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
             [
                 "--latitude", "35.0",
                 "--longitude", "139.0",

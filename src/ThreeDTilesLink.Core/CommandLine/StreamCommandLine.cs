@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ThreeDTilesLink.Core.CommandLine
 {
-    public sealed record CliCommandOptions(
+    public sealed record StreamCommandOptions(
         double Latitude,
         double Longitude,
         double HeightOffsetM,
@@ -17,25 +17,25 @@ namespace ThreeDTilesLink.Core.CommandLine
         bool DryRun,
         LogLevel LogLevel);
 
-    public static class CliCommandLine
+    public static class StreamCommandLine
     {
         private static readonly CommandSpecification Specification = new(
-            "dotnet run --project src/ThreeDTilesLink.Cli -- [options]",
+            "dotnet run --project src/ThreeDTilesLink -- stream [options]",
             "Fetch Google Photorealistic 3D Tiles around a center point and stream them to Resonite Link.",
             [
                 new("--latitude", CommandOptionValueKind.DecimalNumber, "Center latitude.", Required: true, Unit: "degrees"),
                 new("--longitude", CommandOptionValueKind.DecimalNumber, "Center longitude.", Required: true, Unit: "degrees"),
-                new("--height-offset", CommandOptionValueKind.DecimalNumber, "Height offset applied to the reference point.", DefaultValue: 0d, Unit: "m", RenamedFrom: ["--height-offset-m"]),
+                CommonCommandOptions.HeightOffset(),
                 new("--range", CommandOptionValueKind.DecimalNumber, "Minimum coverage range from the center.", Required: true, Unit: "m", RenamedFrom: ["--half-width-m"]),
-                new("--resonite-host", CommandOptionValueKind.Text, "Resonite Link host name or IP address.", DefaultValue: "localhost", ValueName: "host", RenamedFrom: ["--link-host"]),
-                new("--resonite-port", CommandOptionValueKind.WholeNumber, "Resonite Link port.", Required: true, ValueName: "port", RenamedFrom: ["--link-port"]),
-                new("--tile-limit", CommandOptionValueKind.WholeNumber, "Maximum number of tiles to stream.", DefaultValue: 2048, RenamedFrom: ["--max-tiles"]),
-                new("--depth-limit", CommandOptionValueKind.WholeNumber, "Maximum traversal depth.", DefaultValue: 32, RenamedFrom: ["--max-depth"]),
-                new("--detail", CommandOptionValueKind.DecimalNumber, "Target tile detail before traversal stops descending renderable GLB tiles.", DefaultValue: 30d, Unit: "m", RenamedFrom: ["--detail-target-m"]),
-                new("--content-workers", CommandOptionValueKind.WholeNumber, "Maximum number of tile content fetch/decode workers.", DefaultValue: 8),
-                new("--timeout", CommandOptionValueKind.WholeNumber, "Request timeout.", DefaultValue: 120, Unit: "sec", RenamedFrom: ["--timeout-sec"]),
-                new("--dry-run", CommandOptionValueKind.Switch, "Fetch and convert tiles without sending anything to Resonite.", DefaultValue: false),
-                new("--log-level", CommandOptionValueKind.Text, "Logging level.", DefaultValue: "Information", ValueName: "level")
+                CommonCommandOptions.ResoniteHost(),
+                CommonCommandOptions.ResonitePort(),
+                CommonCommandOptions.TileLimit("Maximum number of tiles to stream."),
+                CommonCommandOptions.DepthLimit("Maximum traversal depth."),
+                CommonCommandOptions.DetailTarget(),
+                CommonCommandOptions.ContentWorkers("Maximum number of tile content fetch/decode workers."),
+                CommonCommandOptions.Timeout(),
+                CommonCommandOptions.DryRun(),
+                CommonCommandOptions.LogLevelOption()
             ],
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -44,17 +44,17 @@ namespace ThreeDTilesLink.Core.CommandLine
                 ["--render-start-span-ratio"] = "--render-start-span-ratio is no longer supported."
             });
 
-        public static CommandInvocation<CliCommandOptions> Parse(IReadOnlyList<string> args)
+        public static CommandInvocation<StreamCommandOptions> Parse(IReadOnlyList<string> args)
         {
             ParsedCommand parsed = CommandLineParser.Parse(Specification, args);
             if (parsed.Status == CommandParseStatus.Help)
             {
-                return new CommandInvocation<CliCommandOptions>(false, default, 0, parsed.Output, false);
+                return new CommandInvocation<StreamCommandOptions>(false, default, 0, parsed.Output, false);
             }
 
             if (parsed.Status == CommandParseStatus.Error)
             {
-                return new CommandInvocation<CliCommandOptions>(false, default, 1, parsed.Output, true);
+                return new CommandInvocation<StreamCommandOptions>(false, default, 1, parsed.Output, true);
             }
 
             try
@@ -71,7 +71,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                     return Error($"Invalid value for --content-workers: {contentWorkers}");
                 }
 
-                return new CommandInvocation<CliCommandOptions>(true, new CliCommandOptions(
+                return new CommandInvocation<StreamCommandOptions>(true, new StreamCommandOptions(
                     (double)parsed.Values["--latitude"]!,
                     (double)parsed.Values["--longitude"]!,
                     (double)parsed.Values["--height-offset"]!,
@@ -97,9 +97,9 @@ namespace ThreeDTilesLink.Core.CommandLine
             return CommandLineParser.RenderHelp(Specification);
         }
 
-        private static CommandInvocation<CliCommandOptions> Error(string message)
+        private static CommandInvocation<StreamCommandOptions> Error(string message)
         {
-            return new CommandInvocation<CliCommandOptions>(
+            return new CommandInvocation<StreamCommandOptions>(
                 false,
                 default,
                 1,

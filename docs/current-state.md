@@ -10,11 +10,11 @@ This document contains only current operational information that is difficult to
 - Builds from commits without a tag are treated as prereleases and kept distinct from official releases.
 - For authentication, use an API key through `GOOGLE_MAPS_API_KEY`.
 - The required APIs differ by feature as follows.
-- CLI tile fetch: Google Map Tiles API
-- Interactive tile fetch based on `Latitude` / `Longitude` / `Range`: Google Map Tiles API
+- `stream` tile fetch: Google Map Tiles API
+- `interactive` tile fetch based on `Latitude` / `Longitude` / `Range`: Google Map Tiles API
 - Interactive free-text search (`World/... .Search`): Google Geocoding API
-- Interactive free-text search requires `GOOGLE_MAPS_API_KEY`.
-- The CLI auto-loads `.env` with parent-directory discovery and does not overwrite existing environment variables.
+- Interactive free-text search requires `GOOGLE_MAPS_API_KEY` and does not support ADC.
+- The app auto-loads `.env` with parent-directory discovery and does not overwrite existing environment variables.
 
 ## Environment Variables
 

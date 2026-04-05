@@ -1,7 +1,7 @@
 # 3DTilesLink
 
-A .NET toolset that fetches Google Photorealistic 3D Tiles around a specified area and visualizes them non-persistently through Resonite Link.
-It includes both single-shot CLI mode (`ThreeDTilesLink.Cli`) and resident interactive mode (`ThreeDTilesLink.Interactive`).
+A .NET tool that fetches Google Photorealistic 3D Tiles around a specified area and visualizes them non-persistently through Resonite Link.
+It provides subcommand-based entry points for single-shot streaming and resident interactive mode.
 
 This `README.md` is the human-facing entry point. Current operational details and AI-oriented procedures are kept separately under `docs/`.
 
@@ -17,13 +17,13 @@ This `README.md` is the human-facing entry point. Current operational details an
 
 - `.NET SDK 10.0+`
 - Google APIs required by feature
-  - 3D Tiles fetch (`ThreeDTilesLink.Cli`, `ThreeDTilesLink.Interactive` tile streaming): Google Map Tiles API
+  - 3D Tiles fetch (`stream`, `interactive` tile streaming): Google Map Tiles API
     - Use `GOOGLE_MAPS_API_KEY`
   - Free-text location search in Interactive (`World/ThreeDTilesLink.Search`): Google Geocoding API
     - Use `GOOGLE_MAPS_API_KEY`
 - Enable Resonite Link in Resonite and confirm the destination port
 
-At startup, the CLI automatically loads `.env` with parent-directory discovery and does not overwrite existing environment variables.
+At startup, the app automatically loads `.env` with parent-directory discovery and does not overwrite existing environment variables.
 
 ## Build
 
@@ -37,12 +37,12 @@ dotnet build ThreeDTilesLink.slnx
 dotnet test ThreeDTilesLink.slnx
 ```
 
-## Usage (CLI)
+## Usage (`stream`)
 
 Required Google API: Google Map Tiles API
 
 ```bash
-dotnet run --project src/ThreeDTilesLink.Cli -- \
+dotnet run --project src/ThreeDTilesLink -- stream \
   --latitude 35.65858 \
   --longitude 139.745433 \
   --range 400 \
@@ -54,9 +54,9 @@ dotnet run --project src/ThreeDTilesLink.Cli -- \
 - `--content-workers` controls bounded fetch/decode parallelism. Default is `8`.
 - If `--resonite-host` is omitted, `localhost` is used.
 - If `--height-offset` is omitted, `0` is used.
-- Run `dotnet run --project src/ThreeDTilesLink.Cli -- --help` for units and defaults.
+- Run `dotnet run --project src/ThreeDTilesLink -- stream --help` for units and defaults.
 
-## Usage (Interactive / Resident)
+## Usage (`interactive`)
 
 Required Google APIs by operation:
 
@@ -77,7 +77,7 @@ If `Search` is updated to a non-empty string, the app resolves it with the Googl
 If probe `Range` is `0` or less, no streaming run is started.
 
 ```bash
-dotnet run --project src/ThreeDTilesLink.Interactive -- \
+dotnet run --project src/ThreeDTilesLink -- interactive \
   --resonite-port 12000 \
   --poll-interval 250 \
   --debounce 800 \
@@ -86,7 +86,7 @@ dotnet run --project src/ThreeDTilesLink.Interactive -- \
   --probe-name "3DTilesLink Probe"
 ```
 
-Run `dotnet run --project src/ThreeDTilesLink.Interactive -- --help` for units and defaults.
+Run `dotnet run --project src/ThreeDTilesLink -- interactive --help` for units and defaults.
 
 - `--content-workers` controls bounded fetch/decode parallelism per run. Default is `8`.
 - If `--resonite-host` is omitted, `localhost` is used.

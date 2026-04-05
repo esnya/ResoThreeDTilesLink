@@ -10,11 +10,11 @@
 - タグなしコミットのビルドはプレリリース扱いにし、正式版とは区別する
 - 認証は `GOOGLE_MAPS_API_KEY` の API キーを使う
 - 機能ごとの必要 API は次の通り
-- CLI のタイル取得: Google Map Tiles API
-- Interactive の `Latitude` / `Longitude` / `Range` ベースのタイル取得: Google Map Tiles API
-- Interactive の自由検索 (`World/... .Search`): Google Geocoding API
-- Interactive の自由検索は `GOOGLE_MAPS_API_KEY` が必要
-- CLI は `.env` を上位ディレクトリ探索付きで自動ロードし、既存の環境変数は上書きしない
+- `stream` のタイル取得: Google Map Tiles API
+- `interactive` の `Latitude` / `Longitude` / `Range` ベースのタイル取得: Google Map Tiles API
+- `interactive` の自由検索 (`World/... .Search`): Google Geocoding API
+- `interactive` の自由検索は `GOOGLE_MAPS_API_KEY` が必要で、ADC では扱わない
+- アプリは `.env` を上位ディレクトリ探索付きで自動ロードし、既存の環境変数は上書きしない
 
 ## 環境変数
 
