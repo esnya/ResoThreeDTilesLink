@@ -186,8 +186,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             IReadOnlyCollection<RetainedTileState> planningVisibleTiles = GetPlanningVisibleTiles(facts, writerState);
             HashSet<string> candidateStableIds = GetCandidateStableIds(facts, planningVisibleTiles);
             Dictionary<string, List<string>> childrenByParent = BuildChildrenByParent(facts);
-            HashSet<string> ancestorsWithVisibleDescendants = BuildAncestorsWithVisibleDescendants(planningVisibleTiles);
-            var hasPreparedDescendantMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
+            var branchHasCandidatesMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
+            var subtreeCoveredMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
             var desired = new HashSet<string>(StringComparer.Ordinal);
 
             foreach (string stableId in candidateStableIds)
@@ -202,12 +202,14 @@ namespace ThreeDTilesLink.Core.Pipeline
                     continue;
                 }
 
-                if (ancestorsWithVisibleDescendants.Contains(stableId))
-                {
-                    continue;
-                }
-
-                if (HasPreparedDescendant(stableId, facts, childrenByParent, candidateStableIds, hasPreparedDescendantMemo))
+                if (CanHideBehindCoveredChildren(
+                        stableId,
+                        facts,
+                        writerState,
+                        childrenByParent,
+                        candidateStableIds,
+                        branchHasCandidatesMemo,
+                        subtreeCoveredMemo))
                 {
                     continue;
                 }
@@ -763,6 +765,136 @@ namespace ThreeDTilesLink.Core.Pipeline
             return false;
         }
 
+        private static bool CanHideBehindCoveredChildren(
+            string stableId,
+            DiscoveryFacts facts,
+            WriterState writerState,
+            Dictionary<string, List<string>> childrenByParent,
+            IReadOnlySet<string> candidateStableIds,
+            Dictionary<string, bool> branchHasCandidatesMemo,
+            Dictionary<string, bool> subtreeCoveredMemo)
+        {
+            if (!childrenByParent.TryGetValue(stableId, out List<string>? children))
+            {
+                return false;
+            }
+
+            bool hasRelevantChild = false;
+            foreach (string childId in children)
+            {
+                if (!BranchHasCandidate(childId, childrenByParent, candidateStableIds, branchHasCandidatesMemo))
+                {
+                    continue;
+                }
+
+                hasRelevantChild = true;
+                if (!IsSubtreeCovered(
+                        childId,
+                        facts,
+                        writerState,
+                        childrenByParent,
+                        candidateStableIds,
+                        branchHasCandidatesMemo,
+                        subtreeCoveredMemo))
+                {
+                    return false;
+                }
+            }
+
+            return hasRelevantChild;
+        }
+
+        private static bool BranchHasCandidate(
+            string stableId,
+            Dictionary<string, List<string>> childrenByParent,
+            IReadOnlySet<string> candidateStableIds,
+            Dictionary<string, bool> memo)
+        {
+            if (memo.TryGetValue(stableId, out bool cached))
+            {
+                return cached;
+            }
+
+            if (candidateStableIds.Contains(stableId))
+            {
+                memo[stableId] = true;
+                return true;
+            }
+
+            if (!childrenByParent.TryGetValue(stableId, out List<string>? children))
+            {
+                memo[stableId] = false;
+                return false;
+            }
+
+            foreach (string childId in children)
+            {
+                if (BranchHasCandidate(childId, childrenByParent, candidateStableIds, memo))
+                {
+                    memo[stableId] = true;
+                    return true;
+                }
+            }
+
+            memo[stableId] = false;
+            return false;
+        }
+
+        private static bool IsSubtreeCovered(
+            string stableId,
+            DiscoveryFacts facts,
+            WriterState writerState,
+            Dictionary<string, List<string>> childrenByParent,
+            IReadOnlySet<string> candidateStableIds,
+            Dictionary<string, bool> branchHasCandidatesMemo,
+            Dictionary<string, bool> memo)
+        {
+            if (memo.TryGetValue(stableId, out bool cached))
+            {
+                return cached;
+            }
+
+            if (facts.Branches.TryGetValue(stableId, out TileBranchFact? fact) &&
+                candidateStableIds.Contains(stableId) &&
+                IsRenderableAvailable(fact, writerState))
+            {
+                memo[stableId] = true;
+                return true;
+            }
+
+            if (!childrenByParent.TryGetValue(stableId, out List<string>? children))
+            {
+                memo[stableId] = false;
+                return false;
+            }
+
+            bool hasRelevantChild = false;
+            foreach (string childId in children)
+            {
+                if (!BranchHasCandidate(childId, childrenByParent, candidateStableIds, branchHasCandidatesMemo))
+                {
+                    continue;
+                }
+
+                hasRelevantChild = true;
+                if (!IsSubtreeCovered(
+                        childId,
+                        facts,
+                        writerState,
+                        childrenByParent,
+                        candidateStableIds,
+                        branchHasCandidatesMemo,
+                        memo))
+                {
+                    memo[stableId] = false;
+                    return false;
+                }
+            }
+
+            memo[stableId] = hasRelevantChild;
+            return hasRelevantChild;
+        }
+
         private static bool IsRenderableAvailable(TileBranchFact fact, WriterState writerState)
         {
             return writerState.VisibleTiles.ContainsKey(fact.Tile.StableId!) ||
@@ -790,11 +922,9 @@ namespace ThreeDTilesLink.Core.Pipeline
             HashSet<string> visibleStableIds = planningVisibleTiles
                 .Select(static tile => tile.StableId)
                 .ToHashSet(StringComparer.Ordinal);
-            HashSet<string> ancestorsWithVisibleDescendants = BuildAncestorsWithVisibleDescendants(planningVisibleTiles);
 
             IEnumerable<TileBranchFact> prioritized = facts.Branches.Values
                 .Where(static fact => fact.Tile.ContentKind == TileContentKind.Glb)
-                .Where(fact => !ancestorsWithVisibleDescendants.Contains(fact.Tile.StableId!))
                 .OrderByDescending(static fact => fact.Tile.Depth)
                 .ThenBy(static fact => fact.Tile.HorizontalSpanM ?? double.MaxValue)
                 .ThenBy(static fact => fact.Tile.TileId, StringComparer.Ordinal);

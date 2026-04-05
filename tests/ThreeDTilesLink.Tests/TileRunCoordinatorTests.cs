@@ -895,6 +895,53 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task Run_Bootstrap_KeepsCoarseCoverage_UntilSiblingChildrenStream()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 1200d),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "c0",
+                                ContentUri = new Uri("https://example.com/c0.glb"),
+                                BoundingVolume = CreateBox(-150d, 0d, 0d, 180d)
+                            },
+                            new Tile
+                            {
+                                Id = "c1",
+                                ContentUri = new Uri("https://example.com/c1.glb"),
+                                BoundingVolume = CreateBox(150d, 0d, 0d, 180d)
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+
+            RunSummary summary = await coordinator.RunAsync(
+                CreateRequest(dryRun: false, maxDepth: 16, bootstrapRangeMultiplier: 0.5d),
+                CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(3);
+            _ = client.Payloads.Should().HaveCount(3);
+            _ = client.Payloads[0].Name.Should().Contain("tile_p_");
+            _ = client.Payloads[1].Name.Should().Contain("tile_c");
+            _ = client.Payloads[2].Name.Should().Contain("tile_c");
+            _ = client.RemovedSlotIds.Should().ContainSingle(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+        }
+
+        [Fact]
         public async Task Run_DeferredCoarseTile_FallbackStreamsParent_WhenNoChildBranchSelected()
         {
             var tileset = new Tileset(new Tile
