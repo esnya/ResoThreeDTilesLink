@@ -267,6 +267,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                     result.Longitude);
                 return result;
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to resolve search query: {Query}", searchText);

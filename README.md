@@ -57,12 +57,14 @@ Required Google APIs by operation:
 - Tile streaming from `Latitude` / `Longitude` / `Range`: Google Map Tiles API
 - Free-text search from `Search`: Google Geocoding API
 
-At connection time, the app creates a probe slot and watches `DynamicValueVariable<T>` values under:
+At connection time, the app attaches probe `DynamicValueVariable<T>` values to the session root and watches:
 
 - `World/ThreeDTilesLink.Latitude`
 - `World/ThreeDTilesLink.Longitude`
 - `World/ThreeDTilesLink.Range`
 - `World/ThreeDTilesLink.Search`
+
+For external observation, the `World/` paths are treated as aliases exposed through `DynamicField`. The underlying writable values remain session-root DV members.
 
 Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and old run slots are removed.
 If `Search` is updated to a non-empty string, the app resolves it with the Google Geocoding API and writes the resulting coordinates back into `Latitude` / `Longitude`.

@@ -27,8 +27,8 @@
 - 確認には `tools/ResoniteInspect` と `tools/ResoniteProbe` を使う
 - WSL からの確認で制約がある場合は、必要に応じてホスト側コマンド実行も使う
 - live 環境によっては `SimpleAvatarProtection` が公開されていないことがある。その場合でも接続とメッシュ送信は継続できる前提で扱う
-- DV を追加するときは、対象の親スロットに専用 `DynamicVariableSpace` を置く構成を基本にする
-- 外から観測させる値は、上記とは別に `World/` プレフィックス付き `DynamicField` でも公開する二本立てを基本にする
+- Session root に付ける常設 DV は session root 直下に置く
+- `World/` プレフィックス付き `DynamicField` は外部観測用 alias として扱い、書き込み元の実体 DV とは分けて考える
 - Progress は親スロットに付けた `DynamicField` から `World/ThreeDTilesLink.Progress` へ `0.0..1.0` の float で公開する
 - 人間向けの進捗文字列は親スロットに付けた `DynamicField` から `World/ThreeDTilesLink.ProgressText` へ公開する
 

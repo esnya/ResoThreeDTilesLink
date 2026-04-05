@@ -1182,7 +1182,7 @@ namespace ThreeDTilesLink.Core.Resonite
 
             if (_connectionUri is null)
             {
-                throw new InvalidOperationException("ResoniteLink is not connected.");
+                throw new ResoniteLinkDisconnectedException();
             }
 
             await ReconnectTransportAsync(reason: null, cancellationToken).ConfigureAwait(false);
@@ -1191,14 +1191,14 @@ namespace ThreeDTilesLink.Core.Resonite
                 return _linkInterface;
             }
 
-            throw new InvalidOperationException("ResoniteLink is not connected.");
+            throw new ResoniteLinkDisconnectedException();
         }
 
         private async Task ReconnectTransportAsync(Exception? reason, CancellationToken cancellationToken)
         {
             if (_connectionUri is null)
             {
-                throw new InvalidOperationException("ResoniteLink is not connected.", reason);
+                throw new ResoniteLinkDisconnectedException(reason);
             }
 
             await _connectionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -1263,7 +1263,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 ObjectDisposedException => true,
                 WebSocketException => true,
                 ResoniteLinkNoResponseException => true,
-                InvalidOperationException { Message: "ResoniteLink is not connected." } => true,
+                ResoniteLinkDisconnectedException => true,
                 OperationCanceledException => false,
                 _ when exception.InnerException is not null => IsRecoverableTransportFailure(exception.InnerException),
                 _ => false

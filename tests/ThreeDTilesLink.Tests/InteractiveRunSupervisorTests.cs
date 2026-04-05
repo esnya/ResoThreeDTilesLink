@@ -5,6 +5,7 @@ using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
+using ThreeDTilesLink.Core.Resonite;
 
 namespace ThreeDTilesLink.Tests
 {
@@ -215,7 +216,7 @@ namespace ThreeDTilesLink.Tests
             var session = new FakeSession();
             var probeStore = new FakeProbeStore
             {
-                SearchReadException = new InvalidOperationException("ResoniteLink is not connected.")
+                SearchReadException = new ResoniteLinkDisconnectedException()
             };
             var supervisor = CreateSupervisor(
                 new FakeTileRunCoordinator(static _ => { }),
@@ -226,8 +227,30 @@ namespace ThreeDTilesLink.Tests
 
             Func<Task> act = () => supervisor.RunAsync(CreateRequest(apiKey: string.Empty), CancellationToken.None);
 
-            var assertion = await act.Should().ThrowAsync<InvalidOperationException>();
-            _ = assertion.WithMessage("ResoniteLink is not connected.");
+            _ = await act.Should().ThrowAsync<ResoniteLinkDisconnectedException>();
+            _ = session.DisconnectCalls.Should().Be(1);
+        }
+
+        [Fact]
+        public async Task RunAsync_PropagatesCancellation_WhenSearchResolutionIsCanceled()
+        {
+            var session = new FakeSession();
+            var probeStore = new FakeProbeStore
+            {
+                SearchValues = new Queue<string?>(["Asakusa", "Asakusa"]),
+                ProbeValues = new Queue<ProbeValues?>([null, null])
+            };
+            var cancellation = new OperationCanceledException("canceled");
+            var supervisor = CreateSupervisor(
+                new FakeTileRunCoordinator(static _ => { }),
+                session,
+                probeStore,
+                new FakeSearchResolver(exception: cancellation),
+                new FakeClock());
+
+            Func<Task> act = () => supervisor.RunAsync(CreateRequest(apiKey: "key"), CancellationToken.None);
+
+            _ = await act.Should().ThrowAsync<OperationCanceledException>();
             _ = session.DisconnectCalls.Should().Be(1);
         }
 
@@ -412,12 +435,18 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
-        private sealed class FakeSearchResolver(LocationSearchResult? result = null) : ISearchResolver
+        private sealed class FakeSearchResolver(LocationSearchResult? result = null, Exception? exception = null) : ISearchResolver
         {
             private readonly LocationSearchResult? _result = result ?? new LocationSearchResult("resolved", 35d, 139d);
+            private readonly Exception? _exception = exception;
 
             public Task<LocationSearchResult?> SearchAsync(string apiKey, string query, CancellationToken cancellationToken)
             {
+                if (_exception is not null)
+                {
+                    return Task.FromException<LocationSearchResult?>(_exception);
+                }
+
                 return Task.FromResult(_result);
             }
         }
