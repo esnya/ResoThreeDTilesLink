@@ -61,6 +61,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             ? new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             : new Dictionary<string, RetainedTileState>(initialVisibleTiles, StringComparer.Ordinal);
 
+        public HashSet<string> FailedRemovalStableIds { get; } = new(StringComparer.Ordinal);
+
         public string? InFlightSendStableId { get; set; }
 
         public string? InFlightRemoveStableId { get; set; }
@@ -130,6 +132,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         string TileId,
         bool Succeeded,
         int FailedSlotCount,
+        IReadOnlyList<string> RemainingSlotIds,
         Exception? Error = null)
         : WriterCompletion;
 
@@ -235,9 +238,18 @@ namespace ThreeDTilesLink.Core.Pipeline
             List<DiscoveryWorkItem> planned = [];
 
             foreach (TileBranchFact fact in facts.Branches.Values
-                         .OrderByDescending(static branch => branch.Tile.Depth)
-                         .ThenBy(static branch => branch.Tile.HorizontalSpanM ?? double.MaxValue)
-                         .ThenBy(static branch => branch.Tile.TileId, StringComparer.Ordinal))
+                         .Select(branch => new
+                         {
+                             Fact = branch,
+                             HasVisibleAncestor = HasVisibleAncestor(facts, writerState, branch.Tile.ParentStableId),
+                             NeedsCoverage = !HasVisibleAncestor(facts, writerState, branch.Tile.ParentStableId) &&
+                                 ShouldPrioritizeCoverage(facts.Request, branch.Tile)
+                         })
+                         .OrderBy(static entry => entry.NeedsCoverage ? 0 : 1)
+                         .ThenBy(entry => entry.NeedsCoverage ? entry.Fact.Tile.Depth : -entry.Fact.Tile.Depth)
+                         .ThenBy(static entry => entry.Fact.Tile.HorizontalSpanM ?? double.MaxValue)
+                         .ThenBy(static entry => entry.Fact.Tile.TileId, StringComparer.Ordinal)
+                         .Select(static entry => entry.Fact))
             {
                 if (planned.Count >= availableSlots)
                 {
@@ -305,6 +317,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             RetainedTileState? removal = writerState.VisibleTiles.Values
                 .Where(tile => desiredView.SelectedStableIds.Contains(tile.StableId))
                 .Where(tile => !desiredView.StableIds.Contains(tile.StableId))
+                .Where(tile => !writerState.FailedRemovalStableIds.Contains(tile.StableId))
                 .Where(tile => HasVisibleDescendant(tile.StableId, writerState.VisibleTiles.Values))
                 .OrderBy(tile => facts.Branches.TryGetValue(tile.StableId, out TileBranchFact? fact) ? fact.Tile.Depth : int.MaxValue)
                 .ThenBy(tile => tile.TileId, StringComparer.Ordinal)
@@ -313,6 +326,23 @@ namespace ThreeDTilesLink.Core.Pipeline
             if (removal is not null)
             {
                 return new RemoveTileWriterCommand(removal.StableId, removal.TileId, removal.SlotIds);
+            }
+
+            TileBranchFact? coverageFact = facts.Branches.Values
+                .Where(static fact => fact.Tile.ContentKind == TileContentKind.Glb)
+                .Where(fact => desiredView.CandidateStableIds.Contains(fact.Tile.StableId!))
+                .Where(fact => !writerState.VisibleTiles.ContainsKey(fact.Tile.StableId!))
+                .Where(fact => fact.PreparedContent is not null &&
+                               fact.PrepareStatus == ContentDiscoveryStatus.Ready)
+                .Where(fact => !HasVisibleAncestor(facts, writerState, fact.Tile.ParentStableId))
+                .Where(fact => ShouldPrioritizeCoverage(facts.Request, fact.Tile))
+                .OrderBy(static fact => fact.Tile.Depth)
+                .ThenBy(static fact => fact.PreparedOrder)
+                .FirstOrDefault();
+
+            if (coverageFact?.PreparedContent is not null)
+            {
+                return new SendTileWriterCommand(coverageFact.PreparedContent);
             }
 
             TileBranchFact? sendFact = desiredView.StableIds
@@ -461,12 +491,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                         failedTiles++;
                         if (sent.SlotIds.Count == 0)
                         {
-                            fact.PrepareStatus = ContentDiscoveryStatus.Failed;
-                            fact.PreparedContent = null;
+                            fact.PrepareStatus = ContentDiscoveryStatus.Ready;
                         }
                     }
 
-                    // Partial sends are retained as-is for this run; missing meshes are not retried.
+                    // Partial sends are retained only when rollback failed; fully rolled back sends are retried.
                     if (sent.Succeeded || sent.SlotIds.Count > 0 || dryRun)
                     {
                         writerState.VisibleTiles[stableId] = new RetainedTileState(
@@ -491,27 +520,30 @@ namespace ThreeDTilesLink.Core.Pipeline
                     writerState.InFlightRemoveStableId = null;
                     if (removed.Succeeded)
                     {
+                        _ = writerState.FailedRemovalStableIds.Remove(removed.StableId);
                         _ = writerState.VisibleTiles.Remove(removed.StableId);
                     }
                     else
                     {
                         failedTiles += System.Math.Max(1, removed.FailedSlotCount);
+                        _ = writerState.FailedRemovalStableIds.Add(removed.StableId);
+                        if (removed.RemainingSlotIds.Count > 0 &&
+                            writerState.VisibleTiles.TryGetValue(removed.StableId, out RetainedTileState? visibleTile))
+                        {
+                            writerState.VisibleTiles[removed.StableId] = visibleTile with
+                            {
+                                SlotIds = removed.RemainingSlotIds
+                            };
+                        }
                     }
 
                     break;
 
                 case SyncSessionMetadataCompleted metadata:
                     writerState.MetadataInFlight = false;
-                    if (metadata.Succeeded)
-                    {
-                        writerState.AppliedLicenseCredit = metadata.LicenseCredit;
-                        writerState.AppliedProgressValue = metadata.ProgressValue;
-                        writerState.AppliedProgressText = metadata.ProgressText;
-                    }
-                    else
-                    {
-                        failedTiles++;
-                    }
+                    writerState.AppliedLicenseCredit = metadata.LicenseCredit;
+                    writerState.AppliedProgressValue = metadata.ProgressValue;
+                    writerState.AppliedProgressText = metadata.ProgressText;
 
                     break;
             }
@@ -544,7 +576,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             HashSet<string> actualVisible = writerState.VisibleTiles.Keys
                 .Where(desiredView.SelectedStableIds.Contains)
                 .ToHashSet(StringComparer.Ordinal);
-            if (!actualVisible.SetEquals(desiredView.StableIds))
+            HashSet<string> expectedVisible = desiredView.StableIds
+                .Concat(writerState.FailedRemovalStableIds.Where(writerState.VisibleTiles.ContainsKey))
+                .ToHashSet(StringComparer.Ordinal);
+            if (!actualVisible.SetEquals(expectedVisible))
             {
                 return false;
             }
@@ -814,6 +849,40 @@ namespace ThreeDTilesLink.Core.Pipeline
             return false;
         }
 
+        private static bool HasVisibleAncestor(
+            DiscoveryFacts facts,
+            WriterState writerState,
+            string? parentStableId)
+        {
+            string? currentId = parentStableId;
+            while (!string.IsNullOrWhiteSpace(currentId))
+            {
+                if (writerState.VisibleTiles.ContainsKey(currentId))
+                {
+                    return true;
+                }
+
+                if (!facts.Branches.TryGetValue(currentId, out TileBranchFact? parent))
+                {
+                    return false;
+                }
+
+                currentId = parent.Tile.ParentStableId;
+            }
+
+            return false;
+        }
+
+        private static bool ShouldPrioritizeCoverage(TileRunRequest request, TileSelectionResult tile)
+        {
+            return tile.HasChildren &&
+                   tile.HorizontalSpanM is double span &&
+                   span > request.Traversal.RangeM *
+                   (request.Traversal.BootstrapRangeMultiplier > 0d
+                       ? request.Traversal.BootstrapRangeMultiplier
+                       : 4d);
+        }
+
         private static IReadOnlyList<string> GetAncestorStableIds(DiscoveryFacts facts, string? parentStableId)
         {
             var ancestors = new List<string>();
@@ -844,6 +913,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             int pendingRemove = writerState.VisibleTiles.Values.Count(tile =>
                 desiredView.SelectedStableIds.Contains(tile.StableId) &&
                 !desiredView.StableIds.Contains(tile.StableId) &&
+                !writerState.FailedRemovalStableIds.Contains(tile.StableId) &&
                 HasVisibleDescendant(tile.StableId, writerState.VisibleTiles.Values));
 
             int completedUnits = progress.ProcessedTiles;
