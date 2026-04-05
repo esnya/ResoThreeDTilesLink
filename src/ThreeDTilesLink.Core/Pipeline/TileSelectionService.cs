@@ -869,14 +869,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             int failedSlotCount = 0;
             Exception? firstError = null;
             var remainingSlotIds = new List<string>();
-            IReadOnlyList<string> immediateSlotIds = command.SlotIds;
 
-            if (interactiveContext is not null)
-            {
-                immediateSlotIds = interactiveContext.StageRetainedRemovals(command.TileId, command.SlotIds);
-            }
-
-            foreach (string slotId in immediateSlotIds)
+            foreach (string slotId in command.SlotIds)
             {
                 try
                 {
@@ -950,21 +944,6 @@ namespace ThreeDTilesLink.Core.Pipeline
             CancellationToken cancellationToken)
         {
             var failedRetainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal);
-
-            foreach (RetainedTileRemoval stagedRemoval in interactiveContext.GetStagedRetainedRemovals())
-            {
-                IReadOnlyList<string> failedSlotIds = await TryRemoveSlotsAsync(
-                    stagedRemoval.TileId,
-                    stagedRemoval.SlotIds,
-                    cancellationToken).ConfigureAwait(false);
-                if (failedSlotIds.Count > 0)
-                {
-                    failedRetainedTiles[stagedRemoval.StateId] = stagedRemoval.RetainedTile with
-                    {
-                        SlotIds = failedSlotIds
-                    };
-                }
-            }
 
             if (!interactiveContext.RemoveOutOfRangeTiles)
             {
@@ -1162,8 +1141,6 @@ namespace ThreeDTilesLink.Core.Pipeline
         private sealed class InteractiveExecutionContext
         {
             private readonly Dictionary<string, RetainedTileState> _retainedTiles = new(StringComparer.Ordinal);
-            private readonly Dictionary<string, string> _stableIdByRetainedSlotId = new(StringComparer.Ordinal);
-            private readonly Dictionary<string, RetainedTileRemoval> _stagedRetainedRemovals = new(StringComparer.Ordinal);
             private readonly HashSet<string> _newSlotIds = new(StringComparer.Ordinal);
 
             public InteractiveExecutionContext(
@@ -1174,10 +1151,6 @@ namespace ThreeDTilesLink.Core.Pipeline
                 foreach ((string stableId, RetainedTileState retainedTile) in retainedTiles)
                 {
                     _retainedTiles[stableId] = retainedTile;
-                    foreach (string slotId in retainedTile.SlotIds)
-                    {
-                        _stableIdByRetainedSlotId[slotId] = stableId;
-                    }
                 }
             }
 
@@ -1211,57 +1184,6 @@ namespace ThreeDTilesLink.Core.Pipeline
             public string[] GetNewSlotIds()
             {
                 return [.. _newSlotIds];
-            }
-
-            public string[] StageRetainedRemovals(string tileId, IReadOnlyList<string> slotIds)
-            {
-                var immediateSlotIds = new List<string>(slotIds.Count);
-
-                foreach (string slotId in slotIds)
-                {
-                    if (!_stableIdByRetainedSlotId.TryGetValue(slotId, out string? stableId) ||
-                        !_retainedTiles.TryGetValue(stableId, out RetainedTileState? retainedTile))
-                    {
-                        immediateSlotIds.Add(slotId);
-                        continue;
-                    }
-
-                    if (!_stagedRetainedRemovals.TryGetValue(stableId, out RetainedTileRemoval? removal))
-                    {
-                        removal = new RetainedTileRemoval(stableId, tileId, retainedTile);
-                        _stagedRetainedRemovals[stableId] = removal;
-                    }
-
-                    removal.AddSlot(slotId);
-                }
-
-                return [.. immediateSlotIds];
-            }
-
-            public RetainedTileRemoval[] GetStagedRetainedRemovals()
-            {
-                return [.. _stagedRetainedRemovals.Values];
-            }
-        }
-
-        private sealed class RetainedTileRemoval(string stateId, string tileId, RetainedTileState retainedTile)
-        {
-            private readonly HashSet<string> _slotIds = new(StringComparer.Ordinal);
-
-            public string StateId { get; } = stateId;
-
-            public string TileId { get; } = tileId;
-
-            public RetainedTileState RetainedTile { get; } = retainedTile;
-
-            public IReadOnlyList<string> SlotIds => _slotIds.ToArray();
-
-            public void AddSlot(string slotId)
-            {
-                if (!string.IsNullOrWhiteSpace(slotId))
-                {
-                    _ = _slotIds.Add(slotId);
-                }
             }
         }
     }

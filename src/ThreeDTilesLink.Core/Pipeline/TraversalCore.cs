@@ -174,6 +174,11 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             PlanningTree tree = BuildPlanningTree(facts, writerState);
             DateTimeOffset currentTime = now ?? DateTimeOffset.UtcNow;
+            HashSet<string> candidateStableIds = desiredView.CandidateStableIds is HashSet<string> hashSet
+                ? hashSet
+                : desiredView.CandidateStableIds.ToHashSet(StringComparer.Ordinal);
+            var branchHasCandidatesMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
+            var replacementReadyAtMemo = new Dictionary<string, DateTimeOffset?>(StringComparer.Ordinal);
 
             if (writerState.InFlightSendStableId is not null ||
                 writerState.InFlightRemoveStableId is not null ||
@@ -189,11 +194,16 @@ namespace ThreeDTilesLink.Core.Pipeline
                     .Where(tile => desiredView.SelectedStableIds.Contains(tile.StableId))
                     .Where(tile => !desiredView.StableIds.Contains(tile.StableId))
                     .Where(tile => !writerState.FailedRemovalStableIds.Contains(tile.StableId))
-                    .Where(tile => HasVisibleDescendant(tile.StableId, writerState.VisibleTiles.Values))
                     .Select(tile => new
                     {
                         Tile = tile,
-                        ReadyAt = GetReplacementReadyAt(tile.StableId, writerState)
+                        ReadyAt = GetReplacementReadyAt(
+                            tile.StableId,
+                            tree,
+                            writerState,
+                            candidateStableIds,
+                            branchHasCandidatesMemo,
+                            replacementReadyAtMemo)
                     })
                     .Where(entry => entry.ReadyAt is not null)
                     .Select(entry =>
@@ -998,19 +1008,6 @@ namespace ThreeDTilesLink.Core.Pipeline
             return ancestors;
         }
 
-        private static bool HasVisibleDescendant(string stableId, IEnumerable<RetainedTileState> visibleTiles)
-        {
-            foreach (RetainedTileState tile in visibleTiles)
-            {
-                if (tile.AncestorStableIds.Contains(stableId, StringComparer.Ordinal))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
         private static bool HasVisibleAncestor(PlanningNode? parent, IReadOnlySet<string> visibleStableIds)
         {
             PlanningNode? current = parent;
@@ -1043,30 +1040,145 @@ namespace ThreeDTilesLink.Core.Pipeline
             return int.MaxValue;
         }
 
-        private static DateTimeOffset? GetReplacementReadyAt(string stableId, WriterState writerState)
+        private static int CountPendingRemovals(
+            DiscoveryFacts facts,
+            WriterState writerState,
+            DesiredView desiredView)
         {
-            DateTimeOffset? earliest = null;
-            foreach (RetainedTileState tile in writerState.VisibleTiles.Values)
+            PlanningTree tree = BuildPlanningTree(facts, writerState);
+            HashSet<string> candidateStableIds = desiredView.CandidateStableIds is HashSet<string> hashSet
+                ? hashSet
+                : desiredView.CandidateStableIds.ToHashSet(StringComparer.Ordinal);
+            var branchHasCandidatesMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
+            var replacementReadyAtMemo = new Dictionary<string, DateTimeOffset?>(StringComparer.Ordinal);
+
+            return writerState.VisibleTiles.Values.Count(tile =>
+                desiredView.SelectedStableIds.Contains(tile.StableId) &&
+                !desiredView.StableIds.Contains(tile.StableId) &&
+                !writerState.FailedRemovalStableIds.Contains(tile.StableId) &&
+                GetReplacementReadyAt(
+                    tile.StableId,
+                    tree,
+                    writerState,
+                    candidateStableIds,
+                    branchHasCandidatesMemo,
+                    replacementReadyAtMemo) is not null);
+        }
+
+        private static DateTimeOffset? GetReplacementReadyAt(
+            string stableId,
+            PlanningTree tree,
+            WriterState writerState,
+            HashSet<string> candidateStableIds,
+            Dictionary<string, bool> branchHasCandidatesMemo,
+            Dictionary<string, DateTimeOffset?> memo)
+        {
+            if (!tree.Nodes.TryGetValue(stableId, out PlanningNode? node) ||
+                node.Children.Count == 0)
             {
-                if (!tile.AncestorStableIds.Contains(stableId, StringComparer.Ordinal))
+                return null;
+            }
+
+            DateTimeOffset? latest = null;
+            bool hasRelevantChild = false;
+
+            foreach (PlanningNode child in node.Children)
+            {
+                if (!BranchHasCandidate(child, candidateStableIds, branchHasCandidatesMemo))
                 {
                     continue;
                 }
 
-                DateTimeOffset visibleSince = writerState.VisibleSinceByStableId.TryGetValue(tile.StableId, out DateTimeOffset timestamp)
-                    ? timestamp
-                    : DateTimeOffset.MinValue;
-                DateTimeOffset readyAt = visibleSince == DateTimeOffset.MinValue
-                    ? DateTimeOffset.MinValue
-                    : visibleSince + VisibleReplacementGrace;
-
-                if (earliest is null || readyAt < earliest)
+                hasRelevantChild = true;
+                DateTimeOffset? childReadyAt = GetVisibleCoverageReadyAt(
+                    child,
+                    tree,
+                    writerState,
+                    candidateStableIds,
+                    branchHasCandidatesMemo,
+                    memo);
+                if (childReadyAt is null)
                 {
-                    earliest = readyAt;
+                    return null;
+                }
+
+                if (latest is null || childReadyAt > latest)
+                {
+                    latest = childReadyAt;
                 }
             }
 
-            return earliest;
+            return hasRelevantChild ? latest : null;
+        }
+
+        private static DateTimeOffset? GetVisibleCoverageReadyAt(
+            PlanningNode node,
+            PlanningTree tree,
+            WriterState writerState,
+            HashSet<string> candidateStableIds,
+            Dictionary<string, bool> branchHasCandidatesMemo,
+            Dictionary<string, DateTimeOffset?> memo)
+        {
+            if (memo.TryGetValue(node.StableId, out DateTimeOffset? cached))
+            {
+                return cached;
+            }
+
+            if (tree.PlanningVisibleStableIds.Contains(node.StableId))
+            {
+                DateTimeOffset readyAt = GetVisibleReadyAt(node.StableId, writerState);
+                memo[node.StableId] = readyAt;
+                return readyAt;
+            }
+
+            if (node.Children.Count == 0)
+            {
+                memo[node.StableId] = null;
+                return null;
+            }
+
+            DateTimeOffset? latest = null;
+            bool hasRelevantChild = false;
+
+            foreach (PlanningNode child in node.Children)
+            {
+                if (!BranchHasCandidate(child, candidateStableIds, branchHasCandidatesMemo))
+                {
+                    continue;
+                }
+
+                hasRelevantChild = true;
+                DateTimeOffset? childReadyAt = GetVisibleCoverageReadyAt(
+                    child,
+                    tree,
+                    writerState,
+                    candidateStableIds,
+                    branchHasCandidatesMemo,
+                    memo);
+                if (childReadyAt is null)
+                {
+                    memo[node.StableId] = null;
+                    return null;
+                }
+
+                if (latest is null || childReadyAt > latest)
+                {
+                    latest = childReadyAt;
+                }
+            }
+
+            memo[node.StableId] = hasRelevantChild ? latest : null;
+            return memo[node.StableId];
+        }
+
+        private static DateTimeOffset GetVisibleReadyAt(string stableId, WriterState writerState)
+        {
+            DateTimeOffset visibleSince = writerState.VisibleSinceByStableId.TryGetValue(stableId, out DateTimeOffset timestamp)
+                ? timestamp
+                : DateTimeOffset.MinValue;
+            return visibleSince == DateTimeOffset.MinValue
+                ? DateTimeOffset.MinValue
+                : visibleSince + VisibleReplacementGrace;
         }
 
         private static bool ShouldPrioritizeCoverage(TileRunRequest request, TileSelectionResult tile)
@@ -1106,11 +1218,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 (fact.Tile.ContentKind == TileContentKind.Glb && desiredView.CandidateStableIds.Contains(fact.Tile.StableId!) &&
                  fact.PrepareStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight));
             int pendingSend = desiredView.StableIds.Count(stableId => !writerState.VisibleTiles.ContainsKey(stableId));
-            int pendingRemove = writerState.VisibleTiles.Values.Count(tile =>
-                desiredView.SelectedStableIds.Contains(tile.StableId) &&
-                !desiredView.StableIds.Contains(tile.StableId) &&
-                !writerState.FailedRemovalStableIds.Contains(tile.StableId) &&
-                HasVisibleDescendant(tile.StableId, writerState.VisibleTiles.Values));
+            int pendingRemove = CountPendingRemovals(facts, writerState, desiredView);
 
             int completedUnits = progress.ProcessedTiles;
             int pendingUnits = pendingDiscovery + pendingSend + pendingRemove +
