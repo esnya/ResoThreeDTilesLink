@@ -1249,16 +1249,23 @@ namespace ThreeDTilesLink.Core.Pipeline
                 (fact.Tile.ContentKind == TileContentKind.Json && fact.NestedStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight) ||
                 (fact.Tile.ContentKind == TileContentKind.Glb && desiredView.CandidateStableIds.Contains(fact.Tile.StableId!) &&
                  fact.PrepareStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight));
+            int pendingPrepared = facts.Branches.Values.Count(fact =>
+                fact.Tile.ContentKind == TileContentKind.Glb &&
+                desiredView.CandidateStableIds.Contains(fact.Tile.StableId!) &&
+                fact.PreparedContent is not null &&
+                fact.PrepareStatus == ContentDiscoveryStatus.Ready &&
+                !writerState.VisibleTiles.ContainsKey(fact.Tile.StableId!));
             int pendingSend = desiredView.StableIds.Count(stableId => !writerState.VisibleTiles.ContainsKey(stableId));
             int pendingRemove = CountPendingRemovals(facts, writerState, desiredView);
 
             int completedUnits = progress.ProcessedTiles;
-            int pendingUnits = pendingDiscovery + pendingSend + pendingRemove +
+            int pendingUnits = pendingDiscovery + pendingPrepared + pendingSend + pendingRemove +
                 (writerState.InFlightSendStableId is null ? 0 : 1) +
                 (writerState.InFlightRemoveStableId is null ? 0 : 1) +
                 (writerState.MetadataInFlight ? 1 : 0);
-            int totalUnits = completedUnits + pendingUnits;
-            float progressValue = totalUnits == 0
+            int candidateBacklog = System.Math.Max(0, progress.CandidateTiles - completedUnits);
+            int totalUnits = completedUnits + pendingUnits + candidateBacklog;
+            float progressValue = pendingUnits == 0 || totalUnits == 0
                 ? 1f
                 : System.Math.Clamp((float)completedUnits / totalUnits, 0f, 1f);
             string progressText = pendingUnits == 0

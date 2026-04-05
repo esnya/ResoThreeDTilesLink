@@ -523,6 +523,68 @@ namespace ThreeDTilesLink.Tests
             _ = desired.StableIds.Should().ContainSingle().Which.Should().Be(StableId("j", "leaf"));
         }
 
+        [Fact]
+        public void PlanWriterCommand_MetadataProgress_UsesCandidateTilesAsConservativeBacklog()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p", "https://example.com/p.glb", depth: 0, parentTileId: null, hasChildren: true, span: 120d)
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new();
+
+            DesiredView desired = core.ComputeDesiredView(facts, writerState);
+            WriterCommand? command = core.PlanWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(5, 2, 0, 0),
+                dryRun: false);
+
+            SyncSessionMetadataWriterCommand metadata = command.Should().BeOfType<SyncSessionMetadataWriterCommand>().Subject;
+            _ = metadata.ProgressValue.Should().BeApproximately(2f / 6f, 0.0001f);
+            _ = metadata.ProgressText.Should().StartWith("Running:");
+        }
+
+        [Fact]
+        public void PlanWriterCommand_MetadataProgress_CountsPreparedButNotVisibleCandidatesInDenominator()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p", "https://example.com/p.glb", depth: 0, parentTileId: null, hasChildren: true, span: 1200d),
+                CreateTile("c", "https://example.com/c.glb", depth: 1, parentTileId: "p", hasChildren: true, span: 240d),
+                CreateTile("g", "https://example.com/g.glb", depth: 2, parentTileId: "c", hasChildren: false, span: 60d, stableId: StableId("g"), parentStableId: StableId("c"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent")
+            });
+            MarkPrepared(
+                facts,
+                "g",
+                CreatePreparedContent("g", parentTileId: "c", stableId: StableId("g"), parentStableId: StableId("c")),
+                order: 0,
+                stableId: StableId("g"));
+            writerState.AppliedLicenseCredit = "Google; Parent";
+            writerState.AppliedProgressValue = 0f;
+            writerState.AppliedProgressText = "stale";
+
+            DesiredView desired = core.ComputeDesiredView(facts, writerState);
+            WriterCommand? command = core.PlanWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(3, 3, 0, 0),
+                dryRun: false,
+                allowRemoval: false);
+
+            SyncSessionMetadataWriterCommand metadata = command.Should().BeOfType<SyncSessionMetadataWriterCommand>().Subject;
+            _ = metadata.ProgressValue.Should().BeApproximately(3f / 5f, 0.0001f);
+        }
+
         private static TraversalCore CreateCore(Func<string, IReadOnlyList<TileSelectionResult>> selectByPrefix)
         {
             return new TraversalCore(new FakeSelector(selectByPrefix));
