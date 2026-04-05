@@ -314,6 +314,40 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void PlanWriterCommand_RemovesVisibleParentOnceEachDirectChildBranchHasVisibleDescendant()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p", "https://example.com/p.glb", depth: 0, parentTileId: null, hasChildren: true, span: 120d),
+                CreateTile("c0", "https://example.com/c0.glb", depth: 1, parentTileId: "p", hasChildren: true, span: 60d),
+                CreateTile("c1", "https://example.com/c1.glb", depth: 1, parentTileId: "p", hasChildren: true, span: 60d),
+                CreateTile("g0", "https://example.com/g0.glb", depth: 2, parentTileId: "c0", hasChildren: false, span: 30d, stableId: StableId("g0"), parentStableId: StableId("c0")),
+                CreateTile("g1", "https://example.com/g1.glb", depth: 2, parentTileId: "c1", hasChildren: false, span: 30d, stableId: StableId("g1"), parentStableId: StableId("c1"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent"),
+                [StableId("g0")] = new(StableId("g0"), "g0", StableId("c0"), [StableId("p"), StableId("c0")], ["slot_g0"], "Google; Grandchild 0"),
+                [StableId("g1")] = new(StableId("g1"), "g1", StableId("c1"), [StableId("p"), StableId("c1")], ["slot_g1"], "Google; Grandchild 1")
+            });
+
+            DesiredView desired = core.ComputeDesiredView(facts, writerState);
+            WriterCommand? writerCommand = core.PlanWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(5, 3, 3, 0),
+                dryRun: false);
+
+            _ = desired.StableIds.Should().Contain([StableId("g0"), StableId("g1")]);
+            _ = desired.StableIds.Should().NotContain(StableId("p"));
+            _ = writerCommand.Should().BeOfType<RemoveTileWriterCommand>()
+                .Which.StableId.Should().Be(StableId("p"));
+        }
+
+        [Fact]
         public void PlanWriterCommand_RemovesVisibleParentOnceDirectChildBranchesAreVisible()
         {
             TraversalCore core = CreateCore(_ =>

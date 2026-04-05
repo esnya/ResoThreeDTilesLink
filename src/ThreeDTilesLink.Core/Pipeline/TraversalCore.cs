@@ -833,6 +833,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return false;
             }
 
+            bool visibleParent = writerState.VisibleTiles.ContainsKey(stableId);
             bool hasRelevantChild = false;
             foreach (string childId in children)
             {
@@ -843,6 +844,22 @@ namespace ThreeDTilesLink.Core.Pipeline
                     childrenByParent,
                     requireVisible: false,
                     coverageMemo);
+                if (childCoverage != BranchCoverageState.Covered &&
+                    visibleParent)
+                {
+                    BranchCoverageState visibleDescendantCoverage = GetBranchCoverageState(
+                        childId,
+                        facts,
+                        writerState,
+                        childrenByParent,
+                        requireVisible: true,
+                        coverageMemo);
+                    if (visibleDescendantCoverage == BranchCoverageState.Covered)
+                    {
+                        childCoverage = BranchCoverageState.Covered;
+                    }
+                }
+
                 if (childCoverage == BranchCoverageState.NotApplicable)
                 {
                     continue;
@@ -918,7 +935,39 @@ namespace ThreeDTilesLink.Core.Pipeline
                 bool covered = requireVisible
                     ? writerState.VisibleTiles.ContainsKey(stableId)
                     : IsRenderableAvailable(fact, writerState);
-                return memo[(stableId, requireVisible)] = covered
+                if (covered)
+                {
+                    return memo[(stableId, requireVisible)] = BranchCoverageState.Covered;
+                }
+
+                if (!requireVisible || !childrenByParent.TryGetValue(stableId, out List<string>? renderableChildren))
+                {
+                    return memo[(stableId, requireVisible)] = BranchCoverageState.Uncovered;
+                }
+
+                bool hasCoveredSubtreeChild = false;
+                foreach (string childId in renderableChildren)
+                {
+                    BranchCoverageState childState = GetBranchCoverageState(
+                        childId,
+                        facts,
+                        writerState,
+                        childrenByParent,
+                        requireVisible,
+                        memo);
+                    if (childState == BranchCoverageState.NotApplicable)
+                    {
+                        continue;
+                    }
+
+                    hasCoveredSubtreeChild = true;
+                    if (childState != BranchCoverageState.Covered)
+                    {
+                        return memo[(stableId, requireVisible)] = BranchCoverageState.Uncovered;
+                    }
+                }
+
+                return memo[(stableId, requireVisible)] = hasCoveredSubtreeChild
                     ? BranchCoverageState.Covered
                     : BranchCoverageState.Uncovered;
             }
