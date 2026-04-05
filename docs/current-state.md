@@ -6,6 +6,8 @@
 
 - このプロジェクトは Google Photorealistic 3D Tiles を Resonite Link へ非永続に流し込む用途を前提にする
 - 永続保存、アセット化、設計資料の保守は目的にしない
+- 正式リリースのバージョン起点は `v1.2.3` 形式の `git tag` に統一する
+- タグなしコミットのビルドはプレリリース扱いにし、正式版とは区別する
 - 認証は `GOOGLE_MAPS_API_KEY` があれば API キーを優先し、なければ ADC を使う
 - 機能ごとの必要 API は次の通り
 - CLI のタイル取得: Google Map Tiles API
@@ -39,6 +41,7 @@
 - `dotnet` が `pwsh.exe` の `PATH` に見えない環境があるため、スクリプト側で `dotnet.exe` の既定パスも探す
 - Linux `dotnet` と Windows `dotnet.exe` を同じ checkout で混在させる前提があるため、`obj` はホスト OS ごとに分離して扱う
 - NuGet の restore メタデータにはホスト依存パスが入るため、`obj` を共有させる運用に戻さない
+- CI や検証環境で正しいバージョンを計算するには `git tag` 履歴が必要で、浅い checkout のままにしない
 - raw JSON 送信は `tools/ResoniteRawJson` を使う
 - WSL から `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost <port> -JsonFile <windows-path>` の形で呼ぶ
 - 例で使うポート番号はその時点の live な Resonite Link に合わせる。固定値として扱わない
