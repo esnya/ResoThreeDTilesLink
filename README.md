@@ -24,6 +24,7 @@ This `README.md` is the human-facing entry point. Current operational details an
 - Enable Resonite Link in Resonite and confirm the destination port
 
 At startup, the app automatically loads `.env` with parent-directory discovery and does not overwrite existing environment variables.
+Use `.env.example` as the starting template when creating a local `.env`.
 
 ## Build
 
