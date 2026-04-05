@@ -1074,7 +1074,7 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task Run_DeferredCoarseTile_FallbackStreamsParent_WhenNoChildBranchSelected()
+        public async Task Run_DeferredCoarseTile_DoesNotStreamParent_WhenNoChildBranchSelected()
         {
             var tileset = new Tileset(new Tile
             {
@@ -1104,9 +1104,8 @@ namespace ThreeDTilesLink.Tests
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxDepth: 16, bootstrapRangeMultiplier: 0.5d), CancellationToken.None);
 
-            _ = summary.StreamedMeshes.Should().Be(1);
-            _ = client.Payloads.Should().HaveCount(1);
-            _ = client.Payloads[0].Name.Should().Contain("tile_p_");
+            _ = summary.StreamedMeshes.Should().Be(0);
+            _ = client.Payloads.Should().BeEmpty();
         }
 
         [Fact]

@@ -27,62 +27,142 @@ namespace ThreeDTilesLink.Core.Tiles
             ArgumentNullException.ThrowIfNull(range);
             int selectionLimit = maxTiles <= 0 ? int.MaxValue : maxTiles;
             var selected = new List<TileSelectionResult>(capacity: SMath.Max(1, SMath.Min(selectionLimit, 4096)));
-            var queue = new Queue<(Tile Tile, Matrix4x4d ParentWorld, int Depth, string? ParentContentTileId, string? ParentContentStableId)>();
-            queue.Enqueue((tileset.Root, rootParentWorld, depthOffset, parentContentTileId, parentContentStableId));
 
-            while (queue.Count > 0 && selected.Count < selectionLimit)
-            {
-                (Tile? tile, Matrix4x4d parentWorld, int depth, string? parentContentId, string? parentContentStableKey) = queue.Dequeue();
-                Matrix4x4d local = tile.Transform is { Count: 16 }
-                    ? Matrix4x4d.FromCesiumColumnMajor(tile.Transform)
-                    : Matrix4x4d.Identity;
-                Matrix4x4d world = local * parentWorld;
-
-                if (!Intersects(tile.BoundingVolume, world, reference, range, out double? horizontalSpanM))
-                {
-                    continue;
-                }
-
-                if (tile.ContentUri is not null)
-                {
-                    string tileId = ComposeId(idPrefix, tile.Id);
-                    string stableId = ComposeStableId(idPrefix, tile.Id);
-                    bool hasChildren = tile.Children.Count > 0;
-                    TileContentKind kind = TileContentClassifier.Classify(tile.ContentUri);
-                    selected.Add(new TileSelectionResult(
-                        tileId,
-                        tile.ContentUri,
-                        world,
-                        depth,
-                        parentContentId,
-                        kind,
-                        hasChildren,
-                        horizontalSpanM,
-                        [],
-                        stableId,
-                        parentContentStableKey));
-                    parentContentId = tileId;
-                    parentContentStableKey = stableId;
-                    if (selected.Count >= selectionLimit)
-                    {
-                        break;
-                    }
-                }
-
-                if (depth >= maxDepth || ShouldStopDescendingByDetail(tile, detailTargetM, horizontalSpanM))
-                {
-                    continue;
-                }
-
-                // Breadth-first traversal: shallower tiles are discovered before deeper tiles.
-                for (int i = 0; i < tile.Children.Count; i++)
-                {
-                    queue.Enqueue((tile.Children[i], world, depth + 1, parentContentId, parentContentStableKey));
-                }
-            }
+            _ = CollectSelections(
+                tileset.Root,
+                rootParentWorld,
+                depthOffset,
+                parentContentTileId,
+                parentContentStableId,
+                idPrefix,
+                reference,
+                range,
+                maxDepth,
+                detailTargetM,
+                selected,
+                selectionLimit);
 
             return selected;
         }
+
+        private SelectionOutcome CollectSelections(
+            Tile tile,
+            Matrix4x4d parentWorld,
+            int depth,
+            string? parentContentId,
+            string? parentContentStableKey,
+            string idPrefix,
+            GeoReference reference,
+            QueryRange range,
+            int maxDepth,
+            double detailTargetM,
+            List<TileSelectionResult> selected,
+            int selectionLimit)
+        {
+            if (selected.Count >= selectionLimit)
+            {
+                return new SelectionOutcome(false, HasAnyContent(tile));
+            }
+
+            Matrix4x4d local = tile.Transform is { Count: 16 }
+                ? Matrix4x4d.FromCesiumColumnMajor(tile.Transform)
+                : Matrix4x4d.Identity;
+            Matrix4x4d world = local * parentWorld;
+
+            if (!Intersects(tile.BoundingVolume, world, reference, range, out double? horizontalSpanM))
+            {
+                return new SelectionOutcome(false, HasAnyContent(tile));
+            }
+
+            TileSelectionResult? current = null;
+            string? nextParentContentId = parentContentId;
+            string? nextParentContentStableKey = parentContentStableKey;
+            bool stopDescending = depth >= maxDepth || ShouldStopDescendingByDetail(tile, detailTargetM, horizontalSpanM);
+
+            if (tile.ContentUri is not null)
+            {
+                string tileId = ComposeId(idPrefix, tile.Id);
+                string stableId = ComposeStableId(idPrefix, tile.Id);
+                TileContentKind kind = TileContentClassifier.Classify(tile.ContentUri);
+                current = new TileSelectionResult(
+                    tileId,
+                    tile.ContentUri,
+                    world,
+                    depth,
+                    parentContentId,
+                    kind,
+                    tile.Children.Count > 0,
+                    horizontalSpanM,
+                    [],
+                    stableId,
+                    parentContentStableKey);
+                nextParentContentId = tileId;
+                nextParentContentStableKey = stableId;
+            }
+
+            bool hasSelectedDescendant = false;
+            bool hasContentDescendant = false;
+            if (!stopDescending)
+            {
+                for (int i = 0; i < tile.Children.Count; i++)
+                {
+                    SelectionOutcome childOutcome = CollectSelections(
+                        tile.Children[i],
+                        world,
+                        depth + 1,
+                        nextParentContentId,
+                        nextParentContentStableKey,
+                        idPrefix,
+                        reference,
+                        range,
+                        maxDepth,
+                        detailTargetM,
+                        selected,
+                        selectionLimit);
+                    hasSelectedDescendant |= childOutcome.HasSelectedContent;
+                    hasContentDescendant |= childOutcome.HasAnyContent;
+                }
+            }
+
+            if (current is null)
+            {
+                return new SelectionOutcome(hasSelectedDescendant, hasContentDescendant);
+            }
+
+            bool keepCurrent = current.ContentKind == TileContentKind.Json ||
+                !current.HasChildren ||
+                stopDescending ||
+                hasSelectedDescendant ||
+                !hasContentDescendant;
+
+            if (keepCurrent && selected.Count < selectionLimit)
+            {
+                selected.Add(current);
+                return new SelectionOutcome(true, true);
+            }
+
+            return new SelectionOutcome(hasSelectedDescendant, true);
+        }
+
+        private static bool HasAnyContent(Tile tile)
+        {
+            if (tile.ContentUri is not null)
+            {
+                return true;
+            }
+
+            for (int i = 0; i < tile.Children.Count; i++)
+            {
+                if (HasAnyContent(tile.Children[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private readonly record struct SelectionOutcome(bool HasSelectedContent, bool HasAnyContent);
 
         private static bool ShouldStopDescendingByDetail(Tile tile, double detailTargetM, double? horizontalSpanM)
         {
