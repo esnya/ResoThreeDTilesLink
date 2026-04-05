@@ -30,6 +30,22 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void Initialize_UsesTraversalDetailTarget_RegardlessOfBootstrapMultiplier()
+        {
+            var selector = new CapturingSelector();
+            var core = new TraversalCore(selector);
+
+            DiscoveryFacts facts = core.Initialize(
+                CreateRootTileset(),
+                CreateRequest(dryRun: true, bootstrapRangeMultiplier: 0.5d),
+                interactive: null);
+
+            _ = facts.Branches.Should().ContainKey(StableId("p"));
+            _ = facts.Branches.Should().ContainKey(StableId("c"));
+            _ = selector.DetailTargets.Should().ContainSingle().Which.Should().Be(40d);
+        }
+
+        [Fact]
         public void ComputeDesiredView_DescendantPreparedFirst_SuppressesParentSend()
         {
             TraversalCore core = CreateCore(_ =>
@@ -246,12 +262,12 @@ namespace ThreeDTilesLink.Tests
             return new TraversalCore(new FakeSelector(selectByPrefix));
         }
 
-        private static TileRunRequest CreateRequest(bool dryRun)
+        private static TileRunRequest CreateRequest(bool dryRun, double bootstrapRangeMultiplier = 4d)
         {
             return new TileRunRequest(
                 new GeoReference(0d, 0d, 0d),
                 new GeoReference(0d, 0d, 0d),
-                new TraversalOptions(500d, 16, 16, 40d),
+                new TraversalOptions(500d, 16, 16, 40d, bootstrapRangeMultiplier),
                 new ResoniteOutputOptions("127.0.0.1", 12000, dryRun),
                 "k");
         }
@@ -380,6 +396,32 @@ namespace ThreeDTilesLink.Tests
                 string? parentContentStableId)
             {
                 return _selectByPrefix(idPrefix);
+            }
+        }
+
+        private sealed class CapturingSelector : ITileSelector
+        {
+            public List<double> DetailTargets { get; } = [];
+
+            public IReadOnlyList<TileSelectionResult> Select(
+                Tileset tileset,
+                GeoReference reference,
+                QueryRange range,
+                int maxDepth,
+                double detailTargetM,
+                int maxTiles,
+                Matrix4x4d rootParentWorld,
+                string idPrefix,
+                int depthOffset,
+                string? parentContentTileId,
+                string? parentContentStableId)
+            {
+                DetailTargets.Add(detailTargetM);
+                return
+                [
+                    CreateTile("p", "https://example.com/p.glb", depth: 0, parentTileId: null, hasChildren: true, span: 100d),
+                    CreateTile("c", "https://example.com/c.glb", depth: 1, parentTileId: "p", hasChildren: false, span: 10d)
+                ];
             }
         }
     }

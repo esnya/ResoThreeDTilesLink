@@ -18,6 +18,8 @@ namespace ThreeDTilesLink.Core.Pipeline
 
     internal sealed class TileBranchFact(TileSelectionResult tile)
     {
+        private const int MaxCompleteSendRetries = 1;
+
         public TileSelectionResult Tile { get; } = tile;
 
         public ContentDiscoveryStatus PrepareStatus { get; set; } = ContentDiscoveryStatus.Unrequested;
@@ -34,7 +36,11 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public string? AssetCopyright { get; set; }
 
+        public int CompleteSendFailureCount { get; set; }
+
         public bool HasRenderable => Tile.ContentKind == TileContentKind.Glb;
+
+        public bool CanRetryCompleteSendFailure => CompleteSendFailureCount <= MaxCompleteSendRetries;
     }
 
     internal sealed class DiscoveryFacts(
@@ -185,6 +191,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             HashSet<string> selectedStableIds = facts.Branches.Keys.ToHashSet(StringComparer.Ordinal);
             IReadOnlyCollection<RetainedTileState> planningVisibleTiles = GetPlanningVisibleTiles(facts, writerState);
             HashSet<string> candidateStableIds = GetCandidateStableIds(facts, planningVisibleTiles);
+            HashSet<string> ancestorsWithOutOfSelectionVisibleDescendants = BuildAncestorsWithVisibleDescendants(
+                planningVisibleTiles.Where(tile => !selectedStableIds.Contains(tile.StableId)));
             Dictionary<string, List<string>> childrenByParent = BuildChildrenByParent(facts);
             var branchHasCandidatesMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
             var subtreeCoveredMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
@@ -198,6 +206,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
 
                 if (!IsRenderableAvailable(fact, writerState))
+                {
+                    continue;
+                }
+
+                if (ancestorsWithOutOfSelectionVisibleDescendants.Contains(stableId))
                 {
                     continue;
                 }
@@ -493,7 +506,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                         failedTiles++;
                         if (sent.SlotIds.Count == 0)
                         {
-                            fact.PrepareStatus = ContentDiscoveryStatus.Ready;
+                            fact.CompleteSendFailureCount++;
+                            fact.PrepareStatus = fact.CanRetryCompleteSendFailure
+                                ? ContentDiscoveryStatus.Ready
+                                : ContentDiscoveryStatus.Failed;
                         }
                     }
 
@@ -512,6 +528,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     fact.AssetCopyright = sent.Content.AssetCopyright;
                     if (sent.Succeeded || sent.SlotIds.Count > 0 || dryRun)
                     {
+                        fact.CompleteSendFailureCount = 0;
                         fact.PreparedContent = null;
                     }
 
@@ -695,7 +712,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                     PreparedContent = fact.PreparedContent,
                     PreparedOrder = fact.PreparedOrder,
                     NestedExpanded = fact.NestedExpanded,
-                    AssetCopyright = fact.AssetCopyright
+                    AssetCopyright = fact.AssetCopyright,
+                    CompleteSendFailureCount = fact.CompleteSendFailureCount
                 };
             }
         }
@@ -774,6 +792,14 @@ namespace ThreeDTilesLink.Core.Pipeline
             Dictionary<string, bool> branchHasCandidatesMemo,
             Dictionary<string, bool> subtreeCoveredMemo)
         {
+            if (facts.Branches.TryGetValue(stableId, out TileBranchFact? fact) &&
+                !string.IsNullOrWhiteSpace(fact.Tile.ParentStableId) &&
+                !candidateStableIds.Contains(fact.Tile.ParentStableId) &&
+                !writerState.VisibleTiles.ContainsKey(fact.Tile.ParentStableId))
+            {
+                return false;
+            }
+
             if (!childrenByParent.TryGetValue(stableId, out List<string>? children))
             {
                 return false;
