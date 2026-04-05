@@ -120,6 +120,63 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void PlanWriterCommand_KeepsVisibleParentUntilAllRelevantChildBranchesBecomeVisible()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p", "https://example.com/p.glb", depth: 0, parentTileId: null, hasChildren: true, span: 120d),
+                CreateTile("c0", "https://example.com/c0.glb", depth: 1, parentTileId: "p", hasChildren: false, span: 60d),
+                CreateTile("c1", "https://example.com/c1.glb", depth: 1, parentTileId: "p", hasChildren: false, span: 60d)
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent")
+            });
+            MarkPrepared(facts, "c0", CreatePreparedContent("c0"), order: 0);
+            MarkPrepared(facts, "c1", CreatePreparedContent("c1"), order: 1);
+
+            DesiredView desired = core.ComputeDesiredView(facts, writerState);
+            writerState.VisibleTiles[StableId("c0")] = new RetainedTileState(
+                StableId("c0"),
+                "c0",
+                StableId("p"),
+                [StableId("p")],
+                ["slot_child_0"],
+                "Google; Child 0");
+
+            WriterCommand? nextCommand = core.PlanWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(3, 2, 2, 0),
+                dryRun: false);
+
+            _ = nextCommand.Should().BeOfType<SendTileWriterCommand>()
+                .Which.Content.Tile.TileId.Should().Be("c1");
+
+            writerState.VisibleTiles[StableId("c1")] = new RetainedTileState(
+                StableId("c1"),
+                "c1",
+                StableId("p"),
+                [StableId("p")],
+                ["slot_child_1"],
+                "Google; Child 1");
+
+            desired = core.ComputeDesiredView(facts, writerState);
+            WriterCommand? removal = core.PlanWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(3, 3, 3, 0),
+                dryRun: false);
+
+            _ = removal.Should().BeOfType<RemoveTileWriterCommand>()
+                .Which.StableId.Should().Be(StableId("p"));
+        }
+
+        [Fact]
         public void ComputeDesiredView_VisibleParent_UsesIntermediateChildBeforePreparedLeaf()
         {
             TraversalCore core = CreateCore(_ =>

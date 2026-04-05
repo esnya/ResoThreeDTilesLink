@@ -331,11 +331,20 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return null;
             }
 
+            Dictionary<string, List<string>> childrenByParent = BuildChildrenByParent(facts);
+            var branchHasSelectedMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
+            var subtreeVisibleCoveredMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
             RetainedTileState? removal = writerState.VisibleTiles.Values
                 .Where(tile => desiredView.SelectedStableIds.Contains(tile.StableId))
                 .Where(tile => !desiredView.StableIds.Contains(tile.StableId))
                 .Where(tile => !writerState.FailedRemovalStableIds.Contains(tile.StableId))
-                .Where(tile => HasVisibleDescendant(tile.StableId, writerState.VisibleTiles.Values))
+                .Where(tile => CanRemoveBehindVisibleChildren(
+                    tile.StableId,
+                    writerState,
+                    childrenByParent,
+                    desiredView.SelectedStableIds,
+                    branchHasSelectedMemo,
+                    subtreeVisibleCoveredMemo))
                 .OrderBy(tile => facts.Branches.TryGetValue(tile.StableId, out TileBranchFact? fact) ? fact.Tile.Depth : int.MaxValue)
                 .ThenBy(tile => tile.TileId, StringComparer.Ordinal)
                 .FirstOrDefault();
@@ -845,6 +854,43 @@ namespace ThreeDTilesLink.Core.Pipeline
             return hasRelevantChild;
         }
 
+        private static bool CanRemoveBehindVisibleChildren(
+            string stableId,
+            WriterState writerState,
+            Dictionary<string, List<string>> childrenByParent,
+            IReadOnlySet<string> selectedStableIds,
+            Dictionary<string, bool> branchHasSelectedMemo,
+            Dictionary<string, bool> subtreeVisibleCoveredMemo)
+        {
+            if (!childrenByParent.TryGetValue(stableId, out List<string>? children))
+            {
+                return false;
+            }
+
+            bool hasRelevantChild = false;
+            foreach (string childId in children)
+            {
+                if (!BranchHasCandidate(childId, childrenByParent, selectedStableIds, branchHasSelectedMemo))
+                {
+                    continue;
+                }
+
+                hasRelevantChild = true;
+                if (!IsSubtreeVisibleCovered(
+                        childId,
+                        writerState,
+                        childrenByParent,
+                        selectedStableIds,
+                        branchHasSelectedMemo,
+                        subtreeVisibleCoveredMemo))
+                {
+                    return false;
+                }
+            }
+
+            return hasRelevantChild;
+        }
+
         private static bool BranchHasCandidate(
             string stableId,
             Dictionary<string, List<string>> childrenByParent,
@@ -925,6 +971,57 @@ namespace ThreeDTilesLink.Core.Pipeline
                         childrenByParent,
                         candidateStableIds,
                         branchHasCandidatesMemo,
+                        memo))
+                {
+                    memo[stableId] = false;
+                    return false;
+                }
+            }
+
+            memo[stableId] = hasRelevantChild;
+            return hasRelevantChild;
+        }
+
+        private static bool IsSubtreeVisibleCovered(
+            string stableId,
+            WriterState writerState,
+            Dictionary<string, List<string>> childrenByParent,
+            IReadOnlySet<string> selectedStableIds,
+            Dictionary<string, bool> branchHasSelectedMemo,
+            Dictionary<string, bool> memo)
+        {
+            if (memo.TryGetValue(stableId, out bool cached))
+            {
+                return cached;
+            }
+
+            if (writerState.VisibleTiles.ContainsKey(stableId))
+            {
+                memo[stableId] = true;
+                return true;
+            }
+
+            if (!childrenByParent.TryGetValue(stableId, out List<string>? children))
+            {
+                memo[stableId] = false;
+                return false;
+            }
+
+            bool hasRelevantChild = false;
+            foreach (string childId in children)
+            {
+                if (!BranchHasCandidate(childId, childrenByParent, selectedStableIds, branchHasSelectedMemo))
+                {
+                    continue;
+                }
+
+                hasRelevantChild = true;
+                if (!IsSubtreeVisibleCovered(
+                        childId,
+                        writerState,
+                        childrenByParent,
+                        selectedStableIds,
+                        branchHasSelectedMemo,
                         memo))
                 {
                     memo[stableId] = false;
@@ -1189,6 +1286,9 @@ namespace ThreeDTilesLink.Core.Pipeline
             ProgressSnapshot progress)
         {
             string desiredLicense = BuildDesiredLicense(writerState.VisibleTiles.Values);
+            Dictionary<string, List<string>> childrenByParent = BuildChildrenByParent(facts);
+            var branchHasSelectedMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
+            var subtreeVisibleCoveredMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
 
             int pendingDiscovery = facts.Branches.Values.Count(fact =>
                 (fact.Tile.ContentKind == TileContentKind.Json && fact.NestedStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight) ||
@@ -1199,7 +1299,13 @@ namespace ThreeDTilesLink.Core.Pipeline
                 desiredView.SelectedStableIds.Contains(tile.StableId) &&
                 !desiredView.StableIds.Contains(tile.StableId) &&
                 !writerState.FailedRemovalStableIds.Contains(tile.StableId) &&
-                HasVisibleDescendant(tile.StableId, writerState.VisibleTiles.Values));
+                CanRemoveBehindVisibleChildren(
+                    tile.StableId,
+                    writerState,
+                    childrenByParent,
+                    desiredView.SelectedStableIds,
+                    branchHasSelectedMemo,
+                    subtreeVisibleCoveredMemo));
 
             int completedUnits = progress.ProcessedTiles;
             int pendingUnits = pendingDiscovery + pendingSend + pendingRemove +
