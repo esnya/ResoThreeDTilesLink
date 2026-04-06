@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Numerics;
 using System.Threading;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Math;
@@ -197,6 +198,62 @@ namespace ThreeDTilesLink.Tests
             _ = client.Payloads.Should().HaveCount(1);
             _ = client.Payloads[0].Indices.Should().Equal(0, 2, 1);
             _ = client.Payloads[0].Name.Should().NotContain("/");
+        }
+
+        [Fact]
+        public async Task Run_GeneratesVertexNormals_ForStreamedMeshes()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 8), CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(1);
+            _ = client.Payloads.Should().HaveCount(1);
+            _ = client.Payloads[0].HasNormals.Should().BeTrue();
+            _ = client.Payloads[0].Normals.Should().NotBeNull();
+            _ = client.Payloads[0].Normals!.Should().HaveCount(client.Payloads[0].Vertices.Count);
+            _ = client.Payloads[0].Normals!.Should().OnlyContain(normal => normal.LengthSquared() > 0.99f && normal.LengthSquared() < 1.01f);
+        }
+
+        [Fact]
+        public async Task Run_PreservesSourceNormalsAndTangents_WhenPresent()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            var extractor = new FakeExtractor(includeNormalsAndTangents: true);
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client, extractor);
+
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 8), CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(1);
+            _ = client.Payloads.Should().HaveCount(1);
+            _ = client.Payloads[0].HasNormals.Should().BeTrue();
+            _ = client.Payloads[0].HasTangents.Should().BeTrue();
+            _ = client.Payloads[0].Normals![0].X.Should().BeApproximately(0f, 1e-4f);
+            _ = client.Payloads[0].Normals![0].Y.Should().BeApproximately(0f, 1e-4f);
+            _ = client.Payloads[0].Normals![0].Z.Should().BeApproximately(1f, 1e-4f);
+            _ = client.Payloads[0].Tangents![0].X.Should().BeApproximately(1f, 1e-4f);
+            _ = client.Payloads[0].Tangents![0].Y.Should().BeApproximately(0f, 1e-4f);
+            _ = client.Payloads[0].Tangents![0].Z.Should().BeApproximately(0f, 1e-4f);
+            _ = client.Payloads[0].Tangents![0].W.Should().Be(-1f);
         }
 
         [Fact]
@@ -1576,10 +1633,12 @@ namespace ThreeDTilesLink.Tests
 
         private sealed class FakeExtractor(
             IReadOnlyDictionary<byte, string>? attributionByMarker = null,
-            IReadOnlyDictionary<byte, int>? meshCountByMarker = null) : IGlbMeshExtractor
+            IReadOnlyDictionary<byte, int>? meshCountByMarker = null,
+            bool includeNormalsAndTangents = false) : IGlbMeshExtractor
         {
             private readonly IReadOnlyDictionary<byte, string> _attributionByMarker = attributionByMarker ?? new Dictionary<byte, string>();
             private readonly IReadOnlyDictionary<byte, int> _meshCountByMarker = meshCountByMarker ?? new Dictionary<byte, int>();
+            private readonly bool _includeNormalsAndTangents = includeNormalsAndTangents;
 
             public GlbExtractResult Extract(byte[] glbBytes)
             {
@@ -1596,6 +1655,8 @@ namespace ThreeDTilesLink.Tests
                         [0, 1, 2],
                         [new Vector2d(0d, 0d), new Vector2d(1d, 0d), new Vector2d(0d, 1d)],
                         true,
+                        _includeNormalsAndTangents ? [new Vector3d(0d, 0d, 1d), new Vector3d(0d, 0d, 1d), new Vector3d(0d, 0d, 1d)] : null,
+                        _includeNormalsAndTangents ? [new Vector4(1f, 0f, 0f, 1f), new Vector4(1f, 0f, 0f, 1f), new Vector4(1f, 0f, 0f, 1f)] : null,
                         Matrix4x4d.Identity,
                         null,
                         null))

@@ -108,6 +108,17 @@ namespace ThreeDTilesLink.Core.Mesh
                 eunIndices.Add(b);
             }
 
+            List<Vector3> generatedNormals = BuildVertexNormals(vertices, eunIndices);
+            PayloadVectorTransform vectorTransform = CreatePayloadVectorTransform(basisXEun, basisYEun, basisZEun, invRotation, slotScale);
+            bool flippedNormals = false;
+            List<Vector3> normals = mesh.HasNormals
+                ? TransformNormals(mesh.Normals!, vectorTransform, generatedNormals, out flippedNormals)
+                : generatedNormals;
+
+            List<Vector4>? tangents = mesh.HasTangents
+                ? TransformTangents(mesh.Tangents!, vectorTransform, flippedNormals)
+                : null;
+
             return new PlacedMeshPayload(
                 BuildMeshSlotName(tileId, mesh.Name),
                 vertices,
@@ -119,7 +130,9 @@ namespace ThreeDTilesLink.Core.Mesh
                 slotScale,
                 mesh.BaseColorTextureBytes,
                 mesh.BaseColorTextureExtension,
-                parentSlotId);
+                parentSlotId,
+                normals,
+                tangents);
         }
 
         private Vector3d ToEun(Vector3d ecef, GeoReference reference)
@@ -185,6 +198,164 @@ namespace ThreeDTilesLink.Core.Mesh
         {
             Vector3d normalized = Vector3d.Normalize(value);
             return normalized.Length() <= 1e-9d ? fallback : normalized;
+        }
+
+        private static List<Vector3> BuildVertexNormals(List<Vector3> vertices, List<int> indices)
+        {
+            const float epsilon = 1e-12f;
+
+            var accumulated = new Vector3[vertices.Count];
+            Vector3 fallback = Vector3.UnitY;
+            bool hasFallback = false;
+
+            for (int i = 0; i + 2 < indices.Count; i += 3)
+            {
+                int a = indices[i];
+                int b = indices[i + 1];
+                int c = indices[i + 2];
+                if ((uint)a >= (uint)vertices.Count || (uint)b >= (uint)vertices.Count || (uint)c >= (uint)vertices.Count)
+                {
+                    continue;
+                }
+
+                Vector3 ab = vertices[b] - vertices[a];
+                Vector3 ac = vertices[c] - vertices[a];
+                Vector3 face = Vector3.Cross(ab, ac);
+                float lengthSquared = face.LengthSquared();
+                if (lengthSquared <= epsilon)
+                {
+                    continue;
+                }
+
+                if (!hasFallback)
+                {
+                    fallback = Vector3.Normalize(face);
+                    hasFallback = true;
+                }
+
+                accumulated[a] += face;
+                accumulated[b] += face;
+                accumulated[c] += face;
+            }
+
+            var normals = new List<Vector3>(vertices.Count);
+            for (int i = 0; i < accumulated.Length; i++)
+            {
+                Vector3 normal = accumulated[i];
+                normals.Add(normal.LengthSquared() <= epsilon ? fallback : Vector3.Normalize(normal));
+            }
+
+            return normals;
+        }
+
+        private static PayloadVectorTransform CreatePayloadVectorTransform(
+            Vector3d basisXEun,
+            Vector3d basisYEun,
+            Vector3d basisZEun,
+            Quaternion invRotation,
+            Vector3 slotScale)
+        {
+            Vector3 x = TransformToLocalVector(basisXEun, invRotation, slotScale);
+            Vector3 y = TransformToLocalVector(basisYEun, invRotation, slotScale);
+            Vector3 z = TransformToLocalVector(basisZEun, invRotation, slotScale);
+            float determinant = Vector3.Dot(x, Vector3.Cross(y, z));
+            return new PayloadVectorTransform(x, y, z, determinant);
+        }
+
+        private static List<Vector3> TransformNormals(
+            IReadOnlyList<Vector3d> normals,
+            PayloadVectorTransform vectorTransform,
+            IReadOnlyList<Vector3> generatedNormals,
+            out bool flippedNormals)
+        {
+            var transformed = new List<Vector3>(normals.Count);
+            foreach (Vector3d normal in normals)
+            {
+                transformed.Add(vectorTransform.TransformNormal(new Vector3((float)normal.X, (float)normal.Y, (float)normal.Z), Vector3.UnitY));
+            }
+
+            flippedNormals = AlignNormalsToGeometry(transformed, generatedNormals);
+            return transformed;
+        }
+
+        private static List<Vector4> TransformTangents(
+            IReadOnlyList<Vector4> tangents,
+            PayloadVectorTransform vectorTransform,
+            bool flippedNormals)
+        {
+            float tangentWSign = vectorTransform.HandednessSign * (flippedNormals ? -1f : 1f);
+            var transformed = new List<Vector4>(tangents.Count);
+            foreach (Vector4 tangent in tangents)
+            {
+                Vector3 xyz = vectorTransform.TransformDirection(new Vector3(tangent.X, tangent.Y, tangent.Z), Vector3.UnitX);
+                transformed.Add(new Vector4(xyz, tangent.W * tangentWSign));
+            }
+
+            return transformed;
+        }
+
+        private static bool AlignNormalsToGeometry(List<Vector3> transformedNormals, IReadOnlyList<Vector3> generatedNormals)
+        {
+            int count = System.Math.Min(transformedNormals.Count, generatedNormals.Count);
+            float dotSum = 0f;
+            for (int i = 0; i < count; i++)
+            {
+                dotSum += Vector3.Dot(transformedNormals[i], generatedNormals[i]);
+            }
+
+            if (dotSum >= 0f)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < transformedNormals.Count; i++)
+            {
+                transformedNormals[i] = -transformedNormals[i];
+            }
+
+            return true;
+        }
+
+        private static Vector3 TransformToLocalVector(
+            Vector3d eunDirection,
+            Quaternion invRotation,
+            Vector3 slotScale)
+        {
+            Vector3 localRotated = Vector3.Transform(
+                new Vector3((float)eunDirection.X, (float)eunDirection.Y, (float)eunDirection.Z),
+                invRotation);
+
+            return new Vector3(
+                slotScale.X > 1e-6f ? localRotated.X / slotScale.X : localRotated.X,
+                slotScale.Y > 1e-6f ? localRotated.Y / slotScale.Y : localRotated.Y,
+                slotScale.Z > 1e-6f ? localRotated.Z / slotScale.Z : localRotated.Z);
+        }
+
+        private readonly record struct PayloadVectorTransform(Vector3 X, Vector3 Y, Vector3 Z, float Determinant)
+        {
+            public float HandednessSign => Determinant < 0f ? -1f : 1f;
+
+            public Vector3 TransformDirection(Vector3 value, Vector3 fallback)
+            {
+                Vector3 transformed = (X * value.X) + (Y * value.Y) + (Z * value.Z);
+                return transformed.LengthSquared() <= 1e-12f ? fallback : Vector3.Normalize(transformed);
+            }
+
+            public Vector3 TransformNormal(Vector3 value, Vector3 fallback)
+            {
+                if (System.Math.Abs(Determinant) <= 1e-12f)
+                {
+                    return TransformDirection(value, fallback);
+                }
+
+                Vector3 transformed =
+                    (Vector3.Cross(Y, Z) * value.X) +
+                    (Vector3.Cross(Z, X) * value.Y) +
+                    (Vector3.Cross(X, Y) * value.Z);
+
+                transformed /= Determinant;
+                return transformed.LengthSquared() <= 1e-12f ? fallback : Vector3.Normalize(transformed);
+            }
         }
     }
 }

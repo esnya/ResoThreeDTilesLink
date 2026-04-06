@@ -484,11 +484,14 @@ namespace ThreeDTilesLink.Core.Resonite
                     TriangleCount = payload.Indices.Count / 3
                 };
 
+                bool hasNormals = payload.HasNormals && payload.Normals is { Count: > 0 } normals && normals.Count == payload.Vertices.Count;
+                bool hasTangents = payload.HasTangents && payload.Tangents is { Count: > 0 } tangents && tangents.Count == payload.Vertices.Count;
+
                 var importMesh = new ImportMeshRawData
                 {
                     VertexCount = payload.Vertices.Count,
-                    HasNormals = false,
-                    HasTangents = false,
+                    HasNormals = hasNormals,
+                    HasTangents = hasTangents,
                     HasColors = false,
                     BoneWeightCount = 0,
                     UV_Channel_Dimensions = payload.HasUv0 ? [2] : [],
@@ -502,6 +505,26 @@ namespace ThreeDTilesLink.Core.Resonite
                 {
                     Vector3 p = payload.Vertices[i];
                     positionSpan[i] = new float3 { x = p.X, y = p.Y, z = p.Z };
+                }
+
+                if (hasNormals)
+                {
+                    Span<float3> normalSpan = importMesh.Normals;
+                    for (int i = 0; i < payload.Vertices.Count; i++)
+                    {
+                        Vector3 normal = payload.Normals![i];
+                        normalSpan[i] = new float3 { x = normal.X, y = normal.Y, z = normal.Z };
+                    }
+                }
+
+                if (hasTangents)
+                {
+                    Span<float4> tangentSpan = importMesh.Tangents;
+                    for (int i = 0; i < payload.Vertices.Count; i++)
+                    {
+                        Vector4 tangent = payload.Tangents![i];
+                        tangentSpan[i] = new float4 { x = tangent.X, y = tangent.Y, z = tangent.Z, w = tangent.W };
+                    }
                 }
 
                 if (payload.HasUv0)

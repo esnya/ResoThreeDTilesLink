@@ -88,6 +88,40 @@ namespace ThreeDTilesLink.Core.Mesh
                         }
                     }
 
+                    Accessor? normalAccessor = primitive.GetVertexAccessor("NORMAL");
+                    IAccessorArray<Vector3>? normalVectors = normalAccessor?.AsVector3Array();
+                    List<Vector3d>? normals = null;
+                    if (normalAccessor is not null)
+                    {
+                        normals = new List<Vector3d>(positions.Count);
+                        for (int i = 0; i < positions.Count; i++)
+                        {
+                            if (normalVectors is not null && i < normalVectors.Count)
+                            {
+                                Vector3 normal = normalVectors[i];
+                                normals.Add(new Vector3d(normal.X, normal.Y, normal.Z));
+                            }
+                            else
+                            {
+                                normals.Add(new Vector3d(0d, 1d, 0d));
+                            }
+                        }
+                    }
+
+                    Accessor? tangentAccessor = primitive.GetVertexAccessor("TANGENT");
+                    IAccessorArray<Vector4>? tangentVectors = tangentAccessor?.AsVector4Array();
+                    List<Vector4>? tangents = null;
+                    if (tangentAccessor is not null)
+                    {
+                        tangents = new List<Vector4>(positions.Count);
+                        for (int i = 0; i < positions.Count; i++)
+                        {
+                            tangents.Add(tangentVectors is not null && i < tangentVectors.Count
+                                ? tangentVectors[i]
+                                : new Vector4(1f, 0f, 0f, 1f));
+                        }
+                    }
+
                     Texture? texture = baseColorChannel?.Texture;
                     Image? image = SelectTextureImage(texture);
                     byte[]? textureBytes = image is { Content.IsEmpty: false } ? image.Content.Content.ToArray() : null;
@@ -104,6 +138,8 @@ namespace ThreeDTilesLink.Core.Mesh
                             indices,
                             uvs,
                             hasUv0,
+                            normals,
+                            tangents,
                             Matrix4x4d.FromNumerics(nodeMatrix),
                             textureBytes,
                             textureExtension));

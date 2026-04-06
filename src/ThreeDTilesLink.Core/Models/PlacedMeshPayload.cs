@@ -13,5 +13,11 @@ namespace ThreeDTilesLink.Core.Models
         Vector3 SlotScale,
         byte[]? BaseColorTextureBytes,
         string? BaseColorTextureExtension,
-        string? ParentSlotId = null);
+        string? ParentSlotId = null,
+        IReadOnlyList<Vector3>? Normals = null,
+        IReadOnlyList<Vector4>? Tangents = null)
+    {
+        public bool HasNormals => Normals is { Count: > 0 };
+        public bool HasTangents => Tangents is { Count: > 0 };
+    }
 }
