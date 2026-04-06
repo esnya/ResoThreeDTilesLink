@@ -21,6 +21,7 @@ namespace ThreeDTilesLink.Tests
                 16,
                 25d,
                 3,
+                4,
                 90,
                 true,
                 LogLevel.Debug);
@@ -52,6 +53,7 @@ namespace ThreeDTilesLink.Tests
                 16,
                 25d,
                 3,
+                4,
                 90,
                 250,
                 800,

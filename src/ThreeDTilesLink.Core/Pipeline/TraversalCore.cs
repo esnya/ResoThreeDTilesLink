@@ -166,6 +166,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             ProgressSnapshot progress,
             bool dryRun,
             bool allowRemoval = true,
+            bool allowSend = true,
+            bool allowMetadata = true,
             DateTimeOffset? now = null)
         {
             ArgumentNullException.ThrowIfNull(facts);
@@ -181,15 +183,14 @@ namespace ThreeDTilesLink.Core.Pipeline
             var branchHasSelectionMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
             var replacementReadyAtMemo = new Dictionary<string, DateTimeOffset?>(StringComparer.Ordinal);
 
-            if (writerState.InFlightSendStableId is not null ||
-                writerState.InFlightRemoveStableId is not null ||
+            if (writerState.InFlightRemoveStableId is not null ||
                 writerState.MetadataInFlight)
             {
                 return null;
             }
 
             DateTimeOffset? deferredRemovalDueAt = null;
-            if (allowRemoval)
+            if (allowRemoval && writerState.InFlightSendStableIds.Count == 0)
             {
                 RetainedTileState? removal = writerState.VisibleTiles.Values
                     .Where(tile => desiredView.SelectedStableIds.Contains(tile.StableId))
@@ -229,47 +230,58 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
             }
 
-            TileBranchFact? coverageFact = tree.Nodes.Values
-                .Select(static node => node.Fact)
-                .Where(static fact => fact.Tile.ContentKind == TileContentKind.Glb)
-                .Where(fact => desiredView.CandidateStableIds.Contains(fact.Tile.StableId!))
-                .Where(fact => !tree.PlanningVisibleStableIds.Contains(fact.Tile.StableId!))
-                .Where(fact => fact.PreparedContent is not null &&
-                               fact.PrepareStatus == ContentDiscoveryStatus.Ready)
-                .Where(fact => !HasVisibleAncestor(
-                    tree.Nodes.TryGetValue(fact.Tile.StableId!, out PlanningNode? node) ? node.Parent : null,
-                    tree.PlanningVisibleStableIds))
-                .Where(fact => ShouldPrioritizeCoverage(facts.Request, fact.Tile))
-                .OrderBy(static fact => fact.Tile.Depth)
-                .ThenByDescending(static fact => fact.Tile.HorizontalSpanM ?? double.MinValue)
-                .ThenBy(static fact => fact.PreparedOrder)
-                .FirstOrDefault();
-
-            if (coverageFact?.PreparedContent is not null)
+            if (allowSend)
             {
-                return new SendTileWriterCommand(coverageFact.PreparedContent);
-            }
-
-            TileBranchFact? sendFact = desiredView.StableIds
-                .Where(stableId => !tree.PlanningVisibleStableIds.Contains(stableId))
-                .Where(stableId => facts.Branches.TryGetValue(stableId, out TileBranchFact? fact) &&
-                                   fact.PreparedContent is not null &&
+                TileBranchFact? coverageFact = tree.Nodes.Values
+                    .Select(static node => node.Fact)
+                    .Where(static fact => fact.Tile.ContentKind == TileContentKind.Glb)
+                    .Where(fact => desiredView.CandidateStableIds.Contains(fact.Tile.StableId!))
+                    .Where(fact => !tree.PlanningVisibleStableIds.Contains(fact.Tile.StableId!))
+                    .Where(fact => !writerState.InFlightSendStableIds.Contains(fact.Tile.StableId!))
+                    .Where(fact => !HasInFlightRelatedSend(
+                        tree.Nodes.TryGetValue(fact.Tile.StableId!, out PlanningNode? node) ? node : null,
+                        writerState.InFlightSendStableIds))
+                    .Where(fact => fact.PreparedContent is not null &&
                                    fact.PrepareStatus == ContentDiscoveryStatus.Ready)
-                .Select(stableId => facts.Branches[stableId])
-                .OrderBy(fact => GetNearestVisibleAncestorDepth(
-                    tree.Nodes.TryGetValue(fact.Tile.StableId!, out PlanningNode? node) ? node.Parent : null,
-                    tree.PlanningVisibleStableIds))
-                .ThenBy(static fact => fact.Tile.Depth)
-                .ThenByDescending(static fact => fact.Tile.HorizontalSpanM ?? double.MinValue)
-                .ThenBy(static fact => fact.PreparedOrder)
-                .FirstOrDefault();
+                    .Where(fact => !HasVisibleAncestor(
+                        tree.Nodes.TryGetValue(fact.Tile.StableId!, out PlanningNode? node) ? node.Parent : null,
+                        tree.PlanningVisibleStableIds))
+                    .Where(fact => ShouldPrioritizeCoverage(facts.Request, fact.Tile))
+                    .OrderBy(static fact => fact.Tile.Depth)
+                    .ThenByDescending(static fact => fact.Tile.HorizontalSpanM ?? double.MinValue)
+                    .ThenBy(static fact => fact.PreparedOrder)
+                    .FirstOrDefault();
 
-            if (sendFact?.PreparedContent is not null)
-            {
-                return new SendTileWriterCommand(sendFact.PreparedContent);
+                if (coverageFact?.PreparedContent is not null)
+                {
+                    return new SendTileWriterCommand(coverageFact.PreparedContent);
+                }
+
+                TileBranchFact? sendFact = desiredView.StableIds
+                    .Where(stableId => !tree.PlanningVisibleStableIds.Contains(stableId))
+                    .Where(stableId => !writerState.InFlightSendStableIds.Contains(stableId))
+                    .Where(stableId => !HasInFlightRelatedSend(
+                        tree.Nodes.TryGetValue(stableId, out PlanningNode? node) ? node : null,
+                        writerState.InFlightSendStableIds))
+                    .Where(stableId => facts.Branches.TryGetValue(stableId, out TileBranchFact? fact) &&
+                                       fact.PreparedContent is not null &&
+                                       fact.PrepareStatus == ContentDiscoveryStatus.Ready)
+                    .Select(stableId => facts.Branches[stableId])
+                    .OrderBy(fact => GetNearestVisibleAncestorDepth(
+                        tree.Nodes.TryGetValue(fact.Tile.StableId!, out PlanningNode? node) ? node.Parent : null,
+                        tree.PlanningVisibleStableIds))
+                    .ThenBy(static fact => fact.Tile.Depth)
+                    .ThenByDescending(static fact => fact.Tile.HorizontalSpanM ?? double.MinValue)
+                    .ThenBy(static fact => fact.PreparedOrder)
+                    .FirstOrDefault();
+
+                if (sendFact?.PreparedContent is not null)
+                {
+                    return new SendTileWriterCommand(sendFact.PreparedContent);
+                }
             }
 
-            if (!dryRun)
+            if (!dryRun && allowMetadata && writerState.InFlightSendStableIds.Count == 0)
             {
                 (string desiredLicense, float desiredProgressValue, string desiredProgressText) = BuildDesiredMetadata(
                     facts,
@@ -391,7 +403,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 case SendTileCompleted sent:
                 {
                     string stableId = sent.Content.Tile.StableId!;
-                    writerState.InFlightSendStableId = null;
+                    _ = writerState.InFlightSendStableIds.Remove(stableId);
                     processedTiles++;
                     streamedMeshes += sent.StreamedMeshCount;
 
@@ -1038,6 +1050,41 @@ namespace ThreeDTilesLink.Core.Pipeline
             return int.MaxValue;
         }
 
+        private static bool HasInFlightRelatedSend(PlanningNode? node, HashSet<string> inFlightSendStableIds)
+        {
+            if (node is null || inFlightSendStableIds.Count == 0)
+            {
+                return false;
+            }
+
+            PlanningNode? current = node.Parent;
+            while (current is not null)
+            {
+                if (inFlightSendStableIds.Contains(current.StableId))
+                {
+                    return true;
+                }
+
+                current = current.Parent;
+            }
+
+            return HasInFlightDescendant(node, inFlightSendStableIds);
+        }
+
+        private static bool HasInFlightDescendant(PlanningNode node, HashSet<string> inFlightSendStableIds)
+        {
+            foreach (PlanningNode child in node.Children)
+            {
+                if (inFlightSendStableIds.Contains(child.StableId) ||
+                    HasInFlightDescendant(child, inFlightSendStableIds))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static int CountPendingRemovals(
             DiscoveryFacts facts,
             WriterState writerState,
@@ -1258,7 +1305,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             int completedUnits = progress.ProcessedTiles;
             int pendingUnits = pendingDiscovery + pendingPrepared + pendingSend + pendingRemove +
-                (writerState.InFlightSendStableId is null ? 0 : 1) +
+                writerState.InFlightSendStableIds.Count +
                 (writerState.InFlightRemoveStableId is null ? 0 : 1) +
                 (writerState.MetadataInFlight ? 1 : 0);
             int candidateBacklog = System.Math.Max(0, progress.CandidateTiles - completedUnits);

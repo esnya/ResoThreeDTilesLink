@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('discover', 'repl', 'send-json', 'benchmark-send', 'cleanup-slot')]
+    [ValidateSet('discover', 'repl', 'send-json', 'benchmark-send', 'pool-experiment', 'cleanup-slot', 'cleanup-sessions')]
     [string]$Command,
 
     [Parameter(Position = 1)]
@@ -28,6 +28,10 @@ param(
     [int]$MeshCount = 8,
 
     [string]$Parallelism = '1,2,4,8',
+
+    [int]$PoolSize = 4,
+
+    [int]$TextureSize = 1024,
 
     [string]$SlotId
 )
@@ -101,7 +105,7 @@ function Resolve-ResoniteLinkTarget {
     if ($null -ne $Port) {
         return [pscustomobject]@{
             Host = $LinkHost
-            Port = $Port.Value
+            Port = [int]$Port
             Session = $null
         }
     }
@@ -156,7 +160,9 @@ $projectPath = switch ($Command) {
     'repl' { Join-Path $repoRoot 'tools/ResoniteRepl/ResoniteRepl.csproj' }
     'send-json' { Join-Path $repoRoot 'tools/ResoniteRawJson/ResoniteRawJson.csproj' }
     'benchmark-send' { Join-Path $repoRoot 'tools/ResoniteSendBenchmark/ResoniteSendBenchmark.csproj' }
+    'pool-experiment' { Join-Path $repoRoot 'tools/ResonitePoolExperiment/ResonitePoolExperiment.csproj' }
     'cleanup-slot' { Join-Path $repoRoot 'tools/ResoniteSendBenchmark/ResoniteSendBenchmark.csproj' }
+    'cleanup-sessions' { Join-Path $repoRoot 'tools/ResoniteSessionCleanup/ResoniteSessionCleanup.csproj' }
     default { throw "Unsupported command: $Command" }
 }
 
@@ -228,6 +234,22 @@ switch ($Command) {
         break
     }
 
+    'pool-experiment' {
+        $dotnetArgs += '--host'
+        $dotnetArgs += $resolvedHost
+        $dotnetArgs += '--port'
+        $dotnetArgs += $resolvedPort.ToString()
+        $dotnetArgs += '--mesh-count'
+        $dotnetArgs += $MeshCount.ToString()
+        $dotnetArgs += '--pool-size'
+        $dotnetArgs += $PoolSize.ToString()
+        $dotnetArgs += '--texture-size'
+        $dotnetArgs += $TextureSize.ToString()
+        $dotnetArgs += '--parallelism'
+        $dotnetArgs += $Parallelism
+        break
+    }
+
     'cleanup-slot' {
         if ([string]::IsNullOrWhiteSpace($SlotId)) {
             throw 'For cleanup-slot, specify -SlotId.'
@@ -239,6 +261,16 @@ switch ($Command) {
         $dotnetArgs += $resolvedPort.ToString()
         $dotnetArgs += '--remove-slot-id'
         $dotnetArgs += $SlotId
+        break
+    }
+
+    'cleanup-sessions' {
+        $dotnetArgs += '--host'
+        $dotnetArgs += $resolvedHost
+        $dotnetArgs += '--port'
+        $dotnetArgs += $resolvedPort.ToString()
+        $dotnetArgs += '--timeout-sec'
+        $dotnetArgs += $TimeoutSec.ToString()
         break
     }
 

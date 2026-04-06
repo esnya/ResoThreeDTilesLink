@@ -8,7 +8,8 @@ namespace ThreeDTilesLink
         internal static TileStreamingRuntimeHandle Create(
             LogLevel logLevel,
             TimeSpan requestTimeout,
-            int maxConcurrentTileProcessing = 8)
+            int maxConcurrentTileProcessing = 8,
+            int resoniteSendWorkers = 1)
         {
 #pragma warning disable CA2000
             ILoggerFactory loggerFactory = CreateLoggerFactory(logLevel);
@@ -19,7 +20,8 @@ namespace ThreeDTilesLink
                     new TileStreamingRuntime(
                         loggerFactory,
                         requestTimeout,
-                        maxConcurrentTileProcessing));
+                        maxConcurrentTileProcessing,
+                        resoniteSendWorkers));
             }
             catch
             {

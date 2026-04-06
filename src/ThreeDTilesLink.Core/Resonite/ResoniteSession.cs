@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using ResoniteLink;
 using ThreeDTilesLink.Core.Contracts;
@@ -12,7 +13,8 @@ namespace ThreeDTilesLink.Core.Resonite
     internal sealed partial class ResoniteSession(
         LinkInterface resoniteLink,
         ILogger<ResoniteSession> logger,
-        Func<LinkInterface>? linkInterfaceFactory = null) : IResoniteSession, IWatchStore, IAsyncDisposable
+        Func<LinkInterface>? linkInterfaceFactory = null,
+        int assetImportWorkers = 1) : IResoniteSession, IWatchStore, IAsyncDisposable
     {
         private static partial class Log
         {
@@ -122,11 +124,15 @@ namespace ThreeDTilesLink.Core.Resonite
                                               string.Equals(Environment.GetEnvironmentVariable("THREEDTILESLINK_DUMP_MESH_JSON")?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
         private readonly string _meshDumpDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "mesh-json");
         private readonly HashSet<string> _tempTextureFiles = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, SemaphoreSlim> _textureFileLocks = new(StringComparer.OrdinalIgnoreCase);
         private readonly string _textureTempDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "textures");
         private readonly Dictionary<string, string> _assetsSlotByParentSlotId = new(StringComparer.Ordinal);
         private readonly Dictionary<string, SlotProgressBinding> _progressBindingsByParentSlotId = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _connectionGate = new(1, 1);
         private readonly SemaphoreSlim _streamPlacementGate = new(1, 1);
+        private readonly ResoniteAssetImportPool _assetImportPool = new(
+            assetImportWorkers > 0 ? assetImportWorkers : throw new ArgumentOutOfRangeException(nameof(assetImportWorkers), "Asset import worker count must be positive."),
+            linkInterfaceFactory ?? (() => new LinkInterface()));
 
         private bool _directClientInitialized;
         private Uri? _connectionUri;
@@ -169,6 +175,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 _connectionUri = endpoint;
                 Log.OpeningSession(_logger, host, port);
                 await ConnectTransportAsync(endpoint, cancellationToken).ConfigureAwait(false);
+                await _assetImportPool.ConnectAsync(endpoint, cancellationToken).ConfigureAwait(false);
                 reusedExistingSessionState = !string.IsNullOrWhiteSpace(_sessionRootSlotId);
             }
             finally
@@ -476,86 +483,19 @@ namespace ThreeDTilesLink.Core.Resonite
                 return null;
             }
 
+            ImportMeshRawData importMesh = BuildImportMesh(payload, cancellationToken);
+            Task<AssetData> meshAssetTask = ImportMeshAssetAsync(importMesh, cancellationToken);
+            Task<AssetData?> textureAssetTask = ImportTextureAssetAsync(
+                payload.BaseColorTextureBytes,
+                payload.BaseColorTextureExtension,
+                cancellationToken);
+
+            AssetData meshAsset = await meshAssetTask.ConfigureAwait(false);
+            AssetData? textureAsset = await textureAssetTask.ConfigureAwait(false);
+
             await _streamPlacementGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                var triangleSubmesh = new TriangleSubmeshRawData
-                {
-                    TriangleCount = payload.Indices.Count / 3
-                };
-
-                bool hasNormals = payload.HasNormals && payload.Normals is { Count: > 0 } normals && normals.Count == payload.Vertices.Count;
-                bool hasTangents = payload.HasTangents && payload.Tangents is { Count: > 0 } tangents && tangents.Count == payload.Vertices.Count;
-
-                var importMesh = new ImportMeshRawData
-                {
-                    VertexCount = payload.Vertices.Count,
-                    HasNormals = hasNormals,
-                    HasTangents = hasTangents,
-                    HasColors = false,
-                    BoneWeightCount = 0,
-                    UV_Channel_Dimensions = payload.HasUv0 ? [2] : [],
-                    Submeshes = [triangleSubmesh]
-                };
-
-                importMesh.AllocateBuffer();
-
-                Span<float3> positionSpan = importMesh.Positions;
-                for (int i = 0; i < payload.Vertices.Count; i++)
-                {
-                    Vector3 p = payload.Vertices[i];
-                    positionSpan[i] = new float3 { x = p.X, y = p.Y, z = p.Z };
-                }
-
-                if (hasNormals)
-                {
-                    Span<float3> normalSpan = importMesh.Normals;
-                    for (int i = 0; i < payload.Vertices.Count; i++)
-                    {
-                        Vector3 normal = payload.Normals![i];
-                        normalSpan[i] = new float3 { x = normal.X, y = normal.Y, z = normal.Z };
-                    }
-                }
-
-                if (hasTangents)
-                {
-                    Span<float4> tangentSpan = importMesh.Tangents;
-                    for (int i = 0; i < payload.Vertices.Count; i++)
-                    {
-                        Vector4 tangent = payload.Tangents![i];
-                        tangentSpan[i] = new float4 { x = tangent.X, y = tangent.Y, z = tangent.Z, w = tangent.W };
-                    }
-                }
-
-                if (payload.HasUv0)
-                {
-                    Span<float2> uvSpan = importMesh.AccessUV_2D(0);
-                    for (int i = 0; i < payload.Vertices.Count; i++)
-                    {
-                        Vector2 uv = i < payload.Uvs.Count ? payload.Uvs[i] : default;
-                        uvSpan[i] = new float2 { x = uv.X, y = uv.Y };
-                    }
-                }
-
-                Span<int> indicesSpan = triangleSubmesh.Indices;
-                for (int i = 0; i < payload.Indices.Count; i++)
-                {
-                    indicesSpan[i] = payload.Indices[i];
-                }
-
-                if (_dumpMeshJson)
-                {
-                    _ = Directory.CreateDirectory(_meshDumpDir);
-                    byte[] dumpBytes = JsonSerializer.SerializeToUtf8Bytes(importMesh, LinkInterface.SerializationOptions);
-                    string path = Path.Combine(_meshDumpDir, $"mesh_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss_fff}_{Guid.NewGuid():N}.json");
-                    await File.WriteAllBytesAsync(path, dumpBytes, cancellationToken).ConfigureAwait(false);
-                }
-
-                AssetData meshAsset = EnsureSuccess(await ExecuteLinkRequestAsync(
-                    link => link.ImportMesh(importMesh),
-                    cancellationToken,
-                    MeshImportRequestTimeout).ConfigureAwait(false));
-
                 string? parentSlotId = string.IsNullOrWhiteSpace(payload.ParentSlotId)
                     ? _sessionRootSlotId
                     : payload.ParentSlotId;
@@ -605,11 +545,6 @@ namespace ThreeDTilesLink.Core.Resonite
                     materialMembers["Smoothness"] = new Field_float { Value = 0f };
                 }
 
-                AssetData? textureAsset = await ImportTextureAssetAsync(
-                    payload.BaseColorTextureBytes,
-                    payload.BaseColorTextureExtension,
-                    cancellationToken).ConfigureAwait(false);
-
                 string? textureMemberName = await ResolveMaterialTextureMemberNameAsync().ConfigureAwait(false);
                 if (textureAsset is not null && !string.IsNullOrWhiteSpace(textureMemberName))
                 {
@@ -654,6 +589,93 @@ namespace ThreeDTilesLink.Core.Resonite
             }
         }
 
+        private static ImportMeshRawData BuildImportMesh(PlacedMeshPayload payload, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var triangleSubmesh = new TriangleSubmeshRawData
+            {
+                TriangleCount = payload.Indices.Count / 3
+            };
+
+            bool hasNormals = payload.HasNormals && payload.Normals is { Count: > 0 } normals && normals.Count == payload.Vertices.Count;
+            bool hasTangents = payload.HasTangents && payload.Tangents is { Count: > 0 } tangents && tangents.Count == payload.Vertices.Count;
+
+            var importMesh = new ImportMeshRawData
+            {
+                VertexCount = payload.Vertices.Count,
+                HasNormals = hasNormals,
+                HasTangents = hasTangents,
+                HasColors = false,
+                BoneWeightCount = 0,
+                UV_Channel_Dimensions = payload.HasUv0 ? [2] : [],
+                Submeshes = [triangleSubmesh]
+            };
+
+            importMesh.AllocateBuffer();
+
+            Span<float3> positionSpan = importMesh.Positions;
+            for (int i = 0; i < payload.Vertices.Count; i++)
+            {
+                Vector3 p = payload.Vertices[i];
+                positionSpan[i] = new float3 { x = p.X, y = p.Y, z = p.Z };
+            }
+
+            if (hasNormals)
+            {
+                Span<float3> normalSpan = importMesh.Normals;
+                for (int i = 0; i < payload.Vertices.Count; i++)
+                {
+                    Vector3 normal = payload.Normals![i];
+                    normalSpan[i] = new float3 { x = normal.X, y = normal.Y, z = normal.Z };
+                }
+            }
+
+            if (hasTangents)
+            {
+                Span<float4> tangentSpan = importMesh.Tangents;
+                for (int i = 0; i < payload.Vertices.Count; i++)
+                {
+                    Vector4 tangent = payload.Tangents![i];
+                    tangentSpan[i] = new float4 { x = tangent.X, y = tangent.Y, z = tangent.Z, w = tangent.W };
+                }
+            }
+
+            if (payload.HasUv0)
+            {
+                Span<float2> uvSpan = importMesh.AccessUV_2D(0);
+                for (int i = 0; i < payload.Vertices.Count; i++)
+                {
+                    Vector2 uv = i < payload.Uvs.Count ? payload.Uvs[i] : default;
+                    uvSpan[i] = new float2 { x = uv.X, y = uv.Y };
+                }
+            }
+
+            Span<int> indicesSpan = triangleSubmesh.Indices;
+            for (int i = 0; i < payload.Indices.Count; i++)
+            {
+                indicesSpan[i] = payload.Indices[i];
+            }
+
+            return importMesh;
+        }
+
+        private async Task<AssetData> ImportMeshAssetAsync(ImportMeshRawData importMesh, CancellationToken cancellationToken)
+        {
+            if (_dumpMeshJson)
+            {
+                _ = Directory.CreateDirectory(_meshDumpDir);
+                byte[] dumpBytes = JsonSerializer.SerializeToUtf8Bytes(importMesh, LinkInterface.SerializationOptions);
+                string path = Path.Combine(_meshDumpDir, $"mesh_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss_fff}_{Guid.NewGuid():N}.json");
+                await File.WriteAllBytesAsync(path, dumpBytes, cancellationToken).ConfigureAwait(false);
+            }
+
+            return EnsureSuccess(await _assetImportPool.ImportMeshAsync(
+                importMesh,
+                MeshImportRequestTimeout,
+                cancellationToken).ConfigureAwait(false));
+        }
+
         public async Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(slotId))
@@ -674,6 +696,7 @@ namespace ThreeDTilesLink.Core.Resonite
             await DisconnectCoreAsync(CancellationToken.None).ConfigureAwait(false);
             _connectionGate.Dispose();
             _streamPlacementGate.Dispose();
+            await _assetImportPool.DisposeAsync().ConfigureAwait(false);
         }
 
         private async Task DisconnectCoreAsync(CancellationToken cancellationToken)
@@ -684,6 +707,7 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 Log.ClosingSession(_logger);
                 CleanupTemporaryFiles();
+                await _assetImportPool.DisconnectAsync(cancellationToken).ConfigureAwait(false);
                 DisposeDirectLink(clearSessionState: false);
             }
             finally
@@ -1272,15 +1296,25 @@ namespace ThreeDTilesLink.Core.Resonite
             string hash = Convert.ToHexString(SHA256.HashData(textureBytes));
             string ext = NormalizeExtension(extension);
             string path = Path.Combine(_textureTempDir, $"{hash}{ext}");
+            SemaphoreSlim textureFileLock = _textureFileLocks.GetOrAdd(path, static _ => new SemaphoreSlim(1, 1));
 
-            if (!File.Exists(path))
+            await textureFileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                await File.WriteAllBytesAsync(path, textureBytes, cancellationToken).ConfigureAwait(false);
-            }
+                if (!File.Exists(path))
+                {
+                    await File.WriteAllBytesAsync(path, textureBytes, cancellationToken).ConfigureAwait(false);
+                }
 
-            _ = _tempTextureFiles.Add(path);
-            return EnsureSuccess(await ExecuteLinkRequestAsync(
-                link => link.ImportTexture(new ImportTexture2DFile { FilePath = path }),
+                _ = _tempTextureFiles.Add(path);
+            }
+            finally
+            {
+                _ = textureFileLock.Release();
+            }
+            return EnsureSuccess(await _assetImportPool.ImportTextureAsync(
+                path,
+                DefaultLinkRequestTimeout,
                 cancellationToken).ConfigureAwait(false));
         }
 

@@ -14,6 +14,7 @@ namespace ThreeDTilesLink.Core.CommandLine
         int DepthLimit,
         double DetailTargetM,
         int ContentWorkers,
+        int ResoniteSendWorkers,
         int TimeoutSec,
         bool DryRun,
         LogLevel LogLevel) : ICommandRuntimeOptions;
@@ -34,6 +35,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 CommonCommandOptions.DepthLimit("Maximum traversal depth."),
                 CommonCommandOptions.DetailTarget(),
                 CommonCommandOptions.ContentWorkers("Maximum number of tile content fetch/decode workers."),
+                CommonCommandOptions.ResoniteSendWorkers("Maximum number of parallel Resonite send workers."),
                 CommonCommandOptions.Timeout(),
                 CommonCommandOptions.DryRun(),
                 CommonCommandOptions.LogLevelOption()
@@ -61,6 +63,11 @@ namespace ThreeDTilesLink.Core.CommandLine
             if (!CommandInvocationBuilder.TryGetPositiveInt(parsed, "--content-workers", out int contentWorkers))
             {
                 return CommandInvocationBuilder.Error<StreamCommandOptions>($"Invalid value for --content-workers: {contentWorkers}", RenderHelp);
+            }
+
+            if (!CommandInvocationBuilder.TryGetPositiveInt(parsed, "--resonite-send-workers", out int resoniteSendWorkers))
+            {
+                return CommandInvocationBuilder.Error<StreamCommandOptions>($"Invalid value for --resonite-send-workers: {resoniteSendWorkers}", RenderHelp);
             }
 
             if (!CommandInvocationBuilder.TryGetValue(parsed, "--latitude", out double latitude) ||
@@ -94,6 +101,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 depthLimit,
                 detailTargetM,
                 contentWorkers,
+                resoniteSendWorkers,
                 timeoutSec,
                 dryRun,
                 logLevel), 0, string.Empty, false);

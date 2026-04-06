@@ -13,12 +13,14 @@ namespace ThreeDTilesLink.Core.Runtime
     internal sealed class TileStreamingRuntime : IAsyncDisposable
     {
         private readonly HttpClient _httpClient;
+        private readonly ResoniteSession _session;
         private bool _disposed;
 
         internal TileStreamingRuntime(
             ILoggerFactory loggerFactory,
             TimeSpan requestTimeout,
-            int maxConcurrentTileProcessing = 8)
+            int maxConcurrentTileProcessing = 8,
+            int resoniteSendWorkers = 1)
         {
             ArgumentNullException.ThrowIfNull(loggerFactory);
             if (requestTimeout <= TimeSpan.Zero)
@@ -29,6 +31,11 @@ namespace ThreeDTilesLink.Core.Runtime
             if (maxConcurrentTileProcessing <= 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(maxConcurrentTileProcessing), "Tile content worker count must be positive.");
+            }
+
+            if (resoniteSendWorkers <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(resoniteSendWorkers), "Resonite send worker count must be positive.");
             }
 
             _httpClient = new HttpClient
@@ -54,13 +61,15 @@ namespace ThreeDTilesLink.Core.Runtime
 #pragma warning restore CA2000
                 resoniteSession = new ResoniteSession(
                     linkInterface,
-                    loggerFactory.CreateLogger<ResoniteSession>());
+                    loggerFactory.CreateLogger<ResoniteSession>(),
+                    assetImportWorkers: resoniteSendWorkers);
             }
             catch
             {
                 linkInterface?.Dispose();
                 throw;
             }
+            _session = resoniteSession;
 
             var selectedTileProjector = new ResoniteSelectedTileProjector(resoniteSession);
             var selectionInputReader = new SelectionInputReader(
@@ -74,7 +83,8 @@ namespace ThreeDTilesLink.Core.Runtime
                 meshPlacementService,
                 selectedTileProjector,
                 loggerFactory.CreateLogger<TileSelectionService>(),
-                maxConcurrentTileProcessing);
+                maxConcurrentTileProcessing,
+                resoniteSendWorkers);
 
             InteractiveSupervisor = new InteractiveRunSupervisor(
                 SelectionService,
@@ -85,15 +95,11 @@ namespace ThreeDTilesLink.Core.Runtime
                 new SystemClock(),
                 selectionInputReader,
                 loggerFactory.CreateLogger<InteractiveRunSupervisor>());
-
-            Session = resoniteSession;
         }
 
         internal TileSelectionService SelectionService { get; }
 
         internal InteractiveRunSupervisor InteractiveSupervisor { get; }
-
-        internal ResoniteSession Session { get; }
 
         internal Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)
         {
@@ -108,7 +114,7 @@ namespace ThreeDTilesLink.Core.Runtime
             }
 
             _disposed = true;
-            await Session.DisposeAsync().ConfigureAwait(false);
+            await _session.DisposeAsync().ConfigureAwait(false);
             _httpClient.Dispose();
         }
     }

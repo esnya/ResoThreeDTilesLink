@@ -5,6 +5,7 @@ namespace ThreeDTilesLink.Core.App
     internal interface ICommandRuntimeOptions
     {
         int ContentWorkers { get; }
+        int ResoniteSendWorkers { get; }
         int TimeoutSec { get; }
         LogLevel LogLevel { get; }
     }

@@ -74,7 +74,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public HashSet<string> FailedRemovalStableIds { get; } = new(StringComparer.Ordinal);
 
-        public string? InFlightSendStableId { get; set; }
+        public HashSet<string> InFlightSendStableIds { get; } = new(StringComparer.Ordinal);
 
         public string? InFlightRemoveStableId { get; set; }
 

@@ -16,6 +16,7 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.WriteToError.Should().BeFalse();
             _ = invocation.Output.Should().Contain("--poll-interval <value>");
             _ = invocation.Output.Should().Contain("--content-workers <value>");
+            _ = invocation.Output.Should().Contain("--resonite-send-workers <value>");
             _ = invocation.Output.Should().Contain("--remove-out-of-range");
             _ = invocation.Output.Should().Contain("--watch-path <path>");
             _ = invocation.Output.Should().Contain("dotnet run --project src/ThreeDTilesLink -- interactive [options]");
@@ -36,6 +37,7 @@ namespace ThreeDTilesLink.Tests
                 "--depth-limit", "16",
                 "--detail", "25",
                 "--content-workers", "3",
+                "--resonite-send-workers", "5",
                 "--timeout", "90",
                 "--poll-interval", "250",
                 "--debounce=800",
@@ -50,6 +52,7 @@ namespace ThreeDTilesLink.Tests
             InteractiveCommandOptions parsed = invocation.Options!;
             _ = parsed.HeightOffsetM.Should().Be(20d);
             _ = parsed.ContentWorkers.Should().Be(3);
+            _ = parsed.ResoniteSendWorkers.Should().Be(5);
             _ = parsed.PollIntervalMs.Should().Be(250);
             _ = parsed.DebounceMs.Should().Be(800);
             _ = parsed.ThrottleMs.Should().Be(3000);
@@ -110,6 +113,20 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.ShouldRun.Should().BeFalse();
             _ = invocation.ExitCode.Should().Be(1);
             _ = invocation.Output.Should().Contain("Invalid value for --content-workers: 0");
+        }
+
+        [Fact]
+        public void Parse_RejectsNonPositiveResoniteSendWorkers()
+        {
+            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
+            [
+                "--resonite-port", "12000",
+                "--resonite-send-workers", "0"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(1);
+            _ = invocation.Output.Should().Contain("Invalid value for --resonite-send-workers: 0");
         }
 
         [Theory]

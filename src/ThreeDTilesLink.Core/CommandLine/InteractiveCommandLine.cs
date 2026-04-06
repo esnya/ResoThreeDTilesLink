@@ -11,6 +11,7 @@ namespace ThreeDTilesLink.Core.CommandLine
         int DepthLimit,
         double DetailTargetM,
         int ContentWorkers,
+        int ResoniteSendWorkers,
         int TimeoutSec,
         int PollIntervalMs,
         int DebounceMs,
@@ -33,6 +34,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 CommonCommandOptions.DepthLimit("Maximum traversal depth per run."),
                 CommonCommandOptions.DetailTarget(),
                 CommonCommandOptions.ContentWorkers("Maximum number of tile content fetch/decode workers per run."),
+                CommonCommandOptions.ResoniteSendWorkers("Maximum number of parallel Resonite send workers."),
                 CommonCommandOptions.Timeout(),
                 new("--poll-interval", CommandOptionValueKind.WholeNumber, "Watch polling interval.", DefaultValue: 250, Unit: "ms", RenamedFrom: ["--poll-ms"]),
                 new("--debounce", CommandOptionValueKind.WholeNumber, "Delay after watch changes before starting a run.", DefaultValue: 800, Unit: "ms", RenamedFrom: ["--debounce-ms"]),
@@ -67,6 +69,11 @@ namespace ThreeDTilesLink.Core.CommandLine
             if (!CommandInvocationBuilder.TryGetPositiveInt(parsed, "--content-workers", out int contentWorkers))
             {
                 return CommandInvocationBuilder.Error<InteractiveCommandOptions>($"Invalid value for --content-workers: {contentWorkers}", RenderHelp);
+            }
+
+            if (!CommandInvocationBuilder.TryGetPositiveInt(parsed, "--resonite-send-workers", out int resoniteSendWorkers))
+            {
+                return CommandInvocationBuilder.Error<InteractiveCommandOptions>($"Invalid value for --resonite-send-workers: {resoniteSendWorkers}", RenderHelp);
             }
 
             if (!CommandInvocationBuilder.TryGetValue(parsed, "--height-offset", out double heightOffsetM) ||
@@ -116,6 +123,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                     depthLimit,
                     detailTargetM,
                     contentWorkers,
+                    resoniteSendWorkers,
                     timeoutSec,
                     pollIntervalMs,
                     debounceMs,

@@ -32,7 +32,8 @@ namespace ThreeDTilesLink
             TileStreamingRuntimeHandle runtimeHandle = TileStreamingRuntimeFactory.Create(
                 options.LogLevel,
                 TimeSpan.FromSeconds(options.TimeoutSec),
-                options.ContentWorkers);
+                options.ContentWorkers,
+                options.ResoniteSendWorkers);
 #pragma warning restore CA2000
             await using (runtimeHandle.ConfigureAwait(false))
             {

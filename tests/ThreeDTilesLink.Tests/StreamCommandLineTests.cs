@@ -17,6 +17,7 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.Output.Should().Contain("--latitude <value>");
             _ = invocation.Output.Should().Contain("--range <value>");
             _ = invocation.Output.Should().Contain("--content-workers <value>");
+            _ = invocation.Output.Should().Contain("--resonite-send-workers <value>");
             _ = invocation.Output.Should().Contain("dotnet run --project src/ThreeDTilesLink -- stream [options]");
             _ = invocation.Output.Should().Contain("Default: localhost.");
             _ = invocation.Output.Should().Contain("Unit: m.");
@@ -39,6 +40,7 @@ namespace ThreeDTilesLink.Tests
                 "--depth-limit=16",
                 "--detail", "25",
                 "--content-workers", "3",
+                "--resonite-send-workers", "5",
                 "--timeout=90",
                 "--dry-run",
                 "--log-level", "Debug"
@@ -56,6 +58,7 @@ namespace ThreeDTilesLink.Tests
             _ = parsed.DepthLimit.Should().Be(16);
             _ = parsed.DetailTargetM.Should().Be(25d);
             _ = parsed.ContentWorkers.Should().Be(3);
+            _ = parsed.ResoniteSendWorkers.Should().Be(5);
             _ = parsed.TimeoutSec.Should().Be(90);
             _ = parsed.DryRun.Should().BeTrue();
             _ = parsed.LogLevel.Should().Be(LogLevel.Debug);
@@ -125,6 +128,23 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.ShouldRun.Should().BeFalse();
             _ = invocation.ExitCode.Should().Be(1);
             _ = invocation.Output.Should().Contain("Invalid value for --content-workers: 0");
+        }
+
+        [Fact]
+        public void Parse_RejectsNonPositiveResoniteSendWorkers()
+        {
+            CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
+            [
+                "--latitude", "35.0",
+                "--longitude", "139.0",
+                "--range", "400",
+                "--resonite-port", "12000",
+                "--resonite-send-workers", "0"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(1);
+            _ = invocation.Output.Should().Contain("Invalid value for --resonite-send-workers: 0");
         }
 
         [Theory]

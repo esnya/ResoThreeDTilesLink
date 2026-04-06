@@ -21,7 +21,10 @@ namespace ThreeDTilesLink.Core.CommandLine
             new("--detail", CommandOptionValueKind.DecimalNumber, "Target tile detail before traversal stops descending renderable GLB tiles.", DefaultValue: 30d, Unit: "m", RenamedFrom: ["--detail-target-m"]);
 
         internal static CommandOptionDefinition ContentWorkers(string description) =>
-            new("--content-workers", CommandOptionValueKind.WholeNumber, description, DefaultValue: 8);
+            new("--content-workers", CommandOptionValueKind.WholeNumber, description, DefaultValue: 10);
+
+        internal static CommandOptionDefinition ResoniteSendWorkers(string description) =>
+            new("--resonite-send-workers", CommandOptionValueKind.WholeNumber, description, DefaultValue: 1);
 
         internal static CommandOptionDefinition Timeout() =>
             new("--timeout", CommandOptionValueKind.WholeNumber, "Request timeout.", DefaultValue: 120, Unit: "sec", RenamedFrom: ["--timeout-sec"]);

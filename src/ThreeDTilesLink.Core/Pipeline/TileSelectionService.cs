@@ -15,7 +15,8 @@ namespace ThreeDTilesLink.Core.Pipeline
         IMeshPlacementService meshPlacementService,
         ISelectedTileProjector selectedTileProjector,
         ILogger logger,
-        int maxConcurrentTileProcessing = 1) : ITileSelectionService
+        int maxConcurrentTileProcessing = 1,
+        int maxConcurrentWriterSends = 1) : ITileSelectionService
     {
         private readonly ITilesSource _tilesSource = tilesSource;
         private readonly TraversalCore _traversalCore = traversalCore;
@@ -26,6 +27,9 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly int _maxConcurrentTileProcessing = maxConcurrentTileProcessing > 0
             ? maxConcurrentTileProcessing
             : throw new ArgumentOutOfRangeException(nameof(maxConcurrentTileProcessing), "Tile content worker count must be positive.");
+        private readonly int _maxConcurrentWriterSends = maxConcurrentWriterSends > 0
+            ? maxConcurrentWriterSends
+            : throw new ArgumentOutOfRangeException(nameof(maxConcurrentWriterSends), "Writer send concurrency must be positive.");
 
         private static readonly Action<ILogger, string, int, Exception?> s_connectingToResonite =
             LoggerMessage.Define<string, int>(
@@ -212,7 +216,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             using var workerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var discoveryTasks = new Dictionary<string, Task<DiscoveryCompletion>>(StringComparer.Ordinal);
-            Task<WriterCompletion>? writerTask = null;
+            var writerTasks = new List<Task<WriterCompletion>>();
             ExceptionDispatchInfo? pendingFailure = null;
             bool completedSuccessfully = false;
 
@@ -264,19 +268,46 @@ namespace ThreeDTilesLink.Core.Pipeline
                         discoveryTasks.Add(stableId, ExecuteDiscoveryAsync(work, request, auth, workerCts.Token));
                     }
 
-                    if (writerTask is null)
+                    if (writerState.InFlightRemoveStableId is null && !writerState.MetadataInFlight)
                     {
-                        WriterCommand? writerCommand = _traversalCore.PlanWriterCommand(
-                            facts,
-                            writerState,
-                            desiredView,
-                            progress,
-                            request.Output.DryRun,
-                            allowRemoval: true);
-                        if (writerCommand is not null)
+                        if (writerTasks.Count == 0)
                         {
-                            MarkWriterInFlight(writerState, writerCommand);
-                            writerTask = ExecuteWriterCommandAsync(writerCommand, request, interactiveContext, workerCts.Token);
+                            WriterCommand? firstWriterCommand = _traversalCore.PlanWriterCommand(
+                                facts,
+                                writerState,
+                                desiredView,
+                                progress,
+                                request.Output.DryRun,
+                                allowRemoval: true,
+                                allowSend: true,
+                                allowMetadata: true);
+                            if (firstWriterCommand is not null)
+                            {
+                                MarkWriterInFlight(writerState, firstWriterCommand);
+                                writerTasks.Add(ExecuteWriterCommandAsync(firstWriterCommand, request, interactiveContext, workerCts.Token));
+                            }
+                        }
+
+                        while (writerState.InFlightRemoveStableId is null &&
+                               !writerState.MetadataInFlight &&
+                               writerState.InFlightSendStableIds.Count < _maxConcurrentWriterSends)
+                        {
+                            WriterCommand? sendWriterCommand = _traversalCore.PlanWriterCommand(
+                                facts,
+                                writerState,
+                                desiredView,
+                                progress,
+                                request.Output.DryRun,
+                                allowRemoval: false,
+                                allowSend: true,
+                                allowMetadata: false);
+                            if (sendWriterCommand is not SendTileWriterCommand)
+                            {
+                                break;
+                            }
+
+                            MarkWriterInFlight(writerState, sendWriterCommand);
+                            writerTasks.Add(ExecuteWriterCommandAsync(sendWriterCommand, request, interactiveContext, workerCts.Token));
                         }
                     }
 
@@ -284,7 +315,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     progress = BuildProgressSnapshot(facts, writerState, counters);
                     UpdateInteractiveState(interactiveContext, facts, writerState, counters);
 
-                    bool writerBusy = writerTask is not null;
+                    bool writerBusy = writerTasks.Count != 0;
                     if (_traversalCore.IsSettled(
                         facts,
                         writerState,
@@ -298,12 +329,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                         return BuildRunExecutionResult(facts, writerState, counters);
                     }
 
-                    if (discoveryTasks.Count == 0 && writerTask is null)
+                    if (discoveryTasks.Count == 0 && writerTasks.Count == 0)
                     {
                         throw new InvalidOperationException("Traversal stalled without pending discovery or writer work.");
                     }
 
-                    if (writerTask is null)
+                    if (writerTasks.Count == 0)
                     {
                         Task completedTask = await Task.WhenAny(discoveryTasks.Values).ConfigureAwait(false);
                         if (!completedTask.IsCompleted)
@@ -313,19 +344,19 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
                     else
                     {
-                        Task completedTask = await Task.WhenAny(discoveryTasks.Values.Cast<Task>().Concat([writerTask])).ConfigureAwait(false);
+                        Task completedTask = await Task.WhenAny(discoveryTasks.Values.Cast<Task>().Concat(writerTasks)).ConfigureAwait(false);
                         if (!completedTask.IsCompleted)
                         {
                             throw new InvalidOperationException("Completed task was not completed.");
                         }
                     }
 
-                    writerTask = await ApplyCompletedWorkAsync(
+                    await ApplyCompletedWorkAsync(
                         facts,
                         writerState,
                         discoveryTasks,
                         interactiveContext,
-                        writerTask,
+                        writerTasks,
                         counters).ConfigureAwait(false);
                 }
             }
@@ -333,19 +364,19 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 pendingFailure = ExceptionDispatchInfo.Capture(new OperationCanceledException(cancellationToken));
                 await workerCts.CancelAsync().ConfigureAwait(false);
-                writerTask = await ApplyCompletedWorkAsync(
+                await ApplyCompletedWorkAsync(
                     facts,
                     writerState,
                     discoveryTasks,
                     interactiveContext,
-                    writerTask,
+                    writerTasks,
                     counters).ConfigureAwait(false);
-                writerTask = await DrainOutstandingWorkAsync(
+                await DrainOutstandingWorkAsync(
                     facts,
                     writerState,
                     discoveryTasks,
                     interactiveContext,
-                    writerTask,
+                    writerTasks,
                     counters).ConfigureAwait(false);
                 UpdateInteractiveState(interactiveContext, facts, writerState, counters);
                 throw;
@@ -358,7 +389,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             finally
             {
                 await workerCts.CancelAsync().ConfigureAwait(false);
-                await ObserveOutstandingTasksAsync(discoveryTasks.Values, writerTask).ConfigureAwait(false);
+                await ObserveOutstandingTasksAsync(discoveryTasks.Values, writerTasks).ConfigureAwait(false);
 
                 if (!request.Output.DryRun && request.Output.ManageConnection)
                 {
@@ -384,12 +415,12 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        private async Task<Task<WriterCompletion>?> ApplyCompletedWorkAsync(
+        private async Task ApplyCompletedWorkAsync(
             DiscoveryFacts facts,
             WriterState writerState,
             Dictionary<string, Task<DiscoveryCompletion>> discoveryTasks,
             InteractiveExecutionContext? interactiveContext,
-            Task<WriterCompletion>? writerTask,
+            List<Task<WriterCompletion>> writerTasks,
             RunCounters counters)
         {
             foreach ((string stableId, Task<DiscoveryCompletion> task) in discoveryTasks
@@ -420,79 +451,73 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
             }
 
-            if (writerTask is null || !writerTask.IsCompleted)
+            foreach (Task<WriterCompletion> writerTask in writerTasks
+                         .Where(static task => task.IsCompleted)
+                         .ToArray())
             {
-                return writerTask;
-            }
+                _ = writerTasks.Remove(writerTask);
 
-            try
-            {
-                WriterCompletion completion = await writerTask.ConfigureAwait(false);
-                LogWriterCompletion(completion);
-                if (completion is SendTileCompleted sent)
+                try
                 {
-                    foreach (string slotId in sent.SlotIds)
+                    WriterCompletion completion = await writerTask.ConfigureAwait(false);
+                    LogWriterCompletion(completion);
+                    if (completion is SendTileCompleted sent)
                     {
-                        interactiveContext?.TrackNewSlotId(slotId);
+                        foreach (string slotId in sent.SlotIds)
+                        {
+                            interactiveContext?.TrackNewSlotId(slotId);
+                        }
                     }
+
+                    int processedTiles = counters.ProcessedTiles;
+                    int streamedMeshes = counters.StreamedMeshes;
+                    int failedTiles = counters.FailedTiles;
+                    _traversalCore.ApplyWriterCompletion(
+                        facts,
+                        writerState,
+                        completion,
+                        dryRun: facts.Request.Output.DryRun,
+                        ref processedTiles,
+                        ref streamedMeshes,
+                        ref failedTiles);
+                    counters.ProcessedTiles = processedTiles;
+                    counters.StreamedMeshes = streamedMeshes;
+                    counters.FailedTiles = failedTiles;
                 }
-
-                int processedTiles = counters.ProcessedTiles;
-                int streamedMeshes = counters.StreamedMeshes;
-                int failedTiles = counters.FailedTiles;
-                _traversalCore.ApplyWriterCompletion(
-                    facts,
-                    writerState,
-                    completion,
-                    dryRun: facts.Request.Output.DryRun,
-                    ref processedTiles,
-                    ref streamedMeshes,
-                    ref failedTiles);
-                counters.ProcessedTiles = processedTiles;
-                counters.StreamedMeshes = streamedMeshes;
-                counters.FailedTiles = failedTiles;
+                catch (OperationCanceledException)
+                {
+                    ClearWriterInFlight(writerState);
+                }
             }
-            catch (OperationCanceledException)
-            {
-                ClearWriterInFlight(writerState);
-            }
-            finally
-            {
-                writerTask = null;
-            }
-
-            return writerTask;
         }
 
-        private async Task<Task<WriterCompletion>?> DrainOutstandingWorkAsync(
+        private async Task DrainOutstandingWorkAsync(
             DiscoveryFacts facts,
             WriterState writerState,
             Dictionary<string, Task<DiscoveryCompletion>> discoveryTasks,
             InteractiveExecutionContext? interactiveContext,
-            Task<WriterCompletion>? writerTask,
+            List<Task<WriterCompletion>> writerTasks,
             RunCounters counters)
         {
-            while (discoveryTasks.Count > 0 || writerTask is not null)
+            while (discoveryTasks.Count > 0 || writerTasks.Count != 0)
             {
-                if (writerTask is null)
+                if (writerTasks.Count == 0)
                 {
                     _ = await Task.WhenAny(discoveryTasks.Values).ConfigureAwait(false);
                 }
                 else
                 {
-                    _ = await Task.WhenAny(discoveryTasks.Values.Cast<Task>().Concat([writerTask])).ConfigureAwait(false);
+                    _ = await Task.WhenAny(discoveryTasks.Values.Cast<Task>().Concat(writerTasks)).ConfigureAwait(false);
                 }
 
-                writerTask = await ApplyCompletedWorkAsync(
+                await ApplyCompletedWorkAsync(
                     facts,
                     writerState,
                     discoveryTasks,
                     interactiveContext,
-                    writerTask,
+                    writerTasks,
                     counters).ConfigureAwait(false);
             }
-
-            return writerTask;
         }
 
         [SuppressMessage(
@@ -501,11 +526,9 @@ namespace ThreeDTilesLink.Core.Pipeline
             Justification = "Outstanding writer/discovery failures are intentionally ignored to complete cleanup and surface cancellation.")]
         private async Task ObserveOutstandingTasksAsync(
             IEnumerable<Task<DiscoveryCompletion>> discoveryTasks,
-            Task<WriterCompletion>? writerTask)
+            IEnumerable<Task<WriterCompletion>> writerTasks)
         {
-            IEnumerable<Task> outstanding = writerTask is null
-                ? discoveryTasks
-                : discoveryTasks.Cast<Task>().Concat([writerTask]);
+            IEnumerable<Task> outstanding = discoveryTasks.Cast<Task>().Concat(writerTasks);
 
             try
             {
@@ -664,7 +687,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             switch (command)
             {
                 case SendTileWriterCommand send:
-                    writerState.InFlightSendStableId = send.Content.Tile.StableId;
+                    _ = writerState.InFlightSendStableIds.Add(send.Content.Tile.StableId!);
                     break;
                 case RemoveTileWriterCommand remove:
                     writerState.InFlightRemoveStableId = remove.StableId;
@@ -677,7 +700,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         private static void ClearWriterInFlight(WriterState writerState)
         {
-            writerState.InFlightSendStableId = null;
+            writerState.InFlightSendStableIds.Clear();
             writerState.InFlightRemoveStableId = null;
             writerState.MetadataInFlight = false;
         }
@@ -818,32 +841,22 @@ namespace ThreeDTilesLink.Core.Pipeline
             TileRunRequest request,
             CancellationToken cancellationToken)
         {
-            var streamedSlotIds = new List<string>();
-            int streamedMeshCount = 0;
-
             try
             {
-                foreach (PlacedMeshPayload payload in command.Content.Meshes)
-                {
-                    string? slotId = request.Output.DryRun
-                        ? null
-                        : await _selectedTileProjector.StreamPlacedMeshAsync(payload, cancellationToken).ConfigureAwait(false);
-                    if (!string.IsNullOrWhiteSpace(slotId))
-                    {
-                        streamedSlotIds.Add(slotId);
-                    }
+                SendMeshResult[] results = await Task.WhenAll(command.Content.Meshes.Select(SendPayloadAsync)).ConfigureAwait(false);
+                var streamedSlotIds = results
+                    .Select(static result => result.SlotId)
+                    .Where(static slotId => !string.IsNullOrWhiteSpace(slotId))
+                    .Cast<string>()
+                    .ToList();
+                int streamedMeshCount = results.Count(static result => result.Error is null);
+                Exception? firstError = results.FirstOrDefault(static result => result.Error is not null)?.Error;
 
-                    streamedMeshCount++;
+                if (firstError is null)
+                {
+                    return new SendTileCompleted(command.Content, true, streamedMeshCount, streamedSlotIds);
                 }
 
-                return new SendTileCompleted(command.Content, true, streamedMeshCount, streamedSlotIds);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
                 if (streamedSlotIds.Count > 0)
                 {
                     bool rolledBack = await TryRollbackPartialSendAsync(
@@ -857,7 +870,30 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
                 }
 
-                return new SendTileCompleted(command.Content, false, streamedMeshCount, streamedSlotIds, ex);
+                return new SendTileCompleted(command.Content, false, streamedMeshCount, streamedSlotIds, firstError);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            async Task<SendMeshResult> SendPayloadAsync(PlacedMeshPayload payload)
+            {
+                try
+                {
+                    string? slotId = request.Output.DryRun
+                        ? null
+                        : await _selectedTileProjector.StreamPlacedMeshAsync(payload, cancellationToken).ConfigureAwait(false);
+                    return new SendMeshResult(slotId, null);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    return new SendMeshResult(null, ex);
+                }
             }
         }
 
@@ -1175,6 +1211,8 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             public long NextPreparedOrder { get; set; }
         }
+
+        private sealed record SendMeshResult(string? SlotId, Exception? Error);
 
         private sealed class InteractiveExecutionContext
         {
