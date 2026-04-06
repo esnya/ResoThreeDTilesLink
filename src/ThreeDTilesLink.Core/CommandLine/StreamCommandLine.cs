@@ -66,13 +66,13 @@ namespace ThreeDTilesLink.Core.CommandLine
             if (!CommandInvocationBuilder.TryGetValue(parsed, "--latitude", out double latitude) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--longitude", out double longitude) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--height-offset", out double heightOffsetM) ||
-                !CommandInvocationBuilder.TryGetValue(parsed, "--range", out double rangeM) ||
+                !CommandInvocationBuilder.TryGetPositiveDouble(parsed, "--range", out double rangeM) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--resonite-host", out string? resoniteHost) ||
-                !CommandInvocationBuilder.TryGetValue(parsed, "--resonite-port", out int resonitePort) ||
-                !CommandInvocationBuilder.TryGetValue(parsed, "--tile-limit", out int tileLimit) ||
-                !CommandInvocationBuilder.TryGetValue(parsed, "--depth-limit", out int depthLimit) ||
-                !CommandInvocationBuilder.TryGetValue(parsed, "--detail", out double detailTargetM) ||
-                !CommandInvocationBuilder.TryGetValue(parsed, "--timeout", out int timeoutSec) ||
+                !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--resonite-port", out int resonitePort) ||
+                !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--tile-limit", out int tileLimit) ||
+                !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--depth-limit", out int depthLimit) ||
+                !CommandInvocationBuilder.TryGetPositiveDouble(parsed, "--detail", out double detailTargetM) ||
+                !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--timeout", out int timeoutSec) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--dry-run", out bool dryRun))
             {
                 return CommandInvocationBuilder.Error<StreamCommandOptions>("Invalid command values.", RenderHelp);

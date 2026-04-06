@@ -20,8 +20,15 @@ This document contains procedures for AI and coding agents. It keeps only decisi
 2. Confirm required values from the live Resonite Link.
 3. From WSL, prefer host-side execution for live verification, including `cmd.exe /c dotnet.exe run ...` or `pwsh.exe` wrappers.
 4. Use `stream` to confirm live send and remove ordering.
-5. Use the official ResoniteLink REPL via `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` for live inspection and member confirmation when raw JSON inspection is insufficient.
-6. If real-environment verification was not possible, state that assumption explicitly in the change description.
+5. Prefer Resonite Link autodiscovery over manually typing a port. The Coding Agent entry point is `tools/Invoke-ResoniteLinkCommand.ps1`.
+6. The autodiscovery mechanism is based on the Resonite Unity SDK and `YellowDogMan.ResoniteLink` implementation, not on Unity Editor behavior itself:
+   `LinkSessionListener` binds UDP port `12512`, listens for JSON `ResoniteLinkSession` announcements, and uses the announced `linkPort`.
+7. For one-off inspection, first run `pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover`.
+8. If exactly one session is present, omit `-Port` for `repl`, `send-json`, `benchmark-send`, and `cleanup-slot`; the script resolves it automatically.
+9. If multiple sessions are present, select one with `-SessionId` or `-SessionName` instead of copying a fixed port into notes or scripts.
+10. Use the official ResoniteLink REPL via `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` for live inspection and member confirmation when raw JSON inspection is insufficient.
+11. If application entry points still require `--resonite-port`, discover the current session immediately before running and treat that value as ephemeral input only.
+12. If real-environment verification was not possible, state that assumption explicitly in the change description.
 
 ## Documentation Update Rules
 

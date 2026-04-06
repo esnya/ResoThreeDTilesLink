@@ -41,6 +41,28 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task Run_WithoutApiKey_ThrowsBeforeFetching()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+
+            Func<Task> act = () => coordinator.RunAsync(CreateRequest(dryRun: true, apiKey: null), CancellationToken.None);
+
+            _ = await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("GOOGLE_MAPS_API_KEY is required*");
+            _ = client.ConnectCount.Should().Be(0);
+        }
+
+        [Fact]
         public async Task Run_SendFailureOnOneTile_ContinuesNextTile()
         {
             var tileset = new Tileset(new Tile
@@ -390,6 +412,8 @@ namespace ThreeDTilesLink.Tests
             _ = client.RemovedSlotIds.Should().Contain("slot_fine");
             _ = result.VisibleTiles.Should().ContainKey(coarseStableId);
             _ = result.VisibleTiles.Should().NotContainKey(childStableId);
+            _ = result.SelectedTileStableIds.Should().Contain(coarseStableId);
+            _ = result.SelectedTileStableIds.Should().NotContain(childStableId);
         }
 
         [Fact]
@@ -1297,6 +1321,30 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task Run_PreservesOriginalFailure_WhenDisconnectAlsoFails()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") }
+                ]
+            });
+
+            var client = new FakeResoniteSession(failDisconnect: true);
+            TileRunCoordinator coordinator = CreateCoordinator(
+                new FakeTilesSource(tileset, rootFetchException: new InvalidOperationException("synthetic root fetch failure")),
+                client);
+
+            Func<Task> act = () => coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
+
+            _ = await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("synthetic root fetch failure");
+            _ = client.DisconnectCount.Should().Be(1);
+        }
+
+        [Fact]
         public async Task RunInteractive_RemovalFailure_DoesNotLivelock_AndKeepsRemainingVisibleTile()
         {
             var tileset = new Tileset(new Tile
@@ -1375,7 +1423,6 @@ namespace ThreeDTilesLink.Tests
                 new TileContentProcessor(tilesSource, extractor ?? new FakeExtractor()),
                 new MeshPlacementService(transformer),
                 session,
-                new FakeGoogleAccessTokenProvider(),
                 NullLogger<TileRunCoordinator>.Instance,
                 maxConcurrentTileProcessing);
         }
@@ -1385,14 +1432,15 @@ namespace ThreeDTilesLink.Tests
             int maxTiles = 16,
             int maxDepth = 8,
             double bootstrapRangeMultiplier = 4d,
-            bool manageConnection = true)
+            bool manageConnection = true,
+            string? apiKey = "k")
         {
             return new TileRunRequest(
                 new GeoReference(0d, 0d, 0d),
                 new GeoReference(0d, 0d, 0d),
                 new TraversalOptions(500d, maxTiles, maxDepth, 40d, bootstrapRangeMultiplier),
                 new ResoniteOutputOptions("127.0.0.1", 12345, dryRun, manageConnection),
-                "k");
+                apiKey);
         }
 
         private static string StableId(string id)
@@ -1444,7 +1492,8 @@ namespace ThreeDTilesLink.Tests
             TimeSpan? contentDelay = null,
             bool ignoreCancellationDuringContent = false,
             IReadOnlyDictionary<string, TimeSpan>? contentDelayByUri = null,
-            Action<Uri>? onContentFetched = null) : ITilesSource
+            Action<Uri>? onContentFetched = null,
+            Exception? rootFetchException = null) : ITilesSource
         {
             private readonly Tileset _tileset = tileset;
             private readonly IReadOnlyDictionary<string, Tileset> _nestedTilesets = nestedTilesets ?? new Dictionary<string, Tileset>();
@@ -1453,6 +1502,7 @@ namespace ThreeDTilesLink.Tests
             private readonly bool _ignoreCancellationDuringContent = ignoreCancellationDuringContent;
             private readonly IReadOnlyDictionary<string, TimeSpan> _contentDelayByUri = contentDelayByUri ?? new Dictionary<string, TimeSpan>();
             private readonly Action<Uri>? _onContentFetched = onContentFetched;
+            private readonly Exception? _rootFetchException = rootFetchException;
             private int _activeContentFetches;
             private int _maxConcurrentContentFetches;
 
@@ -1462,6 +1512,11 @@ namespace ThreeDTilesLink.Tests
 
             public Task<Tileset> FetchRootTilesetAsync(GoogleTilesAuth auth, CancellationToken cancellationToken)
             {
+                if (_rootFetchException is not null)
+                {
+                    return Task.FromException<Tileset>(_rootFetchException);
+                }
+
                 return Task.FromResult(_tileset);
             }
 
@@ -1560,7 +1615,8 @@ namespace ThreeDTilesLink.Tests
             bool ignoreCancellationDuringStream = false,
             string? failOnRemoveContains = null,
             bool failProgressUpdates = false,
-            bool failLicenseUpdates = false) : ISelectedTileProjector
+            bool failLicenseUpdates = false,
+            bool failDisconnect = false) : ISelectedTileProjector
         {
             private readonly bool _failFirstSend = failFirstSend;
             private readonly string? _failOnNameContains = failOnNameContains;
@@ -1572,6 +1628,7 @@ namespace ThreeDTilesLink.Tests
             private readonly string? _failOnRemoveContains = failOnRemoveContains;
             private readonly bool _failProgressUpdates = failProgressUpdates;
             private readonly bool _failLicenseUpdates = failLicenseUpdates;
+            private readonly bool _failDisconnect = failDisconnect;
             private int _activeStreams;
             private int _maxConcurrentStreams;
 
@@ -1664,6 +1721,11 @@ namespace ThreeDTilesLink.Tests
             public Task DisconnectAsync(CancellationToken cancellationToken)
             {
                 DisconnectCount++;
+                if (_failDisconnect)
+                {
+                    throw new InvalidOperationException("synthetic disconnect failure");
+                }
+
                 return Task.CompletedTask;
             }
 
@@ -1679,14 +1741,6 @@ namespace ThreeDTilesLink.Tests
                     }
                 }
                 while (Interlocked.CompareExchange(ref _maxConcurrentStreams, current, observed) != observed);
-            }
-        }
-
-        private sealed class FakeGoogleAccessTokenProvider : IGoogleAccessTokenProvider
-        {
-            public Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)
-            {
-                return Task.FromResult("token");
             }
         }
     }

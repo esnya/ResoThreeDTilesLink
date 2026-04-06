@@ -362,6 +362,39 @@ namespace ThreeDTilesLink.Tests
             _ = session.DisconnectCalls.Should().Be(1);
         }
 
+        [Fact]
+        public async Task RunAsync_RetriesSameSearchText_AfterTransientFailure()
+        {
+            var session = new FakeSession();
+            var watchStore = new FakeWatchStore
+            {
+                SearchValues = new Queue<string?>(["Asakusa", "Asakusa", "Asakusa", "Asakusa", "Asakusa"]),
+                SelectionInputValues = new Queue<SelectionInputValues?>([null, null, null, null, null])
+            };
+            var clock = new FakeClock { CancelAfterDelayCalls = 5 };
+            var searchResolver = new FakeSearchResolver(
+                outcomes:
+                [
+                    new HttpRequestException("transient"),
+                    new LocationSearchResult("Asakusa", 35.7147651d, 139.7966553d)
+                ]);
+            var supervisor = CreateSupervisor(
+                new FakeTileRunCoordinator(static _ => { }),
+                session,
+                watchStore,
+                searchResolver,
+                clock);
+
+            using var cts = new CancellationTokenSource();
+            clock.CancellationSource = cts;
+
+            await supervisor.RunAsync(CreateRequest(apiKey: "key"), cts.Token);
+
+            _ = searchResolver.CallCount.Should().BeGreaterThanOrEqualTo(2);
+            _ = watchStore.UpdatedCoordinates.Should().ContainSingle()
+                .Which.Should().Be((35.7147651d, 139.7966553d));
+        }
+
         private static InteractiveRunSupervisor CreateSupervisor(
             FakeTileRunCoordinator coordinator,
             FakeSession session,
@@ -554,13 +587,32 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
-        private sealed class FakeSearchResolver(LocationSearchResult? result = null, Exception? exception = null) : ISearchResolver
+        private sealed class FakeSearchResolver(
+            LocationSearchResult? result = null,
+            Exception? exception = null,
+            IReadOnlyList<object?>? outcomes = null) : ISearchResolver
         {
             private readonly LocationSearchResult? _result = result ?? new LocationSearchResult("resolved", 35d, 139d);
             private readonly Exception? _exception = exception;
+            private readonly Queue<object?>? _outcomes = outcomes is null ? null : new Queue<object?>(outcomes);
+
+            public int CallCount { get; private set; }
 
             public Task<LocationSearchResult?> SearchAsync(string apiKey, string query, CancellationToken cancellationToken)
             {
+                CallCount++;
+                if (_outcomes is not null && _outcomes.Count > 0)
+                {
+                    object? outcome = _outcomes.Dequeue();
+                    return outcome switch
+                    {
+                        Exception ex => Task.FromException<LocationSearchResult?>(ex),
+                        LocationSearchResult location => Task.FromResult<LocationSearchResult?>(location),
+                        null => Task.FromResult<LocationSearchResult?>(null),
+                        _ => throw new InvalidOperationException("Unsupported fake search outcome.")
+                    };
+                }
+
                 if (_exception is not null)
                 {
                     return Task.FromException<LocationSearchResult?>(_exception);

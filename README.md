@@ -18,9 +18,9 @@ This `README.md` is the human-facing entry point. Current operational details an
 - `.NET SDK 10.0+`
 - Google APIs required by feature
   - 3D Tiles fetch (`stream`, `interactive` tile streaming): Google Map Tiles API
-    - Use `GOOGLE_MAPS_API_KEY`
+    - `GOOGLE_MAPS_API_KEY` is required
   - Free-text location search in Interactive (`World/ThreeDTilesLink.Search`): Google Geocoding API
-    - Use `GOOGLE_MAPS_API_KEY`
+    - `GOOGLE_MAPS_API_KEY` is required
 - Enable Resonite Link in Resonite and confirm the destination port
 
 At startup, the app automatically loads `.env` with parent-directory discovery and does not overwrite existing environment variables.
@@ -86,8 +86,7 @@ dotnet run --project src/ThreeDTilesLink -- interactive \
   --poll-interval 250 \
   --debounce 800 \
   --throttle 3000 \
-  --watch-path World/ThreeDTilesLink \
-  --watch-name "3DTilesLink Watch"
+  --watch-path World/ThreeDTilesLink
 ```
 
 Run `dotnet run --project src/ThreeDTilesLink -- interactive --help` for units and defaults.

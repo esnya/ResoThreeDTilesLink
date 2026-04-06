@@ -16,8 +16,11 @@
 - `stream` のタイル取得: Google Map Tiles API
 - `interactive` の `Latitude` / `Longitude` / `Range` ベースのタイル取得: Google Map Tiles API
 - `interactive` の自由検索 (`World/... .Search`): Google Geocoding API
+- タイル取得は ADC fallback を使わない。常に `GOOGLE_MAPS_API_KEY` を使う
 - `interactive` の自由検索は `GOOGLE_MAPS_API_KEY` が必要で、ADC では扱わない
 - アプリは `.env` を上位ディレクトリ探索付きで自動ロードし、既存の環境変数は上書きしない
+- tileset の表示ラベルは、slot 名の可読性を優先して compact な 16 進数にしている
+- 同一階層に 16 個を超える sibling がある場合、表示ラベルは 16 進数で折り返し、parser は warning を出す。ただし内部の stable path は一意性を保つ
 
 ## 環境変数
 
@@ -49,8 +52,11 @@
 - NuGet の restore メタデータにはホスト依存パスが入るため、`obj` を共有させる運用に戻さない
 - CI や検証環境で正しいバージョンを計算するには `git tag` 履歴が必要で、浅い checkout のままにしない
 - raw JSON 送信は `tools/ResoniteRawJson` を使う
-- WSL からは `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" <command> localhost <port> ...` の形で host 側実行に寄せる
+- Resonite Unity SDK は `YellowDogMan.ResoniteLink` の `LinkSessionListener` を使って自動検知する。これは UDP `12512` を bind し、JSON の `ResoniteLinkSession` announcement を受け取り、告知された `linkPort` を使う仕組み
+- このリポジトリの `tools/Invoke-ResoniteLinkCommand.ps1` も同じ仕組みに寄せているため、port を script に書き込むより `discover` または `-Port` 省略を優先する
+- WSL からは `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" <command> ...` の形で host 側実行に寄せる
 - 例で使うポート番号はその時点の live な Resonite Link に合わせる。固定値として扱わない
+- 複数 session が見つかった場合は、`-SessionId` または `-SessionName` で対象を選ぶ
 - Git worktree から検証する場合は、その worktree にも `.env` を置く。アプリは現在の working tree から親ディレクトリ探索で `.env` を読むため、main checkout 側の `.env` は自動では拾われない
 - WSL から `send-json` の `-JsonFile` を使う場合は Windows パスを渡す。`/tmp/...` のような Linux パスは host 側 `dotnet.exe` から読めない
 - worktree 配下で host 実行すると、MinVer が project directory を Git working directory と見なせず warning を出すことがある。バージョン計算自体を検証対象にしていない限り、この warning は非 blocking として扱う
@@ -68,12 +74,14 @@
 例:
 
 ```bash
-pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" repl localhost 6216
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover
 
-pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost 6216 \
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" repl
+
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json \
   -Json '{"$type":"requestSessionData"}'
 
-pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost 6216 \
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json \
   -JsonFile "$(wslpath -w /tmp/get-slot-root.json)"
 ```
 

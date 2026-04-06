@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using ResoniteLink;
-using ThreeDTilesLink.Core.Auth;
 using ThreeDTilesLink.Core.Geo;
 using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Mesh;
@@ -44,7 +43,6 @@ namespace ThreeDTilesLink.Core.Runtime
             var extractor = new GlbMeshExtractor();
             var contentProcessor = new TileContentProcessor(tilesSource, extractor);
             var meshPlacementService = new MeshPlacementService(transformer);
-            var tokenProvider = new DefaultCredentialAccessTokenProvider();
             var geocodingClient = new GoogleGeocodingClient(_httpClient);
             var searchResolver = new SearchResolver(geocodingClient);
             LinkInterface? linkInterface = null;
@@ -75,7 +73,6 @@ namespace ThreeDTilesLink.Core.Runtime
                 contentProcessor,
                 meshPlacementService,
                 selectedTileProjector,
-                tokenProvider,
                 loggerFactory.CreateLogger<TileSelectionService>(),
                 maxConcurrentTileProcessing);
 

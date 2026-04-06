@@ -75,13 +75,52 @@ namespace ThreeDTilesLink.Tests
                 .WithMessage("*REQUEST_DENIED*");
         }
 
-        private sealed class StubHttpMessageHandler(string responseBody) : HttpMessageHandler
+        [Fact]
+        public async Task SearchAsync_HttpError_IncludesResponseBody()
+        {
+            using var handler = new StubHttpMessageHandler(
+                """
+                {
+                  "error_message": "billing disabled"
+                }
+                """,
+                HttpStatusCode.Forbidden);
+            using var httpClient = new HttpClient(handler);
+            var sut = new GoogleGeocodingClient(httpClient);
+
+            Func<Task> act = () => sut.SearchAsync("test-key", "Tokyo Tower", CancellationToken.None);
+
+            _ = await act.Should().ThrowAsync<HttpRequestException>()
+                .WithMessage("*billing disabled*");
+        }
+
+        [Fact]
+        public async Task SearchAsync_OkWithoutResults_ThrowsMeaningfulError()
+        {
+            using var handler = new StubHttpMessageHandler(
+                """
+                {
+                  "status": "OK",
+                  "results": []
+                }
+                """);
+            using var httpClient = new HttpClient(handler);
+            var sut = new GoogleGeocodingClient(httpClient);
+
+            Func<Task> act = () => sut.SearchAsync("test-key", "Tokyo Tower", CancellationToken.None);
+
+            _ = await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*without any results*");
+        }
+
+        private sealed class StubHttpMessageHandler(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK) : HttpMessageHandler
         {
             private readonly string _responseBody = responseBody;
+            private readonly HttpStatusCode _statusCode = statusCode;
 
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                return Task.FromResult(new HttpResponseMessage(_statusCode)
                 {
                     Content = new StringContent(_responseBody, Encoding.UTF8, "application/json")
                 });

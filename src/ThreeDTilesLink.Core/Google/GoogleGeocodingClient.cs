@@ -23,9 +23,17 @@ namespace ThreeDTilesLink.Core.Google
             using HttpResponseMessage response = await _httpClient.GetAsync(
                 BuildRequestUri(normalizedApiKey, normalizedQuery),
                 cancellationToken).ConfigureAwait(false);
-            _ = response.EnsureSuccessStatusCode();
 
-            Stream responseStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new HttpRequestException(
+                    $"Google geocoding HTTP {(int)response.StatusCode} {response.ReasonPhrase}. Body: {responseBody}",
+                    null,
+                    response.StatusCode);
+            }
+
+            using var responseStream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(responseBody));
             await using (responseStream.ConfigureAwait(false))
             {
                 using JsonDocument document = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -49,7 +57,14 @@ namespace ThreeDTilesLink.Core.Google
                             : $"Google geocoding failed with status '{status}': {errorMessage}");
                 }
 
-                JsonElement firstResult = root.GetProperty("results")[0];
+                if (!root.TryGetProperty("results", out JsonElement resultsElement) ||
+                    resultsElement.ValueKind != JsonValueKind.Array ||
+                    resultsElement.GetArrayLength() == 0)
+                {
+                    throw new InvalidOperationException("Google geocoding returned status 'OK' without any results.");
+                }
+
+                JsonElement firstResult = resultsElement[0];
                 string formattedAddress = firstResult.TryGetProperty("formatted_address", out JsonElement formattedAddressElement)
                     ? formattedAddressElement.GetString() ?? normalizedQuery
                     : normalizedQuery;

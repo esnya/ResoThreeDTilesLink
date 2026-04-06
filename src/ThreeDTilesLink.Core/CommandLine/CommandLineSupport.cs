@@ -325,6 +325,16 @@ namespace ThreeDTilesLink.Core.CommandLine
             return TryGetValue(parsed, key, out value) && value > 0;
         }
 
+        internal static bool TryGetNonNegativeInt(ParsedCommand parsed, string key, out int value)
+        {
+            return TryGetValue(parsed, key, out value) && value >= 0;
+        }
+
+        internal static bool TryGetPositiveDouble(ParsedCommand parsed, string key, out double value)
+        {
+            return TryGetValue(parsed, key, out value) && value > 0d;
+        }
+
         internal static CommandInvocation<T> Error<T>(string message, Func<string> renderHelp)
         {
             return new CommandInvocation<T>(

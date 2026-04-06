@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.ExceptionServices;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
 
@@ -13,7 +14,6 @@ namespace ThreeDTilesLink.Core.Pipeline
         IContentProcessor contentProcessor,
         IMeshPlacementService meshPlacementService,
         ISelectedTileProjector selectedTileProjector,
-        IGoogleAccessTokenProvider googleAccessTokenProvider,
         ILogger logger,
         int maxConcurrentTileProcessing = 1) : ITileSelectionService
     {
@@ -22,7 +22,6 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly IContentProcessor _contentProcessor = contentProcessor;
         private readonly IMeshPlacementService _meshPlacementService = meshPlacementService;
         private readonly ISelectedTileProjector _selectedTileProjector = selectedTileProjector;
-        private readonly IGoogleAccessTokenProvider _googleAccessTokenProvider = googleAccessTokenProvider;
         private readonly ILogger _logger = logger;
         private readonly int _maxConcurrentTileProcessing = maxConcurrentTileProcessing > 0
             ? maxConcurrentTileProcessing
@@ -130,6 +129,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                 new EventId(17, "RemoveRetainedSlotFailed"),
                 "Failed to remove retained slot {SlotId} for tile {TileId}.");
 
+        private static readonly Action<ILogger, Exception?> s_disconnectFailedDuringFailure =
+            LoggerMessage.Define(
+                LogLevel.Warning,
+                new EventId(18, "DisconnectFailedDuringFailure"),
+                "Failed to disconnect Resonite Link while another failure was already in flight.");
+
         public async Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(request);
@@ -157,7 +162,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 IReadOnlyDictionary<string, RetainedTileState> failedRetainedTiles = await CommitInteractiveChangesAsync(
                     interactiveContext,
                     execution.SelectedTileStableIds,
-                    CancellationToken.None).ConfigureAwait(false);
+                    cancellationToken).ConfigureAwait(false);
 
                 IReadOnlyDictionary<string, RetainedTileState> nextRetainedTiles = BuildNextRetainedTiles(
                     interactive.RetainedTiles,
@@ -166,7 +171,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     interactive.RemoveOutOfRangeTiles,
                     failedRetainedTiles);
 
-                await ApplyFinalLicenseCreditAsync(request, nextRetainedTiles, CancellationToken.None).ConfigureAwait(false);
+                await ApplyFinalLicenseCreditAsync(request, nextRetainedTiles, cancellationToken).ConfigureAwait(false);
                 return new InteractiveTileRunResult(
                     execution.Summary,
                     nextRetainedTiles,
@@ -178,7 +183,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return await FinalizeCanceledInteractiveRunAsync(
                     request,
                     interactive,
-                    interactiveContext).ConfigureAwait(false);
+                    interactiveContext,
+                    cancellationToken).ConfigureAwait(false);
             }
             catch
             {
@@ -197,7 +203,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             InteractiveExecutionContext? interactiveContext,
             CancellationToken cancellationToken)
         {
-            GoogleTilesAuth auth = await BuildAuthAsync(request, cancellationToken).ConfigureAwait(false);
+            GoogleTilesAuth auth = await BuildAuthAsync(request).ConfigureAwait(false);
             if (!request.Output.DryRun && request.Output.ManageConnection)
             {
                 s_connectingToResonite(_logger, request.Output.Host, request.Output.Port, null);
@@ -207,6 +213,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             using var workerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var discoveryTasks = new Dictionary<string, Task<DiscoveryCompletion>>(StringComparer.Ordinal);
             Task<WriterCompletion>? writerTask = null;
+            ExceptionDispatchInfo? pendingFailure = null;
+            bool completedSuccessfully = false;
 
             DiscoveryFacts? facts = null;
             WriterState? writerState = null;
@@ -286,6 +294,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                         progress,
                         request.Output.DryRun))
                     {
+                        completedSuccessfully = true;
                         return BuildRunExecutionResult(facts, writerState, counters);
                     }
 
@@ -322,6 +331,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
             catch (OperationCanceledException) when (facts is not null && writerState is not null)
             {
+                pendingFailure = ExceptionDispatchInfo.Capture(new OperationCanceledException(cancellationToken));
                 await workerCts.CancelAsync().ConfigureAwait(false);
                 writerTask = await ApplyCompletedWorkAsync(
                     facts,
@@ -340,6 +350,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                 UpdateInteractiveState(interactiveContext, facts, writerState, counters);
                 throw;
             }
+            catch (Exception ex)
+            {
+                pendingFailure = ExceptionDispatchInfo.Capture(ex);
+                throw;
+            }
             finally
             {
                 await workerCts.CancelAsync().ConfigureAwait(false);
@@ -347,7 +362,24 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 if (!request.Output.DryRun && request.Output.ManageConnection)
                 {
-                    await _selectedTileProjector.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                    if (completedSuccessfully && pendingFailure is null)
+                    {
+                        await _selectedTileProjector.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        try
+                        {
+                            await _selectedTileProjector.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                        }
+                        catch (Exception ex)
+                        {
+                            s_disconnectFailedDuringFailure(_logger, ex);
+                        }
+                    }
                 }
             }
         }
@@ -667,12 +699,15 @@ namespace ThreeDTilesLink.Core.Pipeline
             WriterState writerState,
             RunCounters counters)
         {
+            DesiredView desiredView = _traversalCore.ComputeDesiredView(facts, writerState);
             var summary = new RunSummary(
                 _traversalCore.CountCandidateTiles(facts, writerState),
                 counters.ProcessedTiles,
                 counters.StreamedMeshes,
                 counters.FailedTiles);
-            IReadOnlySet<string> selectedTileStableIds = facts.Branches.Keys.ToHashSet(StringComparer.Ordinal);
+            IReadOnlySet<string> selectedTileStableIds = desiredView.SelectedStableIds is HashSet<string> selectedHashSet
+                ? selectedHashSet
+                : desiredView.SelectedStableIds.ToHashSet(StringComparer.Ordinal);
             Dictionary<string, RetainedTileState> visibleTiles = _traversalCore.BuildVisibleTiles(writerState)
                 .Where(pair => facts.Branches.ContainsKey(pair.Key))
                 .ToDictionary(
@@ -927,15 +962,14 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        private async Task<GoogleTilesAuth> BuildAuthAsync(TileRunRequest request, CancellationToken cancellationToken)
+        private static Task<GoogleTilesAuth> BuildAuthAsync(TileRunRequest request)
         {
             if (!string.IsNullOrWhiteSpace(request.ApiKey))
             {
-                return new GoogleTilesAuth(request.ApiKey, null);
+                return Task.FromResult(new GoogleTilesAuth(request.ApiKey, null));
             }
 
-            string token = await _googleAccessTokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
-            return new GoogleTilesAuth(null, token);
+            throw new InvalidOperationException("GOOGLE_MAPS_API_KEY is required for Google Map Tiles API requests.");
         }
 
         private async Task<IReadOnlyDictionary<string, RetainedTileState>> CommitInteractiveChangesAsync(
@@ -999,7 +1033,8 @@ namespace ThreeDTilesLink.Core.Pipeline
         private async Task<InteractiveTileRunResult> FinalizeCanceledInteractiveRunAsync(
             TileRunRequest request,
             InteractiveRunInput interactive,
-            InteractiveExecutionContext interactiveContext)
+            InteractiveExecutionContext interactiveContext,
+            CancellationToken cancellationToken)
         {
             IReadOnlyDictionary<string, RetainedTileState> nextRetainedTiles = new Dictionary<string, RetainedTileState>(interactive.RetainedTiles, StringComparer.Ordinal);
             IReadOnlySet<string> selectedTileStableIds = new HashSet<string>(StringComparer.Ordinal);
@@ -1014,7 +1049,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                 summary = interactiveContext.LastState.Summary;
             }
 
-            await ApplyFinalLicenseCreditAsync(request, nextRetainedTiles, CancellationToken.None).ConfigureAwait(false);
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                await ApplyFinalLicenseCreditAsync(request, nextRetainedTiles, cancellationToken).ConfigureAwait(false);
+            }
             return new InteractiveTileRunResult(summary, nextRetainedTiles, selectedTileStableIds, checkpoint);
         }
 

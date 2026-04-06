@@ -111,5 +111,27 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.ExitCode.Should().Be(1);
             _ = invocation.Output.Should().Contain("Invalid value for --content-workers: 0");
         }
+
+        [Theory]
+        [InlineData("--resonite-port", "0")]
+        [InlineData("--tile-limit", "0")]
+        [InlineData("--depth-limit", "0")]
+        [InlineData("--detail", "0")]
+        [InlineData("--timeout", "0")]
+        [InlineData("--poll-interval", "0")]
+        [InlineData("--debounce", "-1")]
+        [InlineData("--throttle", "-1")]
+        public void Parse_RejectsInvalidNumericArguments(string option, string value)
+        {
+            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
+            [
+                "--resonite-port", "12000",
+                option, value
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(1);
+            _ = invocation.Output.Should().Contain("Invalid command values.");
+        }
     }
 }

@@ -83,8 +83,9 @@ namespace ThreeDTilesLink.Core.Tiles
 
             if (tile.ContentUri is not null)
             {
+                string stablePath = string.IsNullOrWhiteSpace(tile.StablePath) ? tile.Id : tile.StablePath;
                 string tileId = ComposeId(idPrefix, tile.Id);
-                string stableId = ComposeStableId(idPrefix, tile.Id);
+                string stableId = ComposeStableId(idPrefix, stablePath);
                 TileContentKind kind = TileContentClassifier.Classify(tile.ContentUri);
                 current = new TileSelectionResult(
                     tileId,

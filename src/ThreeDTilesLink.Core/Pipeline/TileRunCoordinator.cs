@@ -14,7 +14,6 @@ namespace ThreeDTilesLink.Core.Pipeline
             IContentProcessor contentProcessor,
             IMeshPlacementService meshPlacementService,
             ISelectedTileProjector selectedTileProjector,
-            IGoogleAccessTokenProvider googleAccessTokenProvider,
             ILogger<TileRunCoordinator> logger,
             int maxConcurrentTileProcessing = 1)
         {
@@ -26,7 +25,6 @@ namespace ThreeDTilesLink.Core.Pipeline
                 contentProcessor,
                 meshPlacementService,
                 selectedTileProjector,
-                googleAccessTokenProvider,
                 logger,
                 maxConcurrentTileProcessing);
         }

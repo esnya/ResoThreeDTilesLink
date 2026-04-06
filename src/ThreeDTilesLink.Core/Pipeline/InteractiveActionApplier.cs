@@ -102,13 +102,13 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         internal async Task<InteractiveLoopState> DisconnectAsync(
             InteractiveLoopState state,
-            CancellationToken _)
+            CancellationToken cancellationToken)
         {
             state = await CancelActiveRunAsync(state).ConfigureAwait(false);
 
             if (state.Connected)
             {
-                Task disconnectTask = _resoniteSession.DisconnectAsync(CancellationToken.None);
+                Task disconnectTask = _resoniteSession.DisconnectAsync(cancellationToken);
                 await ObserveCompletionAsync(disconnectTask).ConfigureAwait(false);
 
                 if (TryGetNonCancellationFailure(disconnectTask) is { } disconnectFailure)
@@ -129,7 +129,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             if (string.IsNullOrWhiteSpace(options.ApiKey))
             {
                 InteractiveRunSupervisor.Log.SearchIgnored(_logger, action.SearchText);
-                return state;
+                return RequeueSearch(state, action.SearchText);
             }
 
             try
@@ -138,7 +138,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 if (result is null)
                 {
                     InteractiveRunSupervisor.Log.SearchNoResult(_logger, action.SearchText);
-                    return state;
+                    return RequeueSearch(state, action.SearchText);
                 }
 
                 await _watchStore.UpdateWatchCoordinatesAsync(state.WatchBinding!, result.Latitude, result.Longitude, cancellationToken).ConfigureAwait(false);
@@ -163,48 +163,57 @@ namespace ThreeDTilesLink.Core.Pipeline
             catch (ArgumentException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return state;
+                return RequeueSearch(state, action.SearchText);
             }
             catch (HttpRequestException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return state;
+                return RequeueSearch(state, action.SearchText);
             }
             catch (JsonException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return state;
+                return RequeueSearch(state, action.SearchText);
             }
             catch (TimeoutException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return state;
+                return RequeueSearch(state, action.SearchText);
             }
             catch (NotSupportedException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return state;
+                return RequeueSearch(state, action.SearchText);
             }
             catch (ObjectDisposedException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return state;
+                return RequeueSearch(state, action.SearchText);
             }
             catch (WebSocketException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return state;
+                return RequeueSearch(state, action.SearchText);
             }
             catch (UriFormatException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return state;
+                return RequeueSearch(state, action.SearchText);
             }
             catch (InvalidOperationException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return state;
+                return RequeueSearch(state, action.SearchText);
             }
+        }
+
+        private static InteractiveLoopState RequeueSearch(InteractiveLoopState state, string searchText)
+        {
+            return state with
+            {
+                PendingSearch = searchText,
+                PendingSearchChangedAt = DateTimeOffset.MinValue
+            };
         }
 
         private async Task<InteractiveLoopState> CancelActiveRunAsync(InteractiveLoopState state)

@@ -1,4 +1,5 @@
 using System.Collections.Specialized;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Web;
 
@@ -8,14 +9,20 @@ namespace ThreeDTilesLink.Core.Tiles
     {
         public static Tileset Parse(string json, Uri sourceUri)
         {
+            var context = new ParseContext();
             using var doc = JsonDocument.Parse(json);
             JsonElement root = doc.RootElement;
             return !root.TryGetProperty("root", out JsonElement rootTile)
                 ? throw new InvalidOperationException("tileset root is missing.")
-                : new Tileset(ParseTile(rootTile, sourceUri, "0"));
+                : new Tileset(ParseTile(rootTile, sourceUri, "0", "0", context));
         }
 
-        private static Tile ParseTile(JsonElement tileElement, Uri sourceUri, string displayLabel)
+        private static Tile ParseTile(
+            JsonElement tileElement,
+            Uri sourceUri,
+            string displayLabel,
+            string stablePath,
+            ParseContext context)
         {
             var children = new List<Tile>();
             if (tileElement.TryGetProperty("children", out JsonElement childrenElement) && childrenElement.ValueKind == JsonValueKind.Array)
@@ -23,7 +30,12 @@ namespace ThreeDTilesLink.Core.Tiles
                 int index = 0;
                 foreach (JsonElement child in childrenElement.EnumerateArray())
                 {
-                    children.Add(ParseTile(child, sourceUri, $"{displayLabel}{EncodeIdSegment(index)}"));
+                    children.Add(ParseTile(
+                        child,
+                        sourceUri,
+                        $"{displayLabel}{EncodeDisplayIdSegment(index, context)}",
+                        $"{stablePath}/{index}",
+                        context));
                     index++;
                 }
             }
@@ -35,6 +47,7 @@ namespace ThreeDTilesLink.Core.Tiles
             return new Tile
             {
                 Id = displayLabel,
+                StablePath = stablePath,
                 BoundingVolume = bounding,
                 Transform = transform,
                 ContentUri = contentUri,
@@ -42,19 +55,21 @@ namespace ThreeDTilesLink.Core.Tiles
             };
         }
 
-        private static char EncodeIdSegment(int index)
+        private static char EncodeDisplayIdSegment(int index, ParseContext context)
         {
-            if (index <= 9)
+            ArgumentOutOfRangeException.ThrowIfNegative(index);
+
+            if (index >= 16 && !context.HexWrapWarningIssued)
             {
-                return (char)('0' + index);
+                context.HexWrapWarningIssued = true;
+                Trace.TraceWarning(
+                    "3D Tiles sibling count exceeded compact hex display label range. Display labels wrap modulo 16; stable paths remain unique.");
             }
 
-            if (index <= 35)
-            {
-                return (char)('A' + (index - 10));
-            }
-
-            throw new InvalidOperationException("Tile has more than 36 children; compact one-character display label segment cannot represent it.");
+            int normalized = index % 16;
+            return normalized <= 9
+                ? (char)('0' + normalized)
+                : (char)('A' + (normalized - 10));
         }
 
         private static BoundingVolume? ParseBoundingVolume(JsonElement tileElement)
@@ -176,6 +191,11 @@ namespace ThreeDTilesLink.Core.Tiles
             };
 
             return builder.Uri;
+        }
+
+        private sealed class ParseContext
+        {
+            public bool HexWrapWarningIssued { get; set; }
         }
     }
 }

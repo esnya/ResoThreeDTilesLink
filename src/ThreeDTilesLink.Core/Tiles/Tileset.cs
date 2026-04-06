@@ -16,6 +16,10 @@ namespace ThreeDTilesLink.Core.Tiles
         /// </summary>
         public string Id { get; init; } = string.Empty;
         /// <summary>
+        /// Stable hierarchy path for internal identity.
+        /// </summary>
+        public string StablePath { get; init; } = string.Empty;
+        /// <summary>
         /// Node local bounding volume.
         /// </summary>
         public BoundingVolume? BoundingVolume { get; init; }

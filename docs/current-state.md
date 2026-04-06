@@ -16,8 +16,11 @@ This document contains only current operational information that is difficult to
 - `stream` tile fetch: Google Map Tiles API
 - `interactive` tile fetch based on `Latitude` / `Longitude` / `Range`: Google Map Tiles API
 - Interactive free-text search (`World/... .Search`): Google Geocoding API
+- Tile fetch does not support ADC fallback. Use `GOOGLE_MAPS_API_KEY` consistently.
 - Interactive free-text search requires `GOOGLE_MAPS_API_KEY` and does not support ADC.
 - The app auto-loads `.env` with parent-directory discovery and does not overwrite existing environment variables.
+- Tileset display labels are compact hexadecimal for slot-name readability.
+- If a tileset has more than 16 siblings at one level, display labels wrap modulo 16 and the parser emits a warning; internal stable paths remain unique.
 
 ## Environment Variables
 
@@ -49,8 +52,11 @@ This document contains only current operational information that is difficult to
 - NuGet restore metadata contains host-dependent paths, so do not return to an operation mode that shares `obj`.
 - Correct version calculation in CI and verification environments requires `git tag` history, so do not keep a shallow checkout.
 - Use `tools/ResoniteRawJson` for raw JSON transmission.
-- From WSL, invoke host-side commands in the form `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" <command> localhost <port> ...`.
+- The Resonite Unity SDK uses `LinkSessionListener` from `YellowDogMan.ResoniteLink` for autodiscovery. It binds UDP port `12512`, listens for JSON `ResoniteLinkSession` announcements, and uses the announced `linkPort`.
+- This repository mirrors that mechanism in `tools/Invoke-ResoniteLinkCommand.ps1`; prefer `discover` or omit `-Port` instead of copying a port into scripts.
+- From WSL, invoke host-side commands in the form `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" <command> ...`.
 - The port numbers used in examples must match the live Resonite Link at that moment; do not treat them as fixed values.
+- If more than one session is discovered, select one with `-SessionId` or `-SessionName`.
 - When verifying from a Git worktree, place `.env` in that worktree as well. The app loads `.env` by parent-directory discovery from the current working tree, so the main checkout's `.env` is not picked up automatically.
 - When `send-json` uses `-JsonFile` from WSL, pass a Windows path. A Linux path such as `/tmp/...` is not readable from the host-side `dotnet.exe`.
 - In worktree-based host runs, MinVer may warn that a project directory is not a valid Git working directory. Treat that warning as non-blocking unless version calculation itself is the subject of the verification.
@@ -68,12 +74,14 @@ This document contains only current operational information that is difficult to
 Example:
 
 ```bash
-pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" repl localhost 6216
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover
 
-pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost 6216 \
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" repl
+
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json \
   -Json '{"$type":"requestSessionData"}'
 
-pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json localhost 6216 \
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json \
   -JsonFile "$(wslpath -w /tmp/get-slot-root.json)"
 ```
 
