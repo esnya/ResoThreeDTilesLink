@@ -41,15 +41,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             PlanningTree tree = BuildPlanningTree(facts, selectionState);
             HashSet<string> candidateStableIds = GetCandidateStableIds(tree);
-            var desired = new HashSet<string>(StringComparer.Ordinal);
-            if (tree.PlanningVisibleStableIds.Count == 0)
-            {
-                PopulateBootstrapDesired(tree, selectionState, candidateStableIds, desired);
-            }
-            else
-            {
-                PopulateReplacementDesired(tree, selectionState, candidateStableIds, desired);
-            }
+            HashSet<string> desired = BuildDesiredVisibleSet(tree, selectionState, candidateStableIds);
 
             return new DesiredView(desired, tree.SelectedStableIds, candidateStableIds);
         }
@@ -402,92 +394,49 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        private static void PopulateBootstrapDesired(
+        private static HashSet<string> BuildDesiredVisibleSet(
             PlanningTree tree,
             SelectionState selectionState,
-            HashSet<string> candidateStableIds,
-            HashSet<string> desired)
+            HashSet<string> candidateStableIds)
         {
-            foreach (PlanningNode node in GetRenderableFrontierNodes(tree)
-                         .Where(node => candidateStableIds.Contains(node.StableId)))
-            {
-                if (HasBlockingDesiredAncestor(node.Parent, desired, tree.PlanningVisibleStableIds))
-                {
-                    continue;
-                }
+            var desired = new HashSet<string>(StringComparer.Ordinal);
+            Dictionary<string, ReplacementBranchRequirement> replacementBranchMemo = new(StringComparer.Ordinal);
 
-                if (HasDesiredDescendant(node, desired))
-                {
-                    continue;
-                }
-
-                if (!IsRenderableAvailable(node.Fact, selectionState))
-                {
-                    continue;
-                }
-
-                if (tree.AncestorsWithOutOfSelectionVisibleDescendants.Contains(node.StableId))
-                {
-                    continue;
-                }
-
-                _ = desired.Add(node.StableId);
-            }
-        }
-
-        private static void PopulateReplacementDesired(
-            PlanningTree tree,
-            SelectionState selectionState,
-            HashSet<string> candidateStableIds,
-            HashSet<string> desired)
-        {
-            var branchHasCandidatesMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
-
-            foreach (SelectionVisibleTile visibleTile in tree.PlanningVisibleTiles
-                         .OrderBy(static tile => tile.AncestorStableIds.Count)
-                         .ThenBy(tile => tree.Nodes.TryGetValue(tile.StableId, out PlanningNode? node)
-                             ? node.Fact.Tile.DistanceToReferenceM ?? double.MaxValue
-                             : double.MaxValue)
-                         .ThenBy(static tile => tile.StableId, StringComparer.Ordinal))
+            foreach (SelectionVisibleTile visibleTile in GetVisibleReplacementOrder(tree))
             {
                 if (!tree.Nodes.TryGetValue(visibleTile.StableId, out PlanningNode? visibleNode))
                 {
                     continue;
                 }
 
-                if (tree.AncestorsWithOutOfSelectionVisibleDescendants.Contains(visibleNode.StableId))
-                {
-                    continue;
-                }
-
-                PlanningNode[] requiredReplacementFrontier = GetRequiredReplacementFrontier(
+                ApplyReplacementTransition(
+                    tree,
+                    selectionState,
+                    replacementBranchMemo,
                     visibleNode,
-                    candidateStableIds,
-                    branchHasCandidatesMemo);
-
-                foreach (PlanningNode replacement in requiredReplacementFrontier)
-                {
-                    if (!IsRenderableAvailable(replacement.Fact, selectionState))
-                    {
-                        continue;
-                    }
-
-                    if (HasBlockingDesiredAncestor(replacement.Parent, desired, tree.PlanningVisibleStableIds))
-                    {
-                        continue;
-                    }
-
-                    _ = desired.Add(replacement.StableId);
-                }
-
-                bool allReplacementVisible = requiredReplacementFrontier.Length > 0 &&
-                    requiredReplacementFrontier.All(replacement => tree.PlanningVisibleStableIds.Contains(replacement.StableId));
-                if (!allReplacementVisible && IsRenderableAvailable(visibleNode.Fact, selectionState))
-                {
-                    _ = desired.Add(visibleNode.StableId);
-                }
+                    desired);
             }
 
+            foreach (PlanningNode anchor in GetExpansionAnchors(tree))
+            {
+                ApplyExpansionTransition(tree, selectionState, candidateStableIds, anchor, desired);
+            }
+
+            return desired;
+        }
+
+        private static IEnumerable<SelectionVisibleTile> GetVisibleReplacementOrder(PlanningTree tree)
+        {
+            return tree.PlanningVisibleTiles
+                .OrderBy(static tile => tile.AncestorStableIds.Count)
+                .ThenBy(tile => tree.Nodes.TryGetValue(tile.StableId, out PlanningNode? node)
+                    ? node.Fact.Tile.DistanceToReferenceM ?? double.MaxValue
+                    : double.MaxValue)
+                .ThenBy(static tile => tile.StableId, StringComparer.Ordinal);
+        }
+
+        private static IEnumerable<PlanningNode> GetExpansionAnchors(PlanningTree tree)
+        {
             foreach (PlanningNode anchor in GetFrontierAnchors(tree))
             {
                 if (tree.PlanningVisibleStableIds.Contains(anchor.StableId) ||
@@ -497,32 +446,84 @@ namespace ThreeDTilesLink.Core.Pipeline
                     continue;
                 }
 
-                foreach (PlanningNode node in GetRenderableFrontierNodes(anchor)
-                             .Where(node => candidateStableIds.Contains(node.StableId)))
-                {
-                    if (HasBlockingDesiredAncestor(node.Parent, desired, tree.PlanningVisibleStableIds))
-                    {
-                        continue;
-                    }
-
-                    if (HasDesiredDescendant(node, desired))
-                    {
-                        continue;
-                    }
-
-                    if (!IsRenderableAvailable(node.Fact, selectionState))
-                    {
-                        continue;
-                    }
-
-                    if (tree.AncestorsWithOutOfSelectionVisibleDescendants.Contains(node.StableId))
-                    {
-                        continue;
-                    }
-
-                    _ = desired.Add(node.StableId);
-                }
+                yield return anchor;
             }
+        }
+
+        private static void ApplyExpansionTransition(
+            PlanningTree tree,
+            SelectionState selectionState,
+            HashSet<string> candidateStableIds,
+            PlanningNode anchor,
+            HashSet<string> desired)
+        {
+            PlanningNode[] frontier = OrderRenderableFrontierNodes(
+                GetRenderableFrontierNodes(anchor),
+                tree.Request);
+
+            foreach (PlanningNode node in frontier.Where(node => candidateStableIds.Contains(node.StableId)))
+            {
+                AddDesiredRenderableNode(tree, selectionState, node, desired);
+            }
+        }
+
+        private static void ApplyReplacementTransition(
+            PlanningTree tree,
+            SelectionState selectionState,
+            Dictionary<string, ReplacementBranchRequirement> replacementBranchMemo,
+            PlanningNode visibleNode,
+            HashSet<string> desired)
+        {
+            if (tree.AncestorsWithOutOfSelectionVisibleDescendants.Contains(visibleNode.StableId))
+            {
+                return;
+            }
+
+            ReplacementBranchRequirement requirement = GetReplacementRequirement(
+                visibleNode,
+                tree.SelectedStableIds,
+                tree.PlanningVisibleStableIds,
+                replacementBranchMemo);
+
+            foreach (PlanningNode replacement in requirement.Nodes)
+            {
+                AddDesiredRenderableNode(tree, selectionState, replacement, desired);
+            }
+
+            if (requirement.State is not ReplacementBranchState.Visible &&
+                IsRenderableAvailable(visibleNode.Fact, selectionState))
+            {
+                _ = desired.Add(visibleNode.StableId);
+            }
+        }
+
+        private static void AddDesiredRenderableNode(
+            PlanningTree tree,
+            SelectionState selectionState,
+            PlanningNode node,
+            HashSet<string> desired)
+        {
+            if (HasBlockingDesiredAncestor(node.Parent, desired, tree.PlanningVisibleStableIds))
+            {
+                return;
+            }
+
+            if (HasDesiredDescendant(node, desired))
+            {
+                return;
+            }
+
+            if (!IsRenderableAvailable(node.Fact, selectionState))
+            {
+                return;
+            }
+
+            if (tree.AncestorsWithOutOfSelectionVisibleDescendants.Contains(node.StableId))
+            {
+                return;
+            }
+
+            _ = desired.Add(node.StableId);
         }
 
         private static bool HasBlockingDesiredAncestor(
@@ -590,47 +591,173 @@ namespace ThreeDTilesLink.Core.Pipeline
             return false;
         }
 
-        private static PlanningNode[] GetRequiredReplacementFrontier(
+        private static ReplacementBranchRequirement GetReplacementRequirement(
             PlanningNode node,
-            HashSet<string> candidateStableIds,
-            Dictionary<string, bool> branchHasCandidatesMemo)
+            IReadOnlySet<string> selectedStableIds,
+            IReadOnlySet<string> visibleStableIds,
+            Dictionary<string, ReplacementBranchRequirement> memo)
         {
-            var frontier = new List<PlanningNode>();
-            foreach (PlanningNode child in node.Children)
+            if (memo.TryGetValue(node.StableId, out ReplacementBranchRequirement? cached))
             {
-                AddRequiredReplacementFrontier(child, candidateStableIds, branchHasCandidatesMemo, frontier);
+                return cached;
             }
 
-            return [..frontier
+            var frontier = new List<PlanningNode>();
+            bool hasUnknownBranch = false;
+            bool hasKnownBranch = false;
+            bool allVisible = true;
+            foreach (PlanningNode child in node.Children)
+            {
+                ReplacementBranchRequirement childRequirement = GetReplacementBranchState(
+                    child,
+                    selectedStableIds,
+                    visibleStableIds,
+                    memo);
+                switch (childRequirement.State)
+                {
+                    case ReplacementBranchState.Absent:
+                        continue;
+                    case ReplacementBranchState.Unknown:
+                        hasUnknownBranch = true;
+                        allVisible = false;
+                        break;
+                    case ReplacementBranchState.KnownNotVisible:
+                        hasKnownBranch = true;
+                        allVisible = false;
+                        frontier.AddRange(childRequirement.Nodes);
+                        break;
+                    case ReplacementBranchState.Visible:
+                        hasKnownBranch = true;
+                        frontier.AddRange(childRequirement.Nodes);
+                        break;
+                }
+            }
+
+            PlanningNode[] orderedFrontier = [..frontier
                 .DistinctBy(static replacement => replacement.StableId)
                 .OrderBy(static replacement => replacement.Fact.Tile.Depth)
                 .ThenBy(static replacement => replacement.Fact.Tile.DistanceToReferenceM ?? double.MaxValue)
                 .ThenByDescending(static replacement => replacement.Fact.Tile.HorizontalSpanM ?? double.MinValue)
                 .ThenBy(static replacement => replacement.Fact.Tile.TileId, StringComparer.Ordinal)];
+
+            ReplacementBranchState state = hasUnknownBranch
+                ? ReplacementBranchState.Unknown
+                : hasKnownBranch && orderedFrontier.Length > 0
+                    ? (allVisible ? ReplacementBranchState.Visible : ReplacementBranchState.KnownNotVisible)
+                    : ReplacementBranchState.Absent;
+
+            ReplacementBranchRequirement result = new(state, orderedFrontier);
+
+            memo[node.StableId] = result;
+            return result;
         }
 
-        private static void AddRequiredReplacementFrontier(
+        private static ReplacementBranchRequirement GetReplacementBranchState(
             PlanningNode node,
-            HashSet<string> candidateStableIds,
-            Dictionary<string, bool> branchHasCandidatesMemo,
-            List<PlanningNode> frontier)
+            IReadOnlySet<string> selectedStableIds,
+            IReadOnlySet<string> visibleStableIds,
+            Dictionary<string, ReplacementBranchRequirement> memo)
         {
-            if (!BranchHasCandidate(node, candidateStableIds, branchHasCandidatesMemo))
+            if (memo.TryGetValue(node.StableId, out ReplacementBranchRequirement? cached))
             {
-                return;
+                return cached;
             }
 
             if (node.Fact.Tile.ContentKind == TileContentKind.Glb)
             {
-                frontier.Add(node);
-                return;
+                ReplacementBranchRequirement requirement = selectedStableIds.Contains(node.StableId)
+                    ? new(
+                        visibleStableIds.Contains(node.StableId)
+                            ? ReplacementBranchState.Visible
+                            : ReplacementBranchState.KnownNotVisible,
+                        [node])
+                    : new(ReplacementBranchState.Absent, []);
+                memo[node.StableId] = requirement;
+                return requirement;
             }
+
+            if (!selectedStableIds.Contains(node.StableId))
+            {
+                ReplacementBranchRequirement absent = new(ReplacementBranchState.Absent, []);
+                memo[node.StableId] = absent;
+                return absent;
+            }
+
+            if (node.Fact.NestedStatus != ContentDiscoveryStatus.Ready &&
+                node.Children.Count == 0)
+            {
+                ReplacementBranchRequirement unknown = new(ReplacementBranchState.Unknown, []);
+                memo[node.StableId] = unknown;
+                return unknown;
+            }
+
+            var frontier = new List<PlanningNode>();
+            bool hasUnknownBranch = false;
+            bool hasKnownBranch = false;
+            bool allVisible = true;
 
             foreach (PlanningNode child in node.Children)
             {
-                AddRequiredReplacementFrontier(child, candidateStableIds, branchHasCandidatesMemo, frontier);
+                ReplacementBranchRequirement childRequirement = GetReplacementBranchState(
+                    child,
+                    selectedStableIds,
+                    visibleStableIds,
+                    memo);
+                switch (childRequirement.State)
+                {
+                    case ReplacementBranchState.Absent:
+                        continue;
+                    case ReplacementBranchState.Unknown:
+                        hasUnknownBranch = true;
+                        allVisible = false;
+                        break;
+                    case ReplacementBranchState.KnownNotVisible:
+                        hasKnownBranch = true;
+                        allVisible = false;
+                        frontier.AddRange(childRequirement.Nodes);
+                        break;
+                    case ReplacementBranchState.Visible:
+                        hasKnownBranch = true;
+                        frontier.AddRange(childRequirement.Nodes);
+                        break;
+                }
             }
+
+            ReplacementBranchRequirement result;
+            if (hasUnknownBranch)
+            {
+                result = new(ReplacementBranchState.Unknown, [..frontier.DistinctBy(static replacement => replacement.StableId)]);
+            }
+            else if (!hasKnownBranch)
+            {
+                result = new(ReplacementBranchState.Absent, []);
+            }
+            else
+            {
+                PlanningNode[] nodes = [..frontier
+                    .DistinctBy(static replacement => replacement.StableId)
+                    .OrderBy(static replacement => replacement.Fact.Tile.Depth)
+                    .ThenBy(static replacement => replacement.Fact.Tile.DistanceToReferenceM ?? double.MaxValue)
+                    .ThenByDescending(static replacement => replacement.Fact.Tile.HorizontalSpanM ?? double.MinValue)
+                    .ThenBy(static replacement => replacement.Fact.Tile.TileId, StringComparer.Ordinal)];
+                result = new(allVisible ? ReplacementBranchState.Visible : ReplacementBranchState.KnownNotVisible, nodes);
+            }
+
+            memo[node.StableId] = result;
+            return result;
         }
+
+        private enum ReplacementBranchState
+        {
+            Absent = 0,
+            Unknown = 1,
+            KnownNotVisible = 2,
+            Visible = 3
+        }
+
+        private sealed record ReplacementBranchRequirement(
+            ReplacementBranchState State,
+            IReadOnlyList<PlanningNode> Nodes);
 
         private static bool IsRenderableAvailable(TileBranchFact fact, SelectionState selectionState)
         {
@@ -692,17 +819,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 frontier.AddRange(GetRenderableFrontierNodes(anchor));
             }
 
-            PlanningNode[] distinctFrontier = [..frontier
-                .DistinctBy(static node => node.StableId)];
-            bool hasCoverageCandidates = distinctFrontier.Any(node => ShouldPrioritizeCoverage(tree.Request, node.Fact.Tile));
-
-            return distinctFrontier
-                .OrderBy(node => hasCoverageCandidates && ShouldPrioritizeCoverage(tree.Request, node.Fact.Tile) ? 0 : 1)
-                .ThenBy(node => hasCoverageCandidates ? node.Fact.Tile.Depth : -node.Fact.Tile.Depth)
-                .ThenBy(static node => node.Fact.Tile.DistanceToReferenceM ?? double.MaxValue)
-                .ThenByDescending(static node => node.Fact.Tile.HorizontalSpanM ?? double.MinValue)
-                .ThenBy(static node => node.Fact.Tile.TileId, StringComparer.Ordinal)
-                .ToArray();
+            return OrderRenderableFrontierNodes(frontier, tree.Request);
         }
 
         private static PlanningNode[] GetRenderableFrontierNodes(PlanningNode anchor)
@@ -725,6 +842,21 @@ namespace ThreeDTilesLink.Core.Pipeline
             return [..frontier
                 .DistinctBy(static node => node.StableId)
                 .OrderBy(static node => node.Fact.Tile.Depth)
+                .ThenBy(static node => node.Fact.Tile.DistanceToReferenceM ?? double.MaxValue)
+                .ThenByDescending(static node => node.Fact.Tile.HorizontalSpanM ?? double.MinValue)
+                .ThenBy(static node => node.Fact.Tile.TileId, StringComparer.Ordinal)];
+        }
+
+        private static PlanningNode[] OrderRenderableFrontierNodes(
+            IEnumerable<PlanningNode> nodes,
+            TileRunRequest request)
+        {
+            PlanningNode[] distinctFrontier = [..nodes.DistinctBy(static node => node.StableId)];
+            bool hasCoverageCandidates = distinctFrontier.Any(node => ShouldPrioritizeCoverage(request, node.Fact.Tile));
+
+            return [..distinctFrontier
+                .OrderBy(node => hasCoverageCandidates && ShouldPrioritizeCoverage(request, node.Fact.Tile) ? 0 : 1)
+                .ThenBy(node => hasCoverageCandidates ? node.Fact.Tile.Depth : -node.Fact.Tile.Depth)
                 .ThenBy(static node => node.Fact.Tile.DistanceToReferenceM ?? double.MaxValue)
                 .ThenByDescending(static node => node.Fact.Tile.HorizontalSpanM ?? double.MinValue)
                 .ThenBy(static node => node.Fact.Tile.TileId, StringComparer.Ordinal)];
