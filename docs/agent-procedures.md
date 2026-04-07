@@ -7,6 +7,7 @@ This document contains procedures for AI and coding agents. It keeps only decisi
 1. Read the related code and tests first.
 2. Treat the code and tests as the primary sources for the design.
 3. Decide whether documentation changes are needed based on whether there is information that cannot be inferred from the code.
+4. If the change touches public APIs, CLI surface, command-line options, watch names, environment variables, or other user-facing behavior, explicitly review `README.md` and other important user-facing documents before finishing.
 
 ## When Changing Behavior
 
@@ -20,15 +21,16 @@ This document contains procedures for AI and coding agents. It keeps only decisi
 2. Confirm required values from the live Resonite Link.
 3. From WSL, prefer host-side execution for live verification, including `cmd.exe /c dotnet.exe run ...` or `pwsh.exe` wrappers.
 4. Use `stream` to confirm live send and remove ordering.
-5. Prefer Resonite Link autodiscovery over manually typing a port. The Coding Agent entry point is `tools/Invoke-ResoniteLinkCommand.ps1`.
-6. The autodiscovery mechanism is based on the Resonite Unity SDK and `YellowDogMan.ResoniteLink` implementation, not on Unity Editor behavior itself:
+5. For large-`range` changes, confirm that coarse ancestors can secure coverage before finer leaf tiles.
+6. Prefer Resonite Link autodiscovery over manually typing a port. The Coding Agent entry point is `tools/Invoke-ResoniteLinkCommand.ps1`.
+7. The autodiscovery mechanism is based on the Resonite Unity SDK and `YellowDogMan.ResoniteLink` implementation, not on Unity Editor behavior itself:
    `LinkSessionListener` binds UDP port `12512`, listens for JSON `ResoniteLinkSession` announcements, and uses the announced `linkPort`.
-7. For one-off inspection, first run `pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover`.
-8. If exactly one session is present, omit `-Port` for `repl`, `send-json`, `benchmark-send`, and `cleanup-slot`; the script resolves it automatically.
-9. If multiple sessions are present, select one with `-SessionId` or `-SessionName` instead of copying a fixed port into notes or scripts.
-10. Use the official ResoniteLink REPL via `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` for live inspection and member confirmation when raw JSON inspection is insufficient.
-11. If application entry points still require `--resonite-port`, discover the current session immediately before running and treat that value as ephemeral input only.
-12. If real-environment verification was not possible, state that assumption explicitly in the change description.
+8. For one-off inspection, first run `pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover`.
+9. If exactly one session is present, omit `-Port` for `repl`, `send-json`, `benchmark-send`, and `cleanup-slot`; the script resolves it automatically.
+10. If multiple sessions are present, select one with `-SessionId` or `-SessionName` instead of copying a fixed port into notes or scripts.
+11. Use the official ResoniteLink REPL via `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` for live inspection and member confirmation when raw JSON inspection is insufficient.
+12. If application entry points still require `--resonite-port`, discover the current session immediately before running and treat that value as ephemeral input only.
+13. If real-environment verification was not possible, state that assumption explicitly in the change description.
 
 ## Documentation Update Rules
 
@@ -36,6 +38,9 @@ This document contains procedures for AI and coding agents. It keeps only decisi
 2. Keep `AGENTS.md` limited to the minimal stable and generic set.
 3. Keep `docs/` limited to current information and procedures.
 4. Do not add new design-level explanations.
+5. Treat English files without a language suffix as the only canonical documents.
+6. Do not edit `.ja.*` files first or independently from the English canonical files.
+7. When an English canonical file changes, recreate the corresponding `.ja.*` file by retranslating the full document so the whole Japanese file matches the latest English content.
 
 ## Verification
 

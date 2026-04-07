@@ -12,7 +12,8 @@ This file is the minimal, stable, and generic guide for coding agents. Refer to 
 
 - The canonical documents are the English files without a language suffix.
 - Provide Japanese counterparts as `.ja.*` files only for `AGENTS.md` and every file under `docs/`.
-- When updating those canonical English files, transpose the same content accurately into the corresponding `.ja.*` files.
+- Treat the English files as the only source of truth. Do not edit `.ja.*` first or independently.
+- When updating those canonical English files, recreate the corresponding `.ja.*` files by retranslating the full document so the Japanese version matches the current English content end to end.
 
 ## Rules
 
@@ -23,6 +24,7 @@ This file is the minimal, stable, and generic guide for coding agents. Refer to 
 - Do not turn `README.md` into a detailed specification dump.
 - Keep `AGENTS.md` minimal.
 - Put long procedures, changeable information, and current operational details under `docs/`.
+- When changing public APIs, CLI surface, command-line options, watch names, environment variables, or other user-facing behavior, always check whether `README.md` and other important user-facing documents need updates.
 - Manage history and background in Git instead of keeping history files.
 - Every file should describe only the current state; do not accumulate past states or migration history.
 - Unless instructed otherwise, create Git worktrees under `.worktrees/`.

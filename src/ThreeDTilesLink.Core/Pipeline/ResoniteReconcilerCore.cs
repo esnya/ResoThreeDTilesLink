@@ -334,11 +334,9 @@ namespace ThreeDTilesLink.Core.Pipeline
                     .Where(fact => !HasVisibleAncestor(
                         tree.Nodes.TryGetValue(fact.Tile.StableId!, out PlanningNode? node) ? node.Parent : null,
                         tree.PlanningVisibleStableIds))
-                    .Where(fact => fact.Tile.HasChildren && fact.Tile.HorizontalSpanM is double span &&
-                        span > facts.Request.Traversal.RangeM *
-                        (facts.Request.Traversal.BootstrapRangeMultiplier > 0d
-                            ? facts.Request.Traversal.BootstrapRangeMultiplier
-                            : 4d))
+                    .Where(fact => fact.Tile.HasChildren &&
+                        fact.Tile.HorizontalSpanM is double span &&
+                        span >= facts.Request.Traversal.RangeM)
                     .OrderBy(static fact => fact.Tile.Depth)
                     .ThenByDescending(static fact => fact.Tile.HorizontalSpanM ?? double.MinValue)
                     .ThenBy(static fact => fact.PreparedOrder)

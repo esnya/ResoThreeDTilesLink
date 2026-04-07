@@ -51,6 +51,7 @@ dotnet run --project src/ThreeDTilesLink -- stream \
 ```
 
 - `--range` is the minimum coverage range from the center point.
+- Large ranges prioritize coarse ancestor tiles first so the requested coverage is established before finer descendants arrive.
 - Add `--dry-run` to verify only the fetch and conversion path without sending anything to Resonite.
 - `--content-workers` controls bounded fetch/decode parallelism. Default is `8`.
 - If `--resonite-host` is omitted, `localhost` is used.
@@ -79,6 +80,7 @@ For observation-only aliases such as progress and credit text, `ValueCopy.WriteB
 Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and old run slots are removed.
 If `Search` is updated to a non-empty string, the app resolves it with the Google Geocoding API and writes the resulting coordinates back into `Latitude` / `Longitude`.
 If watch `Range` is `0` or less, no streaming run is started.
+When `Range` is large, the run first secures visible coverage with coarse ancestor tiles before refining toward smaller descendants.
 
 ```bash
 dotnet run --project src/ThreeDTilesLink -- interactive \

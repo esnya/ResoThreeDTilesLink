@@ -252,6 +252,26 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void ComputeDesiredView_InitialBootstrap_PrefersCoverageAncestorOverPreparedLeaf()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p", "https://example.com/p.glb", depth: 0, parentTileId: null, hasChildren: true, span: 1200d),
+                CreateTile("c", "https://example.com/c.glb", depth: 1, parentTileId: "p", hasChildren: true, span: 240d),
+                CreateTile("g", "https://example.com/g.glb", depth: 2, parentTileId: "c", hasChildren: false, span: 60d, stableId: StableId("g"), parentStableId: StableId("c"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false, rangeM: 1000d), interactive: null);
+            WriterState writerState = new();
+            MarkPrepared(facts, "p", CreatePreparedContent("p", parentTileId: null, hasChildren: true), order: 0);
+            MarkPrepared(facts, "g", CreatePreparedContent("g", parentTileId: "c", stableId: StableId("g"), parentStableId: StableId("c")), order: 1, stableId: StableId("g"));
+
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+
+            _ = desired.StableIds.Should().ContainSingle().Which.Should().Be(StableId("p"));
+        }
+
+        [Fact]
         public void PlanDiscovery_RetainedDescendant_SuppressesAncestorPreparation()
         {
             TraversalCore core = CreateCore(_ =>
@@ -273,6 +293,25 @@ namespace ThreeDTilesLink.Tests
 
             _ = work.Should().BeEmpty();
             _ = desired.StableIds.Should().ContainSingle().Which.Should().Be(childStableId);
+        }
+
+        [Fact]
+        public void PlanDiscovery_LargeRange_PrioritizesCoverageAncestorBeforeLeaf()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p", "https://example.com/p.glb", depth: 0, parentTileId: null, hasChildren: true, span: 1200d),
+                CreateTile("c", "https://example.com/c.glb", depth: 1, parentTileId: "p", hasChildren: true, span: 240d),
+                CreateTile("g", "https://example.com/g.glb", depth: 2, parentTileId: "c", hasChildren: false, span: 60d, stableId: StableId("g"), parentStableId: StableId("c"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false, rangeM: 1000d), interactive: null);
+            WriterState writerState = new();
+
+            List<DiscoveryWorkItem> work = core.PlanDiscovery(facts, writerState.CreateSelectionState(), availableSlots: 2);
+
+            _ = work.Should().HaveCount(2);
+            _ = work[0].Should().BeOfType<PrepareTileWorkItem>().Which.Tile.TileId.Should().Be("p");
         }
 
         [Fact]
@@ -690,12 +729,12 @@ namespace ThreeDTilesLink.Tests
             return new ResoniteReconcilerCore(core);
         }
 
-        private static TileRunRequest CreateRequest(bool dryRun, double bootstrapRangeMultiplier = 4d)
+        private static TileRunRequest CreateRequest(bool dryRun, double bootstrapRangeMultiplier = 4d, double rangeM = 500d)
         {
             return new TileRunRequest(
                 new GeoReference(0d, 0d, 0d),
                 new GeoReference(0d, 0d, 0d),
-                new TraversalOptions(500d, 16, 16, 40d, bootstrapRangeMultiplier),
+                new TraversalOptions(rangeM, 16, 16, 40d, bootstrapRangeMultiplier),
                 new ResoniteOutputOptions("127.0.0.1", 12000, dryRun),
                 "k");
         }

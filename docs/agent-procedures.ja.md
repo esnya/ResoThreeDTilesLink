@@ -7,6 +7,7 @@
 1. まず関連コードとテストを読む
 2. コードとテストを設計の一次資料として扱う
 3. 文書変更が必要かは、コードから読み取れない情報があるかで判断する
+4. 公開 API、CLI の表面、コマンドラインオプション、watch 名、環境変数など user-facing な挙動に触れる変更では、完了前に `README.md` と重要な利用者向け文書を明示的に見直す
 
 ## 振る舞いを変えるとき
 
@@ -20,15 +21,16 @@
 2. 必要な値は live の Resonite Link から確認する
 3. WSL から live 検証するときは、`cmd.exe /c dotnet.exe run ...` や `pwsh.exe` ラッパなど host 側実行を優先する
 4. `stream` で live の send/remove 順序を確認する
-5. ポートを手入力するより、`tools/Invoke-ResoniteLinkCommand.ps1` の Resonite Link 自動検知を優先する
-6. 自動検知の根拠は Unity Editor の挙動推測ではなく、Resonite Unity SDK と `YellowDogMan.ResoniteLink` の実装である:
+5. 大きい `range` に関わる変更では、細かい leaf より先に coarse ancestor で coverage を確保できるか確認する
+6. ポートを手入力するより、`tools/Invoke-ResoniteLinkCommand.ps1` の Resonite Link 自動検知を優先する
+7. 自動検知の根拠は Unity Editor の挙動推測ではなく、Resonite Unity SDK と `YellowDogMan.ResoniteLink` の実装である:
    `LinkSessionListener` は UDP `12512` を bind し、JSON の `ResoniteLinkSession` announcement を受け取り、告知された `linkPort` を使う
-7. 単発確認の前に、まず `pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover` を実行する
-8. session が 1 件だけなら、`repl` / `send-json` / `benchmark-send` / `cleanup-slot` では `-Port` を省略し、script 側の自動解決に任せる
-9. session が複数ある場合は、固定ポートをメモへ残すのではなく `-SessionId` か `-SessionName` で選ぶ
-10. raw JSON だけで足りない場合は、`tools/Invoke-ResoniteLinkCommand.ps1 repl ...` 経由で公式 ResoniteLink REPL を使って live 確認とメンバー確認を行う
-11. アプリ本体の entry point がまだ `--resonite-port` を要求する場合も、実行直前に discover して、その値をその場限りの入力として扱う
-12. 実機確認ができない場合は、その前提を差分説明に明記する
+8. 単発確認の前に、まず `pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover` を実行する
+9. session が 1 件だけなら、`repl` / `send-json` / `benchmark-send` / `cleanup-slot` では `-Port` を省略し、script 側の自動解決に任せる
+10. session が複数ある場合は、固定ポートをメモへ残すのではなく `-SessionId` か `-SessionName` で選ぶ
+11. raw JSON だけで足りない場合は、`tools/Invoke-ResoniteLinkCommand.ps1 repl ...` 経由で公式 ResoniteLink REPL を使って live 確認とメンバー確認を行う
+12. アプリ本体の entry point がまだ `--resonite-port` を要求する場合も、実行直前に discover して、その値をその場限りの入力として扱う
+13. 実機確認ができない場合は、その前提を差分説明に明記する
 
 ## ドキュメント更新ルール
 
@@ -36,6 +38,9 @@
 2. `AGENTS.md` は不変で汎用的な最小セットだけにする
 3. `docs/` は最新情報と手順だけにする
 4. 設計レベルの説明は新設しない
+5. 言語サフィックスのない英語版ファイルだけを正本として扱う
+6. `.ja.*` を英語正本より先に変更したり、独立して更新したりしない
+7. 英語正本を変更したら、対応する `.ja.*` は全文再翻訳で作り直し、日本語ファイル全体を最新の英語内容に一致させる
 
 ## 検証
 

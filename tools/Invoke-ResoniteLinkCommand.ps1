@@ -13,7 +13,7 @@ param(
     [string]$SessionName,
 
     [ValidateRange(1, 120)]
-    [int]$DiscoveryTimeoutSec = 12,
+    [int]$DiscoveryTimeoutSec = 20,
 
     [switch]$NoBuild,
 

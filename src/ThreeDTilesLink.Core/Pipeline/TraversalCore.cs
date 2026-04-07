@@ -52,6 +52,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                          .ThenByDescending(static node => node.Fact.Tile.HorizontalSpanM ?? double.MinValue)
                          .ThenBy(static node => node.Fact.Tile.TileId, StringComparer.Ordinal))
             {
+                if (HasDesiredAncestor(node.Parent, desired))
+                {
+                    continue;
+                }
+
                 if (!IsRenderableAvailable(node.Fact, selectionState))
                 {
                     continue;
@@ -456,6 +461,13 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             bool visibleParent = tree.PlanningVisibleStableIds.Contains(node.StableId);
+            if (!visibleParent &&
+                !HasVisibleAncestor(node.Parent, tree.PlanningVisibleStableIds) &&
+                ShouldPrioritizeCoverage(tree.Request, node.Fact.Tile))
+            {
+                return false;
+            }
+
             bool hasRelevantChild = false;
             foreach (PlanningNode child in node.Children)
             {
@@ -748,14 +760,27 @@ namespace ThreeDTilesLink.Core.Pipeline
             return false;
         }
 
+        private static bool HasDesiredAncestor(PlanningNode? parent, HashSet<string> desiredStableIds)
+        {
+            PlanningNode? current = parent;
+            while (current is not null)
+            {
+                if (desiredStableIds.Contains(current.StableId))
+                {
+                    return true;
+                }
+
+                current = current.Parent;
+            }
+
+            return false;
+        }
+
         private static bool ShouldPrioritizeCoverage(TileRunRequest request, TileSelectionResult tile)
         {
             return tile.HasChildren &&
                    tile.HorizontalSpanM is double span &&
-                   span > request.Traversal.RangeM *
-                   (request.Traversal.BootstrapRangeMultiplier > 0d
-                       ? request.Traversal.BootstrapRangeMultiplier
-                       : 4d);
+                   span >= request.Traversal.RangeM;
         }
 
     }
