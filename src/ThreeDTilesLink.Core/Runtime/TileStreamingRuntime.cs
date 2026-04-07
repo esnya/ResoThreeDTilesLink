@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using ResoniteLink;
+using System.Net;
 using ThreeDTilesLink.Core.Geo;
 using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Mesh;
@@ -38,9 +39,22 @@ namespace ThreeDTilesLink.Core.Runtime
                 throw new ArgumentOutOfRangeException(nameof(resoniteSendWorkers), "Resonite send worker count must be positive.");
             }
 
-            _httpClient = new HttpClient
+            #pragma warning disable CA2000
+            var httpHandler = new SocketsHttpHandler
             {
-                Timeout = requestTimeout
+                AutomaticDecompression = System.Net.DecompressionMethods.GZip |
+                    System.Net.DecompressionMethods.Deflate |
+                    System.Net.DecompressionMethods.Brotli,
+                EnableMultipleHttp2Connections = true,
+                MaxConnectionsPerServer = System.Math.Max(32, maxConcurrentTileProcessing * 4)
+            };
+            #pragma warning restore CA2000
+
+            _httpClient = new HttpClient(httpHandler)
+            {
+                Timeout = requestTimeout,
+                DefaultRequestVersion = HttpVersion.Version20,
+                DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher
             };
 
             var transformer = new GeographicCoordinateTransformer();

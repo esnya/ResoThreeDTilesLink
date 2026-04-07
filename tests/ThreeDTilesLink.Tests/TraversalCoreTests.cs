@@ -295,6 +295,29 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void PlanDiscovery_SeparateNestedAndPrepareSlots_SchedulesBothKinds()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("relay", "https://example.com/relay.json", depth: 0, parentTileId: null, hasChildren: true, span: 3000d),
+                CreateTile("render", "https://example.com/render.glb", depth: 0, parentTileId: null, hasChildren: false, span: 2000d)
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: true), interactive: null);
+            WriterState writerState = new();
+
+            List<DiscoveryWorkItem> work = core.PlanDiscovery(
+                facts,
+                writerState,
+                availableNestedSlots: 1,
+                availablePrepareSlots: 1);
+
+            _ = work.Should().HaveCount(2);
+            _ = work.Should().ContainSingle(static item => item is LoadNestedTilesetWorkItem);
+            _ = work.Should().ContainSingle(static item => item is PrepareTileWorkItem);
+        }
+
+        [Fact]
         public void ComputeDesiredView_CleanupEnabled_IgnoresOutOfRangeRetainedDescendant()
         {
             TraversalCore core = CreateCore(_ =>

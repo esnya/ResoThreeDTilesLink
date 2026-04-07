@@ -100,6 +100,10 @@ namespace ThreeDTilesLink.Core.Pipeline
     internal sealed record PrepareTileWorkItem(TileSelectionResult Tile)
         : DiscoveryWorkItem(Tile);
 
+    internal sealed record DiscoveryTaskEntry(
+        DiscoveryWorkItem Work,
+        Task<DiscoveryCompletion> Task);
+
     internal abstract record DiscoveryCompletion(TileSelectionResult Tile);
 
     internal sealed record NestedTilesetDiscovered(TileSelectionResult Tile, Tileset Tileset)

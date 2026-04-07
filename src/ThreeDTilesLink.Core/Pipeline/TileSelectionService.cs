@@ -30,6 +30,10 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly int _maxConcurrentWriterSends = maxConcurrentWriterSends > 0
             ? maxConcurrentWriterSends
             : throw new ArgumentOutOfRangeException(nameof(maxConcurrentWriterSends), "Writer send concurrency must be positive.");
+        private readonly int _maxConcurrentNestedTilesetLoads = System.Math.Clamp(
+            maxConcurrentTileProcessing,
+            min: 2,
+            max: 8);
 
         private static readonly Action<ILogger, string, int, Exception?> s_connectingToResonite =
             LoggerMessage.Define<string, int>(
@@ -215,7 +219,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             using var workerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            var discoveryTasks = new Dictionary<string, Task<DiscoveryCompletion>>(StringComparer.Ordinal);
+            var discoveryTasks = new Dictionary<string, DiscoveryTaskEntry>(StringComparer.Ordinal);
             var writerTasks = new List<Task<WriterCompletion>>();
             ExceptionDispatchInfo? pendingFailure = null;
             bool completedSuccessfully = false;
@@ -255,8 +259,15 @@ namespace ThreeDTilesLink.Core.Pipeline
                     DesiredView desiredView = _traversalCore.ComputeDesiredView(facts, writerState);
                     ProgressSnapshot progress = BuildProgressSnapshot(facts, writerState, counters);
 
-                    int availableDiscoverySlots = System.Math.Max(0, _maxConcurrentTileProcessing - discoveryTasks.Count);
-                    foreach (DiscoveryWorkItem work in _traversalCore.PlanDiscovery(facts, writerState, availableDiscoverySlots))
+                    int nestedLoadsInFlight = discoveryTasks.Values.Count(static entry => entry.Work is LoadNestedTilesetWorkItem);
+                    int tilePreparesInFlight = discoveryTasks.Values.Count(static entry => entry.Work is PrepareTileWorkItem);
+                    int availableNestedTilesetLoads = System.Math.Max(0, _maxConcurrentNestedTilesetLoads - nestedLoadsInFlight);
+                    int availableTilePrepares = System.Math.Max(0, _maxConcurrentTileProcessing - tilePreparesInFlight);
+                    foreach (DiscoveryWorkItem work in _traversalCore.PlanDiscovery(
+                                 facts,
+                                 writerState,
+                                 availableNestedTilesetLoads,
+                                 availableTilePrepares))
                     {
                         string stableId = work.Tile.StableId!;
                         if (discoveryTasks.ContainsKey(stableId))
@@ -265,7 +276,9 @@ namespace ThreeDTilesLink.Core.Pipeline
                         }
 
                         MarkDiscoveryInFlight(facts, work);
-                        discoveryTasks.Add(stableId, ExecuteDiscoveryAsync(work, request, auth, workerCts.Token));
+                        discoveryTasks.Add(stableId, new DiscoveryTaskEntry(
+                            work,
+                            ExecuteDiscoveryAsync(work, request, auth, workerCts.Token)));
                     }
 
                     if (writerState.InFlightRemoveStableId is null && !writerState.MetadataInFlight)
@@ -336,7 +349,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                     if (writerTasks.Count == 0)
                     {
-                        Task completedTask = await Task.WhenAny(discoveryTasks.Values).ConfigureAwait(false);
+                        Task completedTask = await Task.WhenAny(discoveryTasks.Values.Select(static entry => entry.Task)).ConfigureAwait(false);
                         if (!completedTask.IsCompleted)
                         {
                             throw new InvalidOperationException("Completed task was not completed.");
@@ -344,7 +357,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
                     else
                     {
-                        Task completedTask = await Task.WhenAny(discoveryTasks.Values.Cast<Task>().Concat(writerTasks)).ConfigureAwait(false);
+                        Task completedTask = await Task.WhenAny(discoveryTasks.Values.Select(static entry => entry.Task).Cast<Task>().Concat(writerTasks)).ConfigureAwait(false);
                         if (!completedTask.IsCompleted)
                         {
                             throw new InvalidOperationException("Completed task was not completed.");
@@ -418,19 +431,19 @@ namespace ThreeDTilesLink.Core.Pipeline
         private async Task ApplyCompletedWorkAsync(
             DiscoveryFacts facts,
             WriterState writerState,
-            Dictionary<string, Task<DiscoveryCompletion>> discoveryTasks,
+            Dictionary<string, DiscoveryTaskEntry> discoveryTasks,
             InteractiveExecutionContext? interactiveContext,
             List<Task<WriterCompletion>> writerTasks,
             RunCounters counters)
         {
-            foreach ((string stableId, Task<DiscoveryCompletion> task) in discoveryTasks
-                         .Where(static pair => pair.Value.IsCompleted)
+            foreach ((string stableId, DiscoveryTaskEntry entry) in discoveryTasks
+                         .Where(static pair => pair.Value.Task.IsCompleted)
                          .ToArray())
             {
                 _ = discoveryTasks.Remove(stableId);
                 try
                 {
-                    DiscoveryCompletion completion = await task.ConfigureAwait(false);
+                    DiscoveryCompletion completion = await entry.Task.ConfigureAwait(false);
                     LogDiscoveryCompletion(completion);
                     long nextPreparedOrder = counters.NextPreparedOrder;
                     int processedTiles = counters.ProcessedTiles;
@@ -494,7 +507,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         private async Task DrainOutstandingWorkAsync(
             DiscoveryFacts facts,
             WriterState writerState,
-            Dictionary<string, Task<DiscoveryCompletion>> discoveryTasks,
+            Dictionary<string, DiscoveryTaskEntry> discoveryTasks,
             InteractiveExecutionContext? interactiveContext,
             List<Task<WriterCompletion>> writerTasks,
             RunCounters counters)
@@ -503,11 +516,11 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 if (writerTasks.Count == 0)
                 {
-                    _ = await Task.WhenAny(discoveryTasks.Values).ConfigureAwait(false);
+                    _ = await Task.WhenAny(discoveryTasks.Values.Select(static entry => entry.Task)).ConfigureAwait(false);
                 }
                 else
                 {
-                    _ = await Task.WhenAny(discoveryTasks.Values.Cast<Task>().Concat(writerTasks)).ConfigureAwait(false);
+                    _ = await Task.WhenAny(discoveryTasks.Values.Select(static entry => entry.Task).Cast<Task>().Concat(writerTasks)).ConfigureAwait(false);
                 }
 
                 await ApplyCompletedWorkAsync(
@@ -525,10 +538,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             "CA1031:DoNotCatchGeneralExceptionTypes",
             Justification = "Outstanding writer/discovery failures are intentionally ignored to complete cleanup and surface cancellation.")]
         private async Task ObserveOutstandingTasksAsync(
-            IEnumerable<Task<DiscoveryCompletion>> discoveryTasks,
+            IEnumerable<DiscoveryTaskEntry> discoveryTasks,
             IEnumerable<Task<WriterCompletion>> writerTasks)
         {
-            IEnumerable<Task> outstanding = discoveryTasks.Cast<Task>().Concat(writerTasks);
+            IEnumerable<Task> outstanding = discoveryTasks.Select(static entry => entry.Task).Cast<Task>().Concat(writerTasks);
 
             try
             {

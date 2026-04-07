@@ -87,11 +87,21 @@ namespace ThreeDTilesLink.Core.Pipeline
             WriterState writerState,
             int availableSlots)
         {
+            return PlanDiscovery(facts, writerState, availableSlots, availableSlots);
+        }
+
+        internal List<DiscoveryWorkItem> PlanDiscovery(
+            DiscoveryFacts facts,
+            WriterState writerState,
+            int availableNestedSlots,
+            int availablePrepareSlots)
+        {
             ArgumentNullException.ThrowIfNull(facts);
             ArgumentNullException.ThrowIfNull(writerState);
-            ArgumentOutOfRangeException.ThrowIfNegative(availableSlots);
+            ArgumentOutOfRangeException.ThrowIfNegative(availableNestedSlots);
+            ArgumentOutOfRangeException.ThrowIfNegative(availablePrepareSlots);
 
-            if (availableSlots == 0)
+            if (availableNestedSlots == 0 && availablePrepareSlots == 0)
             {
                 return [];
             }
@@ -114,23 +124,29 @@ namespace ThreeDTilesLink.Core.Pipeline
                          .ThenBy(static entry => entry.Node.Fact.Tile.TileId, StringComparer.Ordinal)
                          .Select(static entry => entry.Node))
             {
-                if (planned.Count >= availableSlots)
-                {
-                    break;
-                }
-
                 switch (node.Fact.Tile.ContentKind)
                 {
                     case TileContentKind.Json:
+                        if (availableNestedSlots == 0)
+                        {
+                            break;
+                        }
+
                         if (node.Fact.Tile.Depth < facts.Request.Traversal.MaxDepth &&
                             node.Fact.NestedStatus == ContentDiscoveryStatus.Unrequested)
                         {
                             planned.Add(new LoadNestedTilesetWorkItem(node.Fact.Tile));
+                            availableNestedSlots--;
                         }
 
                         break;
 
                     case TileContentKind.Glb:
+                        if (availablePrepareSlots == 0)
+                        {
+                            break;
+                        }
+
                         if (!candidateStableIds.Contains(node.StableId))
                         {
                             break;
@@ -150,9 +166,15 @@ namespace ThreeDTilesLink.Core.Pipeline
                         if (node.Fact.PrepareStatus == ContentDiscoveryStatus.Unrequested)
                         {
                             planned.Add(new PrepareTileWorkItem(node.Fact.Tile));
+                            availablePrepareSlots--;
                         }
 
                         break;
+                }
+
+                if (availableNestedSlots == 0 && availablePrepareSlots == 0)
+                {
+                    break;
                 }
             }
 
