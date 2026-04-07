@@ -6,7 +6,7 @@ namespace ThreeDTilesLink.Core.CommandLine
     internal sealed record StreamCommandOptions(
         double Latitude,
         double Longitude,
-        double HeightOffsetM,
+        double HeightOffset,
         double RangeM,
         string ResoniteHost,
         int ResonitePort,
@@ -74,7 +74,7 @@ namespace ThreeDTilesLink.Core.CommandLine
 
             if (!CommandInvocationBuilder.TryGetValue(parsed, "--latitude", out double latitude) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--longitude", out double longitude) ||
-                !CommandInvocationBuilder.TryGetValue(parsed, "--height-offset", out double heightOffsetM) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--height-offset", out double heightOffset) ||
                 !CommandInvocationBuilder.TryGetPositiveDouble(parsed, "--range", out double rangeM) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--resonite-host", out string? resoniteHost) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--resonite-port", out int resonitePort) ||
@@ -96,7 +96,7 @@ namespace ThreeDTilesLink.Core.CommandLine
             return new CommandInvocation<StreamCommandOptions>(true, new StreamCommandOptions(
                 latitude,
                 longitude,
-                heightOffsetM,
+                heightOffset,
                 rangeM,
                 resoniteHost,
                 resonitePort,

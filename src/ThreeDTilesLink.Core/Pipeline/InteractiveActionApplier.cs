@@ -35,9 +35,9 @@ namespace ThreeDTilesLink.Core.Pipeline
             return _resoniteSession.ConnectAsync(host, port, cancellationToken);
         }
 
-        internal Vector3d GeographicToEcef(double latitude, double longitude, double heightM)
+        internal Vector3d GeographicToEcef(double latitude, double longitude, double height)
         {
-            return _coordinateTransformer.GeographicToEcef(latitude, longitude, heightM);
+            return _coordinateTransformer.GeographicToEcef(latitude, longitude, height);
         }
 
         internal Vector3d EcefToEnu(Vector3d ecef, GeoReference reference)
@@ -257,7 +257,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             StartRunAction action,
             CancellationToken cancellationToken)
         {
-            GeoReference selectionReference = new(action.Values.Latitude, action.Values.Longitude, options.HeightOffsetM);
+            GeoReference selectionReference = action.SelectionReference;
             GeoReference placementReference = action.Overlaps && state.PlacementReference is not null
                 ? state.PlacementReference
                 : selectionReference;

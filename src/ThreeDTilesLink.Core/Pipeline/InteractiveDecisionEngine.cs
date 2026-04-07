@@ -9,7 +9,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
     internal sealed record CancelActiveRunAction() : InteractiveAction;
 
-    internal sealed record StartRunAction(SelectionInputValues Values, bool Overlaps) : InteractiveAction;
+    internal sealed record StartRunAction(SelectionInputValues Values, GeoReference SelectionReference, bool Overlaps) : InteractiveAction;
 
     internal sealed record InteractiveDecisionResult(
         InteractiveLoopState State,
@@ -21,13 +21,15 @@ namespace ThreeDTilesLink.Core.Pipeline
             InteractiveLoopState state,
             SelectionInputSnapshot snapshot,
             WatchOptions options,
-            double heightOffsetM,
+            double heightOffset,
             DateTimeOffset now,
+            Func<double, double, double, GeoReference> createReference,
             Func<InteractiveRangeFootprint, InteractiveRangeFootprint, bool> overlaps)
         {
             ArgumentNullException.ThrowIfNull(state);
             ArgumentNullException.ThrowIfNull(snapshot);
             ArgumentNullException.ThrowIfNull(options);
+            ArgumentNullException.ThrowIfNull(createReference);
             ArgumentNullException.ThrowIfNull(overlaps);
 
             InteractiveLoopState next = ApplyObservedSearch(state, snapshot.SearchText, now);
@@ -59,10 +61,10 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 if (debounceElapsed && throttleElapsed)
                 {
-                    var selectionReference = new GeoReference(
+                    GeoReference selectionReference = createReference(
                         next.PendingValues.Latitude,
                         next.PendingValues.Longitude,
-                        heightOffsetM);
+                        heightOffset);
                     var currentFootprint = new InteractiveRangeFootprint(selectionReference, next.PendingValues.RangeM);
                     bool canReuseSlot = next.LastRequestedFootprint is not null &&
                         overlaps(next.LastRequestedFootprint, currentFootprint) &&
@@ -73,7 +75,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                         actions.Add(new CancelActiveRunAction());
                     }
 
-                    actions.Add(new StartRunAction(next.PendingValues, canReuseSlot));
+                    actions.Add(new StartRunAction(next.PendingValues, selectionReference, canReuseSlot));
                     next = next with
                     {
                         LastRequestedFootprint = currentFootprint,

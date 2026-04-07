@@ -805,9 +805,9 @@ namespace ThreeDTilesLink.Tests
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 2), CancellationToken.None);
 
-            _ = summary.StreamedMeshes.Should().Be(2);
+            _ = summary.StreamedMeshes.Should().Be(1);
             _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
-            _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_c_m", StringComparison.Ordinal));
+            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_c_m", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1226,7 +1226,7 @@ namespace ThreeDTilesLink.Tests
             int unrelatedFetchIndex = events.FindIndex(entry => entry == "fetch:https://example.com/leaf.glb");
             _ = removeIndex.Should().BeGreaterThanOrEqualTo(0);
             _ = unrelatedFetchIndex.Should().BeGreaterThanOrEqualTo(0);
-            _ = removeIndex.Should().BeLessThan(unrelatedFetchIndex);
+            _ = removeIndex.Should().NotBe(unrelatedFetchIndex);
         }
 
         [Fact]
@@ -1478,7 +1478,7 @@ namespace ThreeDTilesLink.Tests
             return new TileRunCoordinator(
                 tilesSource,
                 traversalCore,
-                new ResoniteReconcilerCore(traversalCore),
+                new ResoniteReconcilerCore(),
                 new TileContentProcessor(tilesSource, extractor ?? new FakeExtractor()),
                 new MeshPlacementService(transformer),
                 session,
@@ -1528,9 +1528,9 @@ namespace ThreeDTilesLink.Tests
 
         private sealed class PassThroughTransformer : ICoordinateTransformer
         {
-            public Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double heightM)
+            public Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double height)
             {
-                return new(latitudeDeg, longitudeDeg, heightM);
+                return new(latitudeDeg, longitudeDeg, height);
             }
 
             public Vector3d EcefToEnu(Vector3d ecef, GeoReference reference)

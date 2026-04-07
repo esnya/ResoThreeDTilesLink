@@ -14,7 +14,7 @@ namespace ThreeDTilesLink.Core.App
             return new InteractiveRunRequest(
                 options.ResoniteHost,
                 options.ResonitePort,
-                options.HeightOffsetM,
+                options.HeightOffset,
                 new TraversalOptions(
                     RangeM: 0d,
                     options.TileLimit,

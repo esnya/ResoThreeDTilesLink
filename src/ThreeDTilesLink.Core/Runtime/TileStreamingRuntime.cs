@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using ResoniteLink;
 using System.Net;
+using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Geo;
 using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Mesh;
@@ -15,6 +16,8 @@ namespace ThreeDTilesLink.Core.Runtime
     {
         private readonly HttpClient _httpClient;
         private readonly ResoniteSession _session;
+        private readonly IGeoReferenceResolver _geoReferenceResolver;
+        private readonly IDisposable? _geoReferenceResolverDisposable;
         private readonly RunPerformanceSummary? _performanceSummary;
         private bool _disposed;
 
@@ -61,10 +64,12 @@ namespace ThreeDTilesLink.Core.Runtime
             _performanceSummary = measurePerformance ? new RunPerformanceSummary() : null;
 
             var transformer = new GeographicCoordinateTransformer();
+            _geoReferenceResolver = new SeaLevelGeoReferenceResolver();
+            _geoReferenceResolverDisposable = _geoReferenceResolver as IDisposable;
             var tilesSource = new HttpTilesSource(_httpClient, _performanceSummary);
             var selector = new TileSelector(transformer);
             var traversalCore = new TraversalCore(selector);
-            var reconcilerCore = new ResoniteReconcilerCore(traversalCore);
+            var reconcilerCore = new ResoniteReconcilerCore();
             var extractor = new GlbMeshExtractor();
             var contentProcessor = new TileContentProcessor(tilesSource, extractor, _performanceSummary);
             var meshPlacementService = new MeshPlacementService(transformer);
@@ -112,6 +117,7 @@ namespace ThreeDTilesLink.Core.Runtime
                 resoniteSession,
                 searchResolver,
                 transformer,
+                _geoReferenceResolver,
                 new SystemClock(),
                 selectionInputReader,
                 loggerFactory.CreateLogger<InteractiveRunSupervisor>());
@@ -120,6 +126,8 @@ namespace ThreeDTilesLink.Core.Runtime
         internal TileSelectionService SelectionService { get; }
 
         internal InteractiveRunSupervisor InteractiveSupervisor { get; }
+
+        internal IGeoReferenceResolver GeoReferenceResolver => _geoReferenceResolver;
 
         internal Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)
         {
@@ -135,6 +143,7 @@ namespace ThreeDTilesLink.Core.Runtime
 
             _disposed = true;
             await _session.DisposeAsync().ConfigureAwait(false);
+            _geoReferenceResolverDisposable?.Dispose();
             _performanceSummary?.Dispose();
             _httpClient.Dispose();
         }

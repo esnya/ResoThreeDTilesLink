@@ -1,4 +1,5 @@
 using ThreeDTilesLink.Core.CommandLine;
+using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Runtime;
 
@@ -6,13 +7,19 @@ namespace ThreeDTilesLink.Core.App
 {
     internal static class StreamCommandHandler
     {
-        internal static TileRunRequest CreateRequest(StreamCommandOptions options, string apiKey)
+        internal static TileRunRequest CreateRequest(
+            StreamCommandOptions options,
+            string apiKey,
+            IGeoReferenceResolver geoReferenceResolver)
         {
             ArgumentNullException.ThrowIfNull(options);
+            ArgumentNullException.ThrowIfNull(geoReferenceResolver);
+
+            GeoReference reference = geoReferenceResolver.Resolve(options.Latitude, options.Longitude, options.HeightOffset);
 
             return new TileRunRequest(
-                new GeoReference(options.Latitude, options.Longitude, options.HeightOffsetM),
-                new GeoReference(options.Latitude, options.Longitude, options.HeightOffsetM),
+                reference,
+                reference,
                 new TraversalOptions(
                     options.RangeM,
                     options.TileLimit,
@@ -36,7 +43,9 @@ namespace ThreeDTilesLink.Core.App
             ArgumentNullException.ThrowIfNull(runtime);
             ArgumentNullException.ThrowIfNull(output);
 
-            RunSummary summary = await runtime.RunAsync(CreateRequest(options, apiKey), cancellationToken).ConfigureAwait(false);
+            RunSummary summary = await runtime.RunAsync(
+                CreateRequest(options, apiKey, runtime.GeoReferenceResolver),
+                cancellationToken).ConfigureAwait(false);
             await output.WriteLineAsync(
                 $"CandidateTiles={summary.CandidateTiles} ProcessedTiles={summary.ProcessedTiles} StreamedMeshes={summary.StreamedMeshes} FailedTiles={summary.FailedTiles}")
                 .ConfigureAwait(false);

@@ -9,6 +9,7 @@ namespace ThreeDTilesLink.Core.Pipeline
     {
         private readonly IWatchStore _watchStore;
         private readonly ICoordinateTransformer _coordinateTransformer;
+        private readonly IGeoReferenceResolver _geoReferenceResolver;
         private readonly IClock _clock;
         private readonly SelectionInputReader _selectionInputReader;
         private readonly InteractiveActionApplier _actionApplier;
@@ -20,12 +21,14 @@ namespace ThreeDTilesLink.Core.Pipeline
             IWatchStore watchStore,
             ISearchResolver searchResolver,
             ICoordinateTransformer coordinateTransformer,
+            IGeoReferenceResolver geoReferenceResolver,
             IClock clock,
             SelectionInputReader selectionInputReader,
             ILogger<InteractiveRunSupervisor> logger)
         {
             _watchStore = watchStore;
             _coordinateTransformer = coordinateTransformer;
+            _geoReferenceResolver = geoReferenceResolver;
             _clock = clock;
             _selectionInputReader = selectionInputReader;
             _logger = logger;
@@ -71,8 +74,9 @@ namespace ThreeDTilesLink.Core.Pipeline
                         state,
                         snapshot,
                         options.Watch,
-                        options.HeightOffsetM,
+                        options.HeightOffset,
                         now,
+                        _geoReferenceResolver.Resolve,
                         Overlaps);
                     state = decision.State;
                     LogInputChanges(previousState, state);
@@ -111,7 +115,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             Vector3d currentEcef = _coordinateTransformer.GeographicToEcef(
                 current.Reference.Latitude,
                 current.Reference.Longitude,
-                current.Reference.HeightM);
+                current.Reference.Height);
             Vector3d currentEnu = _coordinateTransformer.EcefToEnu(currentEcef, previous.Reference);
             double overlapThreshold = previous.RangeM + current.RangeM;
             return System.Math.Abs(currentEnu.X) <= overlapThreshold &&

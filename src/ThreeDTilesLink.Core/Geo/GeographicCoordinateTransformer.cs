@@ -9,10 +9,10 @@ namespace ThreeDTilesLink.Core.Geo
     {
         private readonly Geocentric _earth = Geocentric.WGS84;
 
-        public Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double heightM)
+        public Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double height)
         {
             Span<double> rotation = stackalloc double[9];
-            (double x, double y, double z) = _earth.Forward(latitudeDeg, longitudeDeg, heightM, rotation);
+            (double x, double y, double z) = _earth.Forward(latitudeDeg, longitudeDeg, height, rotation);
             return new Vector3d(x, y, z);
         }
 
@@ -22,7 +22,7 @@ namespace ThreeDTilesLink.Core.Geo
             Span<double> reverseRotation = stackalloc double[9];
             (double lat, double lon, double h) = _earth.Reverse(ecef.X, ecef.Y, ecef.Z, reverseRotation);
 
-            var local = new LocalCartesian(reference.Latitude, reference.Longitude, reference.HeightM, _earth);
+            var local = new LocalCartesian(reference.Latitude, reference.Longitude, reference.Height, _earth);
             Span<double> localRotation = stackalloc double[9];
             (double east, double north, double up) = local.Forward(lat, lon, h, localRotation);
 

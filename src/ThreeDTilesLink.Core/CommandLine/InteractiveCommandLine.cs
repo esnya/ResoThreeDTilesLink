@@ -4,7 +4,7 @@ using ThreeDTilesLink.Core.App;
 namespace ThreeDTilesLink.Core.CommandLine
 {
     internal sealed record InteractiveCommandOptions(
-        double HeightOffsetM,
+        double HeightOffset,
         string ResoniteHost,
         int ResonitePort,
         int TileLimit,
@@ -78,7 +78,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 return CommandInvocationBuilder.Error<InteractiveCommandOptions>($"Invalid value for --resonite-send-workers: {resoniteSendWorkers}", RenderHelp);
             }
 
-            if (!CommandInvocationBuilder.TryGetValue(parsed, "--height-offset", out double heightOffsetM) ||
+            if (!CommandInvocationBuilder.TryGetValue(parsed, "--height-offset", out double heightOffset) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--resonite-host", out string? resoniteHost) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--resonite-port", out int resonitePort) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--tile-limit", out int tileLimit) ||
@@ -119,7 +119,7 @@ namespace ThreeDTilesLink.Core.CommandLine
             return new CommandInvocation<InteractiveCommandOptions>(
                 true,
                 new InteractiveCommandOptions(
-                    heightOffsetM,
+                    heightOffset,
                     resoniteHost,
                     resonitePort,
                     tileLimit,

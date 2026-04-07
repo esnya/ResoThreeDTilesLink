@@ -50,7 +50,7 @@ namespace ThreeDTilesLink.Tests
 
             _ = invocation.ShouldRun.Should().BeTrue();
             InteractiveCommandOptions parsed = invocation.Options!;
-            _ = parsed.HeightOffsetM.Should().Be(20d);
+            _ = parsed.HeightOffset.Should().Be(20d);
             _ = parsed.ContentWorkers.Should().Be(3);
             _ = parsed.ResoniteSendWorkers.Should().Be(5);
             _ = parsed.PollIntervalMs.Should().Be(250);

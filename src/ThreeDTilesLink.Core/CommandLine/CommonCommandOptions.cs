@@ -3,7 +3,7 @@ namespace ThreeDTilesLink.Core.CommandLine
     internal static class CommonCommandOptions
     {
         internal static CommandOptionDefinition HeightOffset() =>
-            new("--height-offset", CommandOptionValueKind.DecimalNumber, "Height offset applied to streamed geometry.", DefaultValue: 0d, Unit: "m", RenamedFrom: ["--height-offset-m"]);
+            new("--height-offset", CommandOptionValueKind.DecimalNumber, "Sea-level height offset applied to streamed geometry.", DefaultValue: 0d, Unit: "m", RenamedFrom: ["--height-offset-m"]);
 
         internal static CommandOptionDefinition ResoniteHost() =>
             new("--resonite-host", CommandOptionValueKind.Text, "Resonite Link host name or IP address.", DefaultValue: "localhost", ValueName: "host", RenamedFrom: ["--link-host"]);

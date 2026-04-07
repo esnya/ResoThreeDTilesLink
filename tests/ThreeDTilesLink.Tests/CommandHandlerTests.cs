@@ -2,6 +2,8 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using ThreeDTilesLink.Core.App;
 using ThreeDTilesLink.Core.CommandLine;
+using ThreeDTilesLink.Core.Contracts;
+using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Tests
 {
@@ -27,11 +29,11 @@ namespace ThreeDTilesLink.Tests
                 true,
                 LogLevel.Debug);
 
-            var request = StreamCommandHandler.CreateRequest(options, "key");
+            var request = StreamCommandHandler.CreateRequest(options, "key", new FakeGeoReferenceResolver());
 
             _ = request.SelectionReference.Latitude.Should().Be(35.65858d);
             _ = request.SelectionReference.Longitude.Should().Be(139.745433d);
-            _ = request.SelectionReference.HeightM.Should().Be(20d);
+            _ = request.SelectionReference.Height.Should().Be(120d);
             _ = request.PlacementReference.Should().BeEquivalentTo(request.SelectionReference);
             _ = request.Traversal.RangeM.Should().Be(400d);
             _ = request.Traversal.MaxTiles.Should().Be(128);
@@ -69,7 +71,7 @@ namespace ThreeDTilesLink.Tests
 
             _ = request.ResoniteHost.Should().Be("localhost");
             _ = request.ResonitePort.Should().Be(12000);
-            _ = request.HeightOffsetM.Should().Be(20d);
+            _ = request.HeightOffset.Should().Be(20d);
             _ = request.Traversal.RangeM.Should().Be(0d);
             _ = request.Traversal.MaxTiles.Should().Be(128);
             _ = request.Traversal.MaxDepth.Should().Be(16);
@@ -84,6 +86,14 @@ namespace ThreeDTilesLink.Tests
             _ = request.Watch.Configuration.LongitudeVariablePath.Should().Be("World/ThreeDTilesLink.Watch.Longitude");
             _ = request.Watch.Configuration.RangeVariablePath.Should().Be("World/ThreeDTilesLink.Watch.Range");
             _ = request.Watch.Configuration.SearchVariablePath.Should().Be("World/ThreeDTilesLink.Watch.Search");
+        }
+
+        private sealed class FakeGeoReferenceResolver : IGeoReferenceResolver
+        {
+            public GeoReference Resolve(double latitude, double longitude, double heightOffset)
+            {
+                return new GeoReference(latitude, longitude, 100d + heightOffset);
+            }
         }
     }
 }

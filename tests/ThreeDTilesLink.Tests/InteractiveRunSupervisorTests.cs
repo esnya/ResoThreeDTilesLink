@@ -408,6 +408,7 @@ namespace ThreeDTilesLink.Tests
                 watchStore,
                 searchResolver,
                 new FakeTransformer(),
+                new FakeGeoReferenceResolver(),
                 clock,
                 new SelectionInputReader(watchStore, NullLogger<SelectionInputReader>.Instance),
                 NullLogger<InteractiveRunSupervisor>.Instance);
@@ -448,6 +449,14 @@ namespace ThreeDTilesLink.Tests
             }
 
             await tcs.Task.ConfigureAwait(false);
+        }
+
+        private sealed class FakeGeoReferenceResolver : IGeoReferenceResolver
+        {
+            public GeoReference Resolve(double latitude, double longitude, double heightOffset)
+            {
+                return new GeoReference(latitude, longitude, 100d + heightOffset);
+            }
         }
 
         private sealed class FakeTileRunCoordinator(
@@ -624,14 +633,14 @@ namespace ThreeDTilesLink.Tests
 
         private sealed class FakeTransformer : ICoordinateTransformer
         {
-            public Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double heightM)
+            public Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double height)
             {
-                return new Vector3d(latitudeDeg, longitudeDeg, heightM);
+                return new Vector3d(latitudeDeg, longitudeDeg, height);
             }
 
             public Vector3d EcefToEnu(Vector3d ecef, GeoReference reference)
             {
-                return new Vector3d(ecef.X - reference.Latitude, ecef.Y - reference.Longitude, ecef.Z - reference.HeightM);
+                return new Vector3d(ecef.X - reference.Latitude, ecef.Y - reference.Longitude, ecef.Z - reference.Height);
             }
 
             public Vector3d EnuToEun(Vector3d enu)

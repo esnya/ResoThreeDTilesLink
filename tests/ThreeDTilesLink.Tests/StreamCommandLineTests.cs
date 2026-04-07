@@ -50,7 +50,7 @@ namespace ThreeDTilesLink.Tests
             StreamCommandOptions parsed = invocation.Options!;
             _ = parsed.Latitude.Should().Be(35.65858d);
             _ = parsed.Longitude.Should().Be(139.745433d);
-            _ = parsed.HeightOffsetM.Should().Be(20d);
+            _ = parsed.HeightOffset.Should().Be(20d);
             _ = parsed.RangeM.Should().Be(400d);
             _ = parsed.ResoniteHost.Should().Be("127.0.0.1");
             _ = parsed.ResonitePort.Should().Be(12000);

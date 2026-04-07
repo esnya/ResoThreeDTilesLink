@@ -3,7 +3,7 @@ namespace ThreeDTilesLink.Core.Models
     internal sealed record InteractiveRunRequest(
         string ResoniteHost,
         int ResonitePort,
-        double HeightOffsetM,
+        double HeightOffset,
         TraversalOptions Traversal,
         bool DryRun,
         string? ApiKey,

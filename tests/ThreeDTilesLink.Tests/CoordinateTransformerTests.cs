@@ -23,7 +23,7 @@ namespace ThreeDTilesLink.Tests
         public void EcefToEnu_AtReferencePoint_IsApproximatelyZero()
         {
             var reference = new GeoReference(35.65858, 139.745433, 20d);
-            Vector3d ecef = _sut.GeographicToEcef(reference.Latitude, reference.Longitude, reference.HeightM);
+            Vector3d ecef = _sut.GeographicToEcef(reference.Latitude, reference.Longitude, reference.Height);
 
             Vector3d enu = _sut.EcefToEnu(ecef, reference);
 

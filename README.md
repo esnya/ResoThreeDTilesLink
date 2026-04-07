@@ -16,6 +16,7 @@ This `README.md` is the human-facing entry point. Current operational details an
 ## Prerequisites
 
 - `.NET SDK 10.0+`
+- Bundled GeographicLib geoid data (`egm96-5`)
 - Google APIs required by feature
   - 3D Tiles fetch (`stream`, `interactive` tile streaming): Google Map Tiles API
     - `GOOGLE_MAPS_API_KEY` is required
@@ -56,6 +57,7 @@ dotnet run --project src/ThreeDTilesLink -- stream \
 - `--content-workers` controls bounded fetch/decode parallelism. Default is `8`.
 - If `--resonite-host` is omitted, `localhost` is used.
 - If `--height-offset` is omitted, `0` is used.
+- The anchor height is sea level at the specified latitude/longitude, and `--height-offset` is applied relative to that anchor.
 - Run `dotnet run --project src/ThreeDTilesLink -- stream --help` for units and defaults.
 
 ## Usage (`interactive`)
@@ -95,6 +97,7 @@ Run `dotnet run --project src/ThreeDTilesLink -- interactive --help` for units a
 
 - `--content-workers` controls bounded fetch/decode parallelism per run. Default is `8`.
 - If `--resonite-host` is omitted, `localhost` is used.
+- The anchor height is sea level at the current latitude/longitude, and `--height-offset` is applied relative to that anchor.
 
 ## Documentation
 

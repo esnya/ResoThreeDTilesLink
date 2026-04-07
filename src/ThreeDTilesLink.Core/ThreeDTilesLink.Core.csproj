@@ -7,4 +7,11 @@
     <PackageReference Include="YellowDogMan.ResoniteLink" Version="0.13.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Resources/GeographicLib/geoids/egm96-5.pgm">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>GeographicLib/geoids/egm96-5.pgm</Link>
+    </Content>
+  </ItemGroup>
+
 </Project>
