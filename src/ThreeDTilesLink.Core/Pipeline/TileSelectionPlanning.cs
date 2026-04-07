@@ -70,7 +70,23 @@ namespace ThreeDTilesLink.Core.Pipeline
             ? new Dictionary<string, SelectionVisibleTile>(StringComparer.Ordinal)
             : visibleTiles.ToDictionary(static tile => tile.StableId, StringComparer.Ordinal);
 
+        public Dictionary<string, SelectionVisibleTile> VisibleFrontierTiles { get; } = visibleTiles is null
+            ? new Dictionary<string, SelectionVisibleTile>(StringComparer.Ordinal)
+            : BuildVisibleFrontier(visibleTiles);
+
         public bool ContainsVisible(string stableId) => VisibleTiles.ContainsKey(stableId);
+
+        private static Dictionary<string, SelectionVisibleTile> BuildVisibleFrontier(IEnumerable<SelectionVisibleTile> visibleTiles)
+        {
+            SelectionVisibleTile[] materialized = [..visibleTiles];
+            HashSet<string> ancestorStableIds = materialized
+                .SelectMany(static tile => tile.AncestorStableIds)
+                .ToHashSet(StringComparer.Ordinal);
+
+            return materialized
+                .Where(tile => !ancestorStableIds.Contains(tile.StableId))
+                .ToDictionary(static tile => tile.StableId, StringComparer.Ordinal);
+        }
     }
 
     internal sealed class WriterState(IReadOnlyDictionary<string, RetainedTileState>? initialVisibleTiles = null)

@@ -11,6 +11,7 @@ namespace ThreeDTilesLink.Core.Models
         TileContentKind ContentKind,
         bool HasChildren,
         double? HorizontalSpanM,
+        double? DistanceToReferenceM,
         string? StableId = null,
         string? ParentStableId = null);
 }

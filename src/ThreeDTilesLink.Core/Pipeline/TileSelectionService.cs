@@ -34,10 +34,9 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly int _maxConcurrentWriterSends = maxConcurrentWriterSends > 0
             ? maxConcurrentWriterSends
             : throw new ArgumentOutOfRangeException(nameof(maxConcurrentWriterSends), "Writer send concurrency must be positive.");
-        private readonly int _maxConcurrentNestedTilesetLoads = System.Math.Clamp(
-            maxConcurrentTileProcessing,
-            min: 2,
-            max: 8);
+        private readonly int _maxConcurrentNestedTilesetLoads = System.Math.Max(
+            2,
+            maxConcurrentTileProcessing);
         private readonly RunPerformanceSummary? _performanceSummary = performanceSummary;
 
         private static readonly Action<ILogger, string, int, Exception?> s_connectingToResonite =
@@ -105,6 +104,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                 LogLevel.Information,
                 new EventId(11, "WriterTileRemoved"),
                 "Removed tile {TileId}.");
+
+        private static readonly Action<ILogger, string, double, Exception?> s_writerTileRemovedWithLifetime =
+            LoggerMessage.Define<string, double>(
+                LogLevel.Information,
+                new EventId(11, "WriterTileRemoved"),
+                "Removed tile {TileId}: visibleMs={VisibleMilliseconds}.");
 
         private static readonly Action<ILogger, string, int, Exception?> s_writerTileRemovalFailed =
             LoggerMessage.Define<string, int>(
@@ -499,7 +504,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 try
                 {
                     WriterCompletion completion = await writerTask.ConfigureAwait(false);
-                    LogWriterCompletion(completion);
+                    LogWriterCompletion(completion, writerState);
                     if (completion is SendTileCompleted sent)
                     {
                         foreach (string slotId in sent.SlotIds)
@@ -629,7 +634,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        private void LogWriterCompletion(WriterCompletion completion)
+        private void LogWriterCompletion(WriterCompletion completion, WriterState writerState)
         {
             switch (completion)
             {
@@ -652,10 +657,23 @@ namespace ThreeDTilesLink.Core.Pipeline
                     break;
 
                 case RemoveTileCompleted removed when removed.Succeeded:
-                    s_writerTileRemoved(
-                        _logger,
-                        removed.TileId,
-                        null);
+                    if (_performanceSummary is not null &&
+                        writerState.VisibleSinceByStableId.TryGetValue(removed.StableId, out DateTimeOffset visibleSince) &&
+                        visibleSince != DateTimeOffset.MinValue)
+                    {
+                        s_writerTileRemovedWithLifetime(
+                            _logger,
+                            removed.TileId,
+                            (DateTimeOffset.UtcNow - visibleSince).TotalMilliseconds,
+                            null);
+                    }
+                    else
+                    {
+                        s_writerTileRemoved(
+                            _logger,
+                            removed.TileId,
+                            null);
+                    }
                     break;
 
                 case RemoveTileCompleted removed:

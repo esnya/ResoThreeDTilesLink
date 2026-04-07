@@ -769,7 +769,7 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task Run_TileLimitReached_WithoutCoverageHints_CanStopAtLeaf()
+        public async Task Run_TileLimitReached_WithoutCoverageHints_KeepsAncestorUntilReplacementProgresses()
         {
             var tileset = new Tileset(new Tile
             {
@@ -805,13 +805,14 @@ namespace ThreeDTilesLink.Tests
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 2), CancellationToken.None);
 
-            _ = summary.StreamedMeshes.Should().Be(1);
+            _ = summary.StreamedMeshes.Should().Be(2);
+            _ = client.Payloads.Should().HaveCount(2);
+            _ = client.Payloads[0].Name.Should().Contain("tile_c_");
             _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
-            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_c_m", StringComparison.Ordinal));
         }
 
         [Fact]
-        public async Task Run_TileLimitReached_StreamsIntermediateTileBeforeLeaf()
+        public async Task Run_TileLimitReached_StopsAtIntermediateReplacementFrontier()
         {
             var tileset = new Tileset(new Tile
             {
@@ -852,11 +853,10 @@ namespace ThreeDTilesLink.Tests
                 CreateRequest(dryRun: false, maxTiles: 2, maxDepth: 16, bootstrapRangeMultiplier: 0.5d),
                 CancellationToken.None).ConfigureAwait(true);
 
-            _ = summary.StreamedMeshes.Should().Be(3);
-            _ = client.Payloads.Should().HaveCount(3);
+            _ = summary.StreamedMeshes.Should().Be(2);
+            _ = client.Payloads.Should().HaveCount(2);
             _ = client.Payloads[0].Name.Should().Contain("tile_p_");
             _ = client.Payloads[1].Name.Should().Contain("tile_c_");
-            _ = client.Payloads[2].Name.Should().Contain("tile_g_");
         }
 
         [Fact]
@@ -1139,7 +1139,10 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            var client = new FakeResoniteSession();
+            var events = new List<string>();
+            var client = new FakeResoniteSession(
+                onStreamCompleted: (payload, _) => events.Add($"stream:{payload.Name}"),
+                onRemoveCompleted: slotId => events.Add($"remove:{slotId}"));
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(
@@ -1152,6 +1155,16 @@ namespace ThreeDTilesLink.Tests
             _ = client.Payloads[1].Name.Should().Contain("tile_c");
             _ = client.Payloads[2].Name.Should().Contain("tile_c");
             _ = client.RemovedSlotIds.Should().ContainSingle(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+
+            int parentStreamIndex = events.FindIndex(entry => entry.Contains("stream:tile_p_", StringComparison.Ordinal));
+            int firstChildStreamIndex = events.FindIndex(entry => entry.Contains("stream:tile_c0_", StringComparison.Ordinal));
+            int secondChildStreamIndex = events.FindIndex(entry => entry.Contains("stream:tile_c1_", StringComparison.Ordinal));
+            int parentRemoveIndex = events.FindIndex(entry => entry.Contains("remove:slot_1_tile_p_m", StringComparison.Ordinal));
+
+            _ = parentStreamIndex.Should().BeGreaterThanOrEqualTo(0);
+            _ = firstChildStreamIndex.Should().BeGreaterThan(parentStreamIndex);
+            _ = secondChildStreamIndex.Should().BeGreaterThan(firstChildStreamIndex);
+            _ = parentRemoveIndex.Should().BeGreaterThan(secondChildStreamIndex);
         }
 
         [Fact]

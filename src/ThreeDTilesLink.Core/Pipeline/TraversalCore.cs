@@ -41,45 +41,14 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             PlanningTree tree = BuildPlanningTree(facts, selectionState);
             HashSet<string> candidateStableIds = GetCandidateStableIds(tree);
-            var branchHasCandidatesMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
-            var subtreeCoveredMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
-            var visibleSubtreeCoveredMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
             var desired = new HashSet<string>(StringComparer.Ordinal);
-
-            foreach (PlanningNode node in tree.Nodes.Values
-                         .Where(node => candidateStableIds.Contains(node.StableId))
-                         .OrderBy(static node => node.Fact.Tile.Depth)
-                         .ThenByDescending(static node => node.Fact.Tile.HorizontalSpanM ?? double.MinValue)
-                         .ThenBy(static node => node.Fact.Tile.TileId, StringComparer.Ordinal))
+            if (tree.PlanningVisibleStableIds.Count == 0)
             {
-                if (HasDesiredAncestor(node.Parent, desired))
-                {
-                    continue;
-                }
-
-                if (!IsRenderableAvailable(node.Fact, selectionState))
-                {
-                    continue;
-                }
-
-                if (tree.AncestorsWithOutOfSelectionVisibleDescendants.Contains(node.StableId))
-                {
-                    continue;
-                }
-
-                if (CanHideBehindCoveredChildren(
-                        node,
-                        tree,
-                        selectionState,
-                        candidateStableIds,
-                        branchHasCandidatesMemo,
-                        subtreeCoveredMemo,
-                        visibleSubtreeCoveredMemo))
-                {
-                    continue;
-                }
-
-                _ = desired.Add(node.StableId);
+                PopulateBootstrapDesired(tree, selectionState, candidateStableIds, desired);
+            }
+            else
+            {
+                PopulateReplacementDesired(tree, selectionState, candidateStableIds, desired);
             }
 
             return new DesiredView(desired, tree.SelectedStableIds, candidateStableIds);
@@ -113,19 +82,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             HashSet<string> candidateStableIds = GetCandidateStableIds(tree);
             List<DiscoveryWorkItem> planned = [];
 
-            foreach (PlanningNode node in tree.Nodes.Values
-                         .Select(node => new
-                         {
-                             Node = node,
-                             HasVisibleAncestor = HasVisibleAncestor(node.Parent, tree.PlanningVisibleStableIds),
-                             NeedsCoverage = !HasVisibleAncestor(node.Parent, tree.PlanningVisibleStableIds) &&
-                                 ShouldPrioritizeCoverage(facts.Request, node.Fact.Tile)
-                         })
-                         .OrderBy(static entry => entry.NeedsCoverage ? 0 : 1)
-                         .ThenBy(entry => entry.NeedsCoverage ? entry.Node.Fact.Tile.Depth : -entry.Node.Fact.Tile.Depth)
-                         .ThenBy(static entry => entry.Node.Fact.Tile.HorizontalSpanM ?? double.MaxValue)
-                         .ThenBy(static entry => entry.Node.Fact.Tile.TileId, StringComparer.Ordinal)
-                         .Select(static entry => entry.Node))
+            foreach (PlanningNode node in GetDiscoveryFrontierNodes(tree))
             {
                 switch (node.Fact.Tile.ContentKind)
                 {
@@ -151,6 +108,13 @@ namespace ThreeDTilesLink.Core.Pipeline
                         }
 
                         if (!candidateStableIds.Contains(node.StableId))
+                        {
+                            break;
+                        }
+
+                        if (tree.PlanningVisibleStableIds.Count == 0 &&
+                            HasNestedRelayDescendant(node) &&
+                            !ShouldPrioritizeCoverage(facts.Request, node.Fact.Tile))
                         {
                             break;
                         }
@@ -438,115 +402,163 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        private static bool CanHideBehindCoveredChildren(
-            PlanningNode node,
+        private static void PopulateBootstrapDesired(
             PlanningTree tree,
             SelectionState selectionState,
             HashSet<string> candidateStableIds,
-            Dictionary<string, bool> branchHasCandidatesMemo,
-            Dictionary<string, bool> subtreeCoveredMemo,
-            Dictionary<string, bool> visibleSubtreeCoveredMemo)
+            HashSet<string> desired)
         {
-            if (!tree.PlanningVisibleStableIds.Contains(node.StableId) &&
-                node.Parent is not null &&
-                !candidateStableIds.Contains(node.Parent.StableId) &&
-                !tree.PlanningVisibleStableIds.Contains(node.Parent.StableId))
+            foreach (PlanningNode node in GetRenderableFrontierNodes(tree)
+                         .Where(node => candidateStableIds.Contains(node.StableId)))
             {
-                return false;
-            }
-
-            if (node.Children.Count == 0)
-            {
-                return false;
-            }
-
-            bool visibleParent = tree.PlanningVisibleStableIds.Contains(node.StableId);
-            if (!visibleParent &&
-                !HasVisibleAncestor(node.Parent, tree.PlanningVisibleStableIds) &&
-                ShouldPrioritizeCoverage(tree.Request, node.Fact.Tile))
-            {
-                return false;
-            }
-
-            bool hasRelevantChild = false;
-            foreach (PlanningNode child in node.Children)
-            {
-                if (!BranchHasCandidate(child, candidateStableIds, branchHasCandidatesMemo))
+                if (HasBlockingDesiredAncestor(node.Parent, desired, tree.PlanningVisibleStableIds))
                 {
                     continue;
                 }
 
-                hasRelevantChild = true;
-                if (!IsSubtreeCovered(
-                        child,
-                        selectionState,
-                        candidateStableIds,
-                        branchHasCandidatesMemo,
-                        subtreeCoveredMemo))
+                if (HasDesiredDescendant(node, desired))
                 {
-                    if (!visibleParent ||
-                        !IsSubtreeVisibleCovered(
-                            child,
-                            tree,
-                            candidateStableIds,
-                            branchHasCandidatesMemo,
-                            visibleSubtreeCoveredMemo))
-                    {
-                        return false;
-                    }
+                    continue;
                 }
-            }
 
-            return hasRelevantChild;
+                if (!IsRenderableAvailable(node.Fact, selectionState))
+                {
+                    continue;
+                }
+
+                if (tree.AncestorsWithOutOfSelectionVisibleDescendants.Contains(node.StableId))
+                {
+                    continue;
+                }
+
+                _ = desired.Add(node.StableId);
+            }
         }
 
-        private static bool IsSubtreeVisibleCovered(
-            PlanningNode node,
+        private static void PopulateReplacementDesired(
             PlanningTree tree,
+            SelectionState selectionState,
             HashSet<string> candidateStableIds,
-            Dictionary<string, bool> branchHasCandidatesMemo,
-            Dictionary<string, bool> memo)
+            HashSet<string> desired)
         {
-            if (memo.TryGetValue(node.StableId, out bool cached))
-            {
-                return cached;
-            }
+            var branchHasCandidatesMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
 
-            if (tree.PlanningVisibleStableIds.Contains(node.StableId))
+            foreach (SelectionVisibleTile visibleTile in tree.PlanningVisibleTiles
+                         .OrderBy(static tile => tile.AncestorStableIds.Count)
+                         .ThenBy(tile => tree.Nodes.TryGetValue(tile.StableId, out PlanningNode? node)
+                             ? node.Fact.Tile.DistanceToReferenceM ?? double.MaxValue
+                             : double.MaxValue)
+                         .ThenBy(static tile => tile.StableId, StringComparer.Ordinal))
             {
-                memo[node.StableId] = true;
-                return true;
-            }
-
-            if (node.Children.Count == 0)
-            {
-                memo[node.StableId] = false;
-                return false;
-            }
-
-            bool hasRelevantChild = false;
-            foreach (PlanningNode child in node.Children)
-            {
-                if (!BranchHasCandidate(child, candidateStableIds, branchHasCandidatesMemo))
+                if (!tree.Nodes.TryGetValue(visibleTile.StableId, out PlanningNode? visibleNode))
                 {
                     continue;
                 }
 
-                hasRelevantChild = true;
-                if (!IsSubtreeVisibleCovered(
-                        child,
-                        tree,
-                        candidateStableIds,
-                        branchHasCandidatesMemo,
-                        memo))
+                if (tree.AncestorsWithOutOfSelectionVisibleDescendants.Contains(visibleNode.StableId))
                 {
-                    memo[node.StableId] = false;
-                    return false;
+                    continue;
+                }
+
+                PlanningNode[] requiredReplacementFrontier = GetRequiredReplacementFrontier(
+                    visibleNode,
+                    candidateStableIds,
+                    branchHasCandidatesMemo);
+
+                foreach (PlanningNode replacement in requiredReplacementFrontier)
+                {
+                    if (!IsRenderableAvailable(replacement.Fact, selectionState))
+                    {
+                        continue;
+                    }
+
+                    if (HasBlockingDesiredAncestor(replacement.Parent, desired, tree.PlanningVisibleStableIds))
+                    {
+                        continue;
+                    }
+
+                    _ = desired.Add(replacement.StableId);
+                }
+
+                bool allReplacementVisible = requiredReplacementFrontier.Length > 0 &&
+                    requiredReplacementFrontier.All(replacement => tree.PlanningVisibleStableIds.Contains(replacement.StableId));
+                if (!allReplacementVisible && IsRenderableAvailable(visibleNode.Fact, selectionState))
+                {
+                    _ = desired.Add(visibleNode.StableId);
                 }
             }
 
-            memo[node.StableId] = hasRelevantChild;
-            return hasRelevantChild;
+            foreach (PlanningNode anchor in GetFrontierAnchors(tree))
+            {
+                if (tree.PlanningVisibleStableIds.Contains(anchor.StableId) ||
+                    tree.AncestorsWithPlanningVisibleDescendants.Contains(anchor.StableId) ||
+                    HasVisibleAncestor(anchor.Parent, tree.PlanningVisibleStableIds))
+                {
+                    continue;
+                }
+
+                foreach (PlanningNode node in GetRenderableFrontierNodes(anchor)
+                             .Where(node => candidateStableIds.Contains(node.StableId)))
+                {
+                    if (HasBlockingDesiredAncestor(node.Parent, desired, tree.PlanningVisibleStableIds))
+                    {
+                        continue;
+                    }
+
+                    if (HasDesiredDescendant(node, desired))
+                    {
+                        continue;
+                    }
+
+                    if (!IsRenderableAvailable(node.Fact, selectionState))
+                    {
+                        continue;
+                    }
+
+                    if (tree.AncestorsWithOutOfSelectionVisibleDescendants.Contains(node.StableId))
+                    {
+                        continue;
+                    }
+
+                    _ = desired.Add(node.StableId);
+                }
+            }
+        }
+
+        private static bool HasBlockingDesiredAncestor(
+            PlanningNode? parent,
+            HashSet<string> desiredStableIds,
+            IReadOnlySet<string> visibleStableIds)
+        {
+            PlanningNode? current = parent;
+            while (current is not null)
+            {
+                if (desiredStableIds.Contains(current.StableId) &&
+                    !visibleStableIds.Contains(current.StableId))
+                {
+                    return true;
+                }
+
+                current = current.Parent;
+            }
+
+            return false;
+        }
+
+        private static bool HasDesiredDescendant(
+            PlanningNode node,
+            HashSet<string> desiredStableIds)
+        {
+            foreach (PlanningNode child in node.Children)
+            {
+                if (desiredStableIds.Contains(child.StableId) ||
+                    HasDesiredDescendant(child, desiredStableIds))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool BranchHasCandidate(
@@ -578,54 +590,46 @@ namespace ThreeDTilesLink.Core.Pipeline
             return false;
         }
 
-        private static bool IsSubtreeCovered(
+        private static PlanningNode[] GetRequiredReplacementFrontier(
             PlanningNode node,
-            SelectionState selectionState,
             HashSet<string> candidateStableIds,
-            Dictionary<string, bool> branchHasCandidatesMemo,
-            Dictionary<string, bool> memo)
+            Dictionary<string, bool> branchHasCandidatesMemo)
         {
-            if (memo.TryGetValue(node.StableId, out bool cached))
-            {
-                return cached;
-            }
-
-            if (candidateStableIds.Contains(node.StableId) &&
-                IsRenderableAvailable(node.Fact, selectionState))
-            {
-                memo[node.StableId] = true;
-                return true;
-            }
-
-            if (node.Children.Count == 0)
-            {
-                memo[node.StableId] = false;
-                return false;
-            }
-
-            bool hasRelevantChild = false;
+            var frontier = new List<PlanningNode>();
             foreach (PlanningNode child in node.Children)
             {
-                if (!BranchHasCandidate(child, candidateStableIds, branchHasCandidatesMemo))
-                {
-                    continue;
-                }
-
-                hasRelevantChild = true;
-                if (!IsSubtreeCovered(
-                        child,
-                        selectionState,
-                        candidateStableIds,
-                        branchHasCandidatesMemo,
-                        memo))
-                {
-                    memo[node.StableId] = false;
-                    return false;
-                }
+                AddRequiredReplacementFrontier(child, candidateStableIds, branchHasCandidatesMemo, frontier);
             }
 
-            memo[node.StableId] = hasRelevantChild;
-            return hasRelevantChild;
+            return [..frontier
+                .DistinctBy(static replacement => replacement.StableId)
+                .OrderBy(static replacement => replacement.Fact.Tile.Depth)
+                .ThenBy(static replacement => replacement.Fact.Tile.DistanceToReferenceM ?? double.MaxValue)
+                .ThenByDescending(static replacement => replacement.Fact.Tile.HorizontalSpanM ?? double.MinValue)
+                .ThenBy(static replacement => replacement.Fact.Tile.TileId, StringComparer.Ordinal)];
+        }
+
+        private static void AddRequiredReplacementFrontier(
+            PlanningNode node,
+            HashSet<string> candidateStableIds,
+            Dictionary<string, bool> branchHasCandidatesMemo,
+            List<PlanningNode> frontier)
+        {
+            if (!BranchHasCandidate(node, candidateStableIds, branchHasCandidatesMemo))
+            {
+                return;
+            }
+
+            if (node.Fact.Tile.ContentKind == TileContentKind.Glb)
+            {
+                frontier.Add(node);
+                return;
+            }
+
+            foreach (PlanningNode child in node.Children)
+            {
+                AddRequiredReplacementFrontier(child, candidateStableIds, branchHasCandidatesMemo, frontier);
+            }
         }
 
         private static bool IsRenderableAvailable(TileBranchFact fact, SelectionState selectionState)
@@ -656,17 +660,9 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         private static HashSet<string> GetCandidateStableIds(PlanningTree tree)
         {
-            IEnumerable<PlanningNode> prioritized = tree.PlanningVisibleStableIds.Count == 0
-                ? tree.Nodes.Values
-                    .Where(static node => node.Fact.Tile.ContentKind == TileContentKind.Glb)
-                    .OrderByDescending(static node => node.Fact.Tile.Depth)
-                    .ThenBy(static node => node.Fact.Tile.HorizontalSpanM ?? double.MaxValue)
-                    .ThenBy(static node => node.Fact.Tile.TileId, StringComparer.Ordinal)
-                : GetVisibleFrontierCandidates(
-                    tree);
-
             var candidates = new HashSet<string>(StringComparer.Ordinal);
-            foreach (PlanningNode node in prioritized)
+
+            foreach (PlanningNode node in GetRenderableFrontierNodes(tree))
             {
                 if (candidates.Count >= tree.Request.Traversal.MaxTiles &&
                     !tree.PlanningVisibleStableIds.Contains(node.StableId))
@@ -675,17 +671,6 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
 
                 _ = candidates.Add(node.StableId);
-            }
-
-            foreach (string stableId in tree.Nodes.Values
-                         .Where(static node => node.Fact.Tile.ContentKind == TileContentKind.Glb)
-                         .Where(node => ShouldPrioritizeCoverage(tree.Request, node.Fact.Tile))
-                         .OrderBy(static node => node.Fact.Tile.Depth)
-                         .ThenByDescending(static node => node.Fact.Tile.HorizontalSpanM ?? double.MinValue)
-                         .ThenBy(static node => node.Fact.Tile.TileId, StringComparer.Ordinal)
-                         .Select(static node => node.StableId))
-            {
-                _ = candidates.Add(stableId);
             }
 
             foreach (string visibleStableId in tree.PlanningVisibleStableIds)
@@ -699,35 +684,144 @@ namespace ThreeDTilesLink.Core.Pipeline
             return candidates;
         }
 
-        private static PlanningNode[] GetVisibleFrontierCandidates(PlanningTree tree)
+        private static PlanningNode[] GetRenderableFrontierNodes(PlanningTree tree)
         {
             var frontier = new List<PlanningNode>();
-            var queue = new Queue<PlanningNode>(tree.Roots);
-
-            while (queue.Count > 0)
+            foreach (PlanningNode anchor in GetFrontierAnchors(tree))
             {
-                PlanningNode node = queue.Dequeue();
-
-                if (node.Fact.Tile.ContentKind == TileContentKind.Glb &&
-                    !tree.PlanningVisibleStableIds.Contains(node.StableId) &&
-                    !tree.AncestorsWithPlanningVisibleDescendants.Contains(node.StableId))
-                {
-                    frontier.Add(node);
-                    continue;
-                }
-
-                foreach (PlanningNode child in node.Children)
-                {
-                    queue.Enqueue(child);
-                }
+                frontier.AddRange(GetRenderableFrontierNodes(anchor));
             }
 
-            return frontier
-                .OrderByDescending(node => HasVisibleAncestor(node.Parent, tree.PlanningVisibleStableIds))
-                .ThenBy(static node => node.Fact.Tile.Depth)
+            PlanningNode[] distinctFrontier = [..frontier
+                .DistinctBy(static node => node.StableId)];
+            bool hasCoverageCandidates = distinctFrontier.Any(node => ShouldPrioritizeCoverage(tree.Request, node.Fact.Tile));
+
+            return distinctFrontier
+                .OrderBy(node => hasCoverageCandidates && ShouldPrioritizeCoverage(tree.Request, node.Fact.Tile) ? 0 : 1)
+                .ThenBy(node => hasCoverageCandidates ? node.Fact.Tile.Depth : -node.Fact.Tile.Depth)
+                .ThenBy(static node => node.Fact.Tile.DistanceToReferenceM ?? double.MaxValue)
                 .ThenByDescending(static node => node.Fact.Tile.HorizontalSpanM ?? double.MinValue)
                 .ThenBy(static node => node.Fact.Tile.TileId, StringComparer.Ordinal)
                 .ToArray();
+        }
+
+        private static PlanningNode[] GetRenderableFrontierNodes(PlanningNode anchor)
+        {
+            var frontier = new List<PlanningNode>();
+            if (anchor.Fact.Tile.ContentKind == TileContentKind.Glb)
+            {
+                frontier.Add(anchor);
+            }
+
+            foreach (PlanningNode child in anchor.Children)
+            {
+                PlanningNode? candidate = FindFirstRenderableNode(child);
+                if (candidate is not null)
+                {
+                    frontier.Add(candidate);
+                }
+            }
+
+            return [..frontier
+                .DistinctBy(static node => node.StableId)
+                .OrderBy(static node => node.Fact.Tile.Depth)
+                .ThenBy(static node => node.Fact.Tile.DistanceToReferenceM ?? double.MaxValue)
+                .ThenByDescending(static node => node.Fact.Tile.HorizontalSpanM ?? double.MinValue)
+                .ThenBy(static node => node.Fact.Tile.TileId, StringComparer.Ordinal)];
+        }
+
+        private static PlanningNode[] GetDiscoveryFrontierNodes(PlanningTree tree)
+        {
+            var frontier = new List<PlanningNode>();
+            foreach (PlanningNode anchor in GetFrontierAnchors(tree))
+            {
+                frontier.Add(anchor);
+                AddDiscoveryFrontierDescendants(anchor, frontier);
+            }
+
+            PlanningNode[] distinctFrontier = [..frontier
+                .DistinctBy(static node => node.StableId)];
+            bool hasCoverageCandidates = distinctFrontier.Any(node => ShouldPrioritizeCoverage(tree.Request, node.Fact.Tile));
+
+            return distinctFrontier
+                .OrderBy(node => tree.PlanningVisibleStableIds.Contains(node.StableId) ? 0 : 1)
+                .ThenBy(node => hasCoverageCandidates && ShouldPrioritizeCoverage(tree.Request, node.Fact.Tile) ? 0 : 1)
+                .ThenBy(node => hasCoverageCandidates ? node.Fact.Tile.Depth : -node.Fact.Tile.Depth)
+                .ThenBy(static node => node.Fact.Tile.DistanceToReferenceM ?? double.MaxValue)
+                .ThenByDescending(static node => node.Fact.Tile.HorizontalSpanM ?? double.MinValue)
+                .ThenBy(static node => node.Fact.Tile.TileId, StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        private static void AddDiscoveryFrontierDescendants(PlanningNode node, List<PlanningNode> frontier)
+        {
+            foreach (PlanningNode child in node.Children)
+            {
+                frontier.Add(child);
+                if (child.Fact.Tile.ContentKind == TileContentKind.Json &&
+                    child.Fact.NestedStatus == ContentDiscoveryStatus.Ready)
+                {
+                    AddDiscoveryFrontierDescendants(child, frontier);
+                }
+            }
+        }
+
+        private static PlanningNode[] GetFrontierAnchors(PlanningTree tree)
+        {
+            IEnumerable<PlanningNode> anchors;
+            if (tree.PlanningVisibleStableIds.Count == 0)
+            {
+                anchors = tree.Roots;
+            }
+            else
+            {
+                var collected = new List<PlanningNode>();
+                collected.AddRange(tree.Roots);
+                foreach (string stableId in tree.PlanningVisibleStableIds.Where(tree.Nodes.ContainsKey))
+                {
+                    PlanningNode current = tree.Nodes[stableId];
+                    while (true)
+                    {
+                        collected.Add(current);
+                        if (current.Parent is null)
+                        {
+                            break;
+                        }
+
+                        current = current.Parent;
+                    }
+                }
+
+                anchors = collected;
+            }
+
+            return anchors
+                .DistinctBy(static node => node.StableId)
+                .OrderBy(node => ShouldPrioritizeCoverage(tree.Request, node.Fact.Tile) ? 0 : 1)
+                .ThenBy(static node => node.Fact.Tile.Depth)
+                .ThenBy(static node => node.Fact.Tile.DistanceToReferenceM ?? double.MaxValue)
+                .ThenByDescending(static node => node.Fact.Tile.HorizontalSpanM ?? double.MinValue)
+                .ThenBy(static node => node.Fact.Tile.TileId, StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        private static PlanningNode? FindFirstRenderableNode(PlanningNode node)
+        {
+            if (node.Fact.Tile.ContentKind == TileContentKind.Glb)
+            {
+                return node;
+            }
+
+            foreach (PlanningNode child in node.Children)
+            {
+                PlanningNode? candidate = FindFirstRenderableNode(child);
+                if (candidate is not null)
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
         }
 
         private static HashSet<string> BuildAncestorsWithVisibleDescendants(IEnumerable<SelectionVisibleTile> visibleTiles)
@@ -755,6 +849,20 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
 
                 current = current.Parent;
+            }
+
+            return false;
+        }
+
+        private static bool HasNestedRelayDescendant(PlanningNode node)
+        {
+            foreach (PlanningNode child in node.Children)
+            {
+                if (child.Fact.Tile.ContentKind == TileContentKind.Json ||
+                    HasNestedRelayDescendant(child))
+                {
+                    return true;
+                }
             }
 
             return false;

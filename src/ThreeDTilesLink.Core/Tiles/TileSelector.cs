@@ -71,7 +71,7 @@ namespace ThreeDTilesLink.Core.Tiles
                 : Matrix4x4d.Identity;
             Matrix4x4d world = local * parentWorld;
 
-            if (!Intersects(tile.BoundingVolume, world, reference, range, out double? horizontalSpanM))
+            if (!Intersects(tile.BoundingVolume, world, reference, range, out double? horizontalSpanM, out double? distanceToReferenceM))
             {
                 return new SelectionOutcome(false, HasAnyContent(tile));
             }
@@ -96,6 +96,7 @@ namespace ThreeDTilesLink.Core.Tiles
                     kind,
                     tile.Children.Count > 0,
                     horizontalSpanM,
+                    distanceToReferenceM,
                     stableId,
                     parentContentStableKey);
                 nextParentContentId = tileId;
@@ -202,11 +203,12 @@ namespace ThreeDTilesLink.Core.Tiles
             return $"{normalizedPrefix.Length}:{normalizedPrefix}|{normalizedId.Length}:{normalizedId}";
         }
 
-        private bool Intersects(BoundingVolume? volume, Matrix4x4d world, GeoReference reference, QueryRange range, out double? horizontalSpanM)
+        private bool Intersects(BoundingVolume? volume, Matrix4x4d world, GeoReference reference, QueryRange range, out double? horizontalSpanM, out double? distanceToReferenceM)
         {
             if (volume is null)
             {
                 horizontalSpanM = null;
+                distanceToReferenceM = null;
                 return true;
             }
 
@@ -222,10 +224,14 @@ namespace ThreeDTilesLink.Core.Tiles
                     out double maxUp))
             {
                 horizontalSpanM = null;
+                distanceToReferenceM = null;
                 return true;
             }
 
             horizontalSpanM = SMath.Max(maxEast - minEast, maxNorth - minNorth);
+            double centerEast = (minEast + maxEast) * 0.5d;
+            double centerNorth = (minNorth + maxNorth) * 0.5d;
+            distanceToReferenceM = SMath.Sqrt((centerEast * centerEast) + (centerNorth * centerNorth));
             if (maxUp < -MaxBelowLocalPlaneM)
             {
                 return false;
