@@ -16,6 +16,7 @@ namespace ThreeDTilesLink.Core.CommandLine
         int ContentWorkers,
         int ResoniteSendWorkers,
         int TimeoutSec,
+        bool MeasurePerformance,
         bool DryRun,
         LogLevel LogLevel) : ICommandRuntimeOptions;
 
@@ -36,6 +37,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 CommonCommandOptions.DetailTarget(),
                 CommonCommandOptions.ContentWorkers("Maximum number of tile content fetch/decode workers."),
                 CommonCommandOptions.ResoniteSendWorkers("Maximum number of parallel Resonite send workers."),
+                CommonCommandOptions.MeasurePerformance(),
                 CommonCommandOptions.Timeout(),
                 CommonCommandOptions.DryRun(),
                 CommonCommandOptions.LogLevelOption()
@@ -80,6 +82,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--depth-limit", out int depthLimit) ||
                 !CommandInvocationBuilder.TryGetPositiveDouble(parsed, "--detail", out double detailTargetM) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--timeout", out int timeoutSec) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--measure-performance", out bool measurePerformance) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--dry-run", out bool dryRun))
             {
                 return CommandInvocationBuilder.Error<StreamCommandOptions>("Invalid command values.", RenderHelp);
@@ -103,6 +106,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 contentWorkers,
                 resoniteSendWorkers,
                 timeoutSec,
+                measurePerformance,
                 dryRun,
                 logLevel), 0, string.Empty, false);
         }

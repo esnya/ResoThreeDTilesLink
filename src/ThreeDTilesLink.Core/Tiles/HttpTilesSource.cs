@@ -8,11 +8,14 @@ using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Tiles
 {
-    internal sealed class HttpTilesSource(HttpClient httpClient) : ITilesSource
+    internal sealed class HttpTilesSource(
+        HttpClient httpClient,
+        RunPerformanceSummary? performanceSummary = null) : ITilesSource
     {
         private static readonly Uri RootTilesetUri = new("https://tile.googleapis.com/v1/3dtiles/root.json");
 
         private readonly HttpClient _httpClient = httpClient;
+        private readonly RunPerformanceSummary? _performanceSummary = performanceSummary;
         private readonly ConcurrentDictionary<string, CachedTilesetJson> _tilesetJsonCache = new(StringComparer.Ordinal);
 
         public async Task<Tileset> FetchRootTilesetAsync(GoogleTilesAuth auth, CancellationToken cancellationToken)
@@ -42,11 +45,17 @@ namespace ThreeDTilesLink.Core.Tiles
             }
 
             using HttpRequestMessage request = CreateRequest(tilesetUri, auth);
+            RunPerformanceSummary? performanceSummary = _performanceSummary;
+            DateTimeOffset startedAt = performanceSummary is null ? default : DateTimeOffset.UtcNow;
             using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
             await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
             string json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             Uri sourceUri = response.RequestMessage?.RequestUri ?? tilesetUri;
             _tilesetJsonCache[cacheKey] = new CachedTilesetJson(sourceUri, json);
+            if (performanceSummary is not null)
+            {
+                performanceSummary.AddFetch(DateTimeOffset.UtcNow - startedAt);
+            }
             return TilesetParser.Parse(json, sourceUri);
         }
 
@@ -54,9 +63,16 @@ namespace ThreeDTilesLink.Core.Tiles
         {
             ArgumentNullException.ThrowIfNull(auth);
             using HttpRequestMessage request = CreateRequest(contentUri, auth);
+            RunPerformanceSummary? performanceSummary = _performanceSummary;
+            DateTimeOffset startedAt = performanceSummary is null ? default : DateTimeOffset.UtcNow;
             using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
             await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
-            return await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+            byte[] bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+            if (performanceSummary is not null)
+            {
+                performanceSummary.AddFetch(DateTimeOffset.UtcNow - startedAt);
+            }
+            return bytes;
         }
 
         private static HttpRequestMessage CreateRequest(Uri uri, GoogleTilesAuth auth)

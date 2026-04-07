@@ -5,10 +5,12 @@ namespace ThreeDTilesLink.Core.Tiles
 {
     internal sealed class TileContentProcessor(
         ITilesSource tilesSource,
-        IGlbMeshExtractor glbMeshExtractor) : IContentProcessor
+        IGlbMeshExtractor glbMeshExtractor,
+        RunPerformanceSummary? performanceSummary = null) : IContentProcessor
     {
         private readonly ITilesSource _tilesSource = tilesSource;
         private readonly IGlbMeshExtractor _glbMeshExtractor = glbMeshExtractor;
+        private readonly RunPerformanceSummary? _performanceSummary = performanceSummary;
 
         public async Task<ContentProcessResult> ProcessAsync(
             TileSelectionResult tile,
@@ -33,7 +35,13 @@ namespace ThreeDTilesLink.Core.Tiles
 
         private RenderableContentProcessResult ToRenderableResult(byte[] glbBytes)
         {
+            RunPerformanceSummary? performanceSummary = _performanceSummary;
+            DateTimeOffset startedAt = performanceSummary is null ? default : DateTimeOffset.UtcNow;
             GlbExtractResult extracted = _glbMeshExtractor.Extract(glbBytes);
+            if (performanceSummary is not null)
+            {
+                performanceSummary.AddExtract(DateTimeOffset.UtcNow - startedAt);
+            }
             return new RenderableContentProcessResult(extracted.Meshes, extracted.AssetCopyright);
         }
     }

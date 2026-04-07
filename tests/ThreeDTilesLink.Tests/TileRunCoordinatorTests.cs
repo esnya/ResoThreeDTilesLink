@@ -805,9 +805,9 @@ namespace ThreeDTilesLink.Tests
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 2), CancellationToken.None);
 
-            _ = summary.StreamedMeshes.Should().Be(1);
+            _ = summary.StreamedMeshes.Should().Be(2);
             _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
-            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_c_m", StringComparison.Ordinal));
+            _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_c_m", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1474,9 +1474,11 @@ namespace ThreeDTilesLink.Tests
             int maxConcurrentTileProcessing = 1)
         {
             var transformer = new PassThroughTransformer();
+            var traversalCore = new TraversalCore(new TileSelector(transformer));
             return new TileRunCoordinator(
                 tilesSource,
-                new TraversalCore(new TileSelector(transformer)),
+                traversalCore,
+                new ResoniteReconcilerCore(traversalCore),
                 new TileContentProcessor(tilesSource, extractor ?? new FakeExtractor()),
                 new MeshPlacementService(transformer),
                 session,

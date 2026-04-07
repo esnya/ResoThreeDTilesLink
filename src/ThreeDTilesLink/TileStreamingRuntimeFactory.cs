@@ -9,7 +9,8 @@ namespace ThreeDTilesLink
             LogLevel logLevel,
             TimeSpan requestTimeout,
             int maxConcurrentTileProcessing = 8,
-            int resoniteSendWorkers = 1)
+            int resoniteSendWorkers = 8,
+            bool measurePerformance = false)
         {
 #pragma warning disable CA2000
             ILoggerFactory loggerFactory = CreateLoggerFactory(logLevel);
@@ -21,7 +22,8 @@ namespace ThreeDTilesLink
                         loggerFactory,
                         requestTimeout,
                         maxConcurrentTileProcessing,
-                        resoniteSendWorkers));
+                        resoniteSendWorkers,
+                        measurePerformance));
             }
             catch
             {

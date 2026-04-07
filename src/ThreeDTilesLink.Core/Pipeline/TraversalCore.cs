@@ -9,8 +9,6 @@ namespace ThreeDTilesLink.Core.Pipeline
 {
     internal sealed class TraversalCore(ITileSelector selector)
     {
-        private static readonly TimeSpan VisibleReplacementGrace = TimeSpan.FromSeconds(1);
-
         private readonly ITileSelector _selector = selector;
 
         internal DiscoveryFacts Initialize(
@@ -36,12 +34,12 @@ namespace ThreeDTilesLink.Core.Pipeline
             return facts;
         }
 
-        internal DesiredView ComputeDesiredView(DiscoveryFacts facts, WriterState writerState)
+        internal DesiredView ComputeDesiredView(DiscoveryFacts facts, SelectionState selectionState)
         {
             ArgumentNullException.ThrowIfNull(facts);
-            ArgumentNullException.ThrowIfNull(writerState);
+            ArgumentNullException.ThrowIfNull(selectionState);
 
-            PlanningTree tree = BuildPlanningTree(facts, writerState);
+            PlanningTree tree = BuildPlanningTree(facts, selectionState);
             HashSet<string> candidateStableIds = GetCandidateStableIds(tree);
             var branchHasCandidatesMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
             var subtreeCoveredMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
@@ -54,7 +52,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                          .ThenByDescending(static node => node.Fact.Tile.HorizontalSpanM ?? double.MinValue)
                          .ThenBy(static node => node.Fact.Tile.TileId, StringComparer.Ordinal))
             {
-                if (!IsRenderableAvailable(node.Fact, writerState))
+                if (!IsRenderableAvailable(node.Fact, selectionState))
                 {
                     continue;
                 }
@@ -67,7 +65,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 if (CanHideBehindCoveredChildren(
                         node,
                         tree,
-                        writerState,
+                        selectionState,
                         candidateStableIds,
                         branchHasCandidatesMemo,
                         subtreeCoveredMemo,
@@ -84,20 +82,20 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         internal List<DiscoveryWorkItem> PlanDiscovery(
             DiscoveryFacts facts,
-            WriterState writerState,
+            SelectionState selectionState,
             int availableSlots)
         {
-            return PlanDiscovery(facts, writerState, availableSlots, availableSlots);
+            return PlanDiscovery(facts, selectionState, availableSlots, availableSlots);
         }
 
         internal List<DiscoveryWorkItem> PlanDiscovery(
             DiscoveryFacts facts,
-            WriterState writerState,
+            SelectionState selectionState,
             int availableNestedSlots,
             int availablePrepareSlots)
         {
             ArgumentNullException.ThrowIfNull(facts);
-            ArgumentNullException.ThrowIfNull(writerState);
+            ArgumentNullException.ThrowIfNull(selectionState);
             ArgumentOutOfRangeException.ThrowIfNegative(availableNestedSlots);
             ArgumentOutOfRangeException.ThrowIfNegative(availablePrepareSlots);
 
@@ -106,7 +104,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return [];
             }
 
-            PlanningTree tree = BuildPlanningTree(facts, writerState);
+            PlanningTree tree = BuildPlanningTree(facts, selectionState);
             HashSet<string> candidateStableIds = GetCandidateStableIds(tree);
             List<DiscoveryWorkItem> planned = [];
 
@@ -179,155 +177,6 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             return planned;
-        }
-
-        internal WriterCommand? PlanWriterCommand(
-            DiscoveryFacts facts,
-            WriterState writerState,
-            DesiredView desiredView,
-            ProgressSnapshot progress,
-            bool dryRun,
-            bool allowRemoval = true,
-            bool allowSend = true,
-            bool allowMetadata = true,
-            DateTimeOffset? now = null)
-        {
-            ArgumentNullException.ThrowIfNull(facts);
-            ArgumentNullException.ThrowIfNull(writerState);
-            ArgumentNullException.ThrowIfNull(desiredView);
-            ArgumentNullException.ThrowIfNull(progress);
-
-            PlanningTree tree = BuildPlanningTree(facts, writerState);
-            DateTimeOffset currentTime = now ?? DateTimeOffset.UtcNow;
-            HashSet<string> selectionStableIds = desiredView.SelectedStableIds is HashSet<string> hashSet
-                ? hashSet
-                : desiredView.SelectedStableIds.ToHashSet(StringComparer.Ordinal);
-            var branchHasSelectionMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
-            var replacementReadyAtMemo = new Dictionary<string, DateTimeOffset?>(StringComparer.Ordinal);
-
-            if (writerState.InFlightRemoveStableId is not null ||
-                writerState.MetadataInFlight)
-            {
-                return null;
-            }
-
-            DateTimeOffset? deferredRemovalDueAt = null;
-            if (allowRemoval && writerState.InFlightSendStableIds.Count == 0)
-            {
-                RetainedTileState? removal = writerState.VisibleTiles.Values
-                    .Where(tile => desiredView.SelectedStableIds.Contains(tile.StableId))
-                    .Where(tile => !desiredView.StableIds.Contains(tile.StableId))
-                    .Where(tile => !writerState.FailedRemovalStableIds.Contains(tile.StableId))
-                    .Select(tile => new
-                    {
-                        Tile = tile,
-                        ReadyAt = GetReplacementReadyAt(
-                            tile.StableId,
-                            tree,
-                            writerState,
-                            selectionStableIds,
-                            branchHasSelectionMemo,
-                            replacementReadyAtMemo)
-                    })
-                    .Where(entry => entry.ReadyAt is not null)
-                    .Select(entry =>
-                    {
-                        if (entry.ReadyAt > currentTime &&
-                            (deferredRemovalDueAt is null || entry.ReadyAt < deferredRemovalDueAt))
-                        {
-                            deferredRemovalDueAt = entry.ReadyAt;
-                        }
-
-                        return entry;
-                    })
-                    .Where(entry => entry.ReadyAt <= currentTime)
-                    .Select(entry => entry.Tile)
-                    .OrderBy(tile => facts.Branches.TryGetValue(tile.StableId, out TileBranchFact? fact) ? fact.Tile.Depth : int.MaxValue)
-                    .ThenBy(tile => tile.TileId, StringComparer.Ordinal)
-                    .FirstOrDefault();
-
-                if (removal is not null)
-                {
-                    return new RemoveTileWriterCommand(removal.StableId, removal.TileId, removal.SlotIds);
-                }
-            }
-
-            if (allowSend)
-            {
-                TileBranchFact? coverageFact = tree.Nodes.Values
-                    .Select(static node => node.Fact)
-                    .Where(static fact => fact.Tile.ContentKind == TileContentKind.Glb)
-                    .Where(fact => desiredView.CandidateStableIds.Contains(fact.Tile.StableId!))
-                    .Where(fact => !tree.PlanningVisibleStableIds.Contains(fact.Tile.StableId!))
-                    .Where(fact => !writerState.InFlightSendStableIds.Contains(fact.Tile.StableId!))
-                    .Where(fact => !HasInFlightRelatedSend(
-                        tree.Nodes.TryGetValue(fact.Tile.StableId!, out PlanningNode? node) ? node : null,
-                        writerState.InFlightSendStableIds))
-                    .Where(fact => fact.PreparedContent is not null &&
-                                   fact.PrepareStatus == ContentDiscoveryStatus.Ready)
-                    .Where(fact => !HasVisibleAncestor(
-                        tree.Nodes.TryGetValue(fact.Tile.StableId!, out PlanningNode? node) ? node.Parent : null,
-                        tree.PlanningVisibleStableIds))
-                    .Where(fact => ShouldPrioritizeCoverage(facts.Request, fact.Tile))
-                    .OrderBy(static fact => fact.Tile.Depth)
-                    .ThenByDescending(static fact => fact.Tile.HorizontalSpanM ?? double.MinValue)
-                    .ThenBy(static fact => fact.PreparedOrder)
-                    .FirstOrDefault();
-
-                if (coverageFact?.PreparedContent is not null)
-                {
-                    return new SendTileWriterCommand(coverageFact.PreparedContent);
-                }
-
-                TileBranchFact? sendFact = desiredView.StableIds
-                    .Where(stableId => !tree.PlanningVisibleStableIds.Contains(stableId))
-                    .Where(stableId => !writerState.InFlightSendStableIds.Contains(stableId))
-                    .Where(stableId => !HasInFlightRelatedSend(
-                        tree.Nodes.TryGetValue(stableId, out PlanningNode? node) ? node : null,
-                        writerState.InFlightSendStableIds))
-                    .Where(stableId => facts.Branches.TryGetValue(stableId, out TileBranchFact? fact) &&
-                                       fact.PreparedContent is not null &&
-                                       fact.PrepareStatus == ContentDiscoveryStatus.Ready)
-                    .Select(stableId => facts.Branches[stableId])
-                    .OrderBy(fact => GetNearestVisibleAncestorDepth(
-                        tree.Nodes.TryGetValue(fact.Tile.StableId!, out PlanningNode? node) ? node.Parent : null,
-                        tree.PlanningVisibleStableIds))
-                    .ThenBy(static fact => fact.Tile.Depth)
-                    .ThenByDescending(static fact => fact.Tile.HorizontalSpanM ?? double.MinValue)
-                    .ThenBy(static fact => fact.PreparedOrder)
-                    .FirstOrDefault();
-
-                if (sendFact?.PreparedContent is not null)
-                {
-                    return new SendTileWriterCommand(sendFact.PreparedContent);
-                }
-            }
-
-            if (!dryRun && allowMetadata && writerState.InFlightSendStableIds.Count == 0)
-            {
-                (string desiredLicense, float desiredProgressValue, string desiredProgressText) = BuildDesiredMetadata(
-                    facts,
-                    writerState,
-                    desiredView,
-                    progress);
-
-                bool metadataChanged =
-                    !string.Equals(desiredLicense, writerState.AppliedLicenseCredit, StringComparison.Ordinal) ||
-                    System.Math.Abs(desiredProgressValue - writerState.AppliedProgressValue) > 0.0001f ||
-                    !string.Equals(desiredProgressText, writerState.AppliedProgressText, StringComparison.Ordinal);
-
-                if (metadataChanged)
-                {
-                    return new SyncSessionMetadataWriterCommand(desiredLicense, desiredProgressValue, desiredProgressText);
-                }
-            }
-
-            if (deferredRemovalDueAt is DateTimeOffset dueAt && dueAt > currentTime)
-            {
-                return new DelayWriterCommand(dueAt - currentTime);
-            }
-
-            return null;
         }
 
         internal void ApplyDiscoveryCompletion(
@@ -404,170 +253,6 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        internal void ApplyWriterCompletion(
-            DiscoveryFacts facts,
-            WriterState writerState,
-            WriterCompletion completion,
-            bool dryRun,
-            ref int processedTiles,
-            ref int streamedMeshes,
-            ref int failedTiles,
-            DateTimeOffset? now = null)
-        {
-            ArgumentNullException.ThrowIfNull(facts);
-            ArgumentNullException.ThrowIfNull(writerState);
-            ArgumentNullException.ThrowIfNull(completion);
-
-            DateTimeOffset currentTime = now ?? DateTimeOffset.UtcNow;
-
-            switch (completion)
-            {
-                case SendTileCompleted sent:
-                {
-                    string stableId = sent.Content.Tile.StableId!;
-                    _ = writerState.InFlightSendStableIds.Remove(stableId);
-                    processedTiles++;
-                    streamedMeshes += sent.StreamedMeshCount;
-
-                    if (!facts.Branches.TryGetValue(stableId, out TileBranchFact? fact))
-                    {
-                        if (!sent.Succeeded)
-                        {
-                            failedTiles++;
-                        }
-
-                        break;
-                    }
-
-                    if (!sent.Succeeded)
-                    {
-                        failedTiles++;
-                        fact.SendFailed = sent.SlotIds.Count == 0 &&
-                            !string.IsNullOrWhiteSpace(fact.Tile.ParentStableId);
-                        if (sent.SlotIds.Count == 0)
-                        {
-                            fact.CompleteSendFailureCount++;
-                            fact.PrepareStatus = fact.CanRetryCompleteSendFailure
-                                ? ContentDiscoveryStatus.Ready
-                                : ContentDiscoveryStatus.Failed;
-                        }
-                    }
-                    else
-                    {
-                        fact.SendFailed = false;
-                    }
-
-                    // Partial sends are retained only when rollback failed; fully rolled back sends are retried.
-                    if (sent.Succeeded || sent.SlotIds.Count > 0 || dryRun)
-                    {
-                        writerState.VisibleTiles[stableId] = new RetainedTileState(
-                            stableId,
-                            sent.Content.Tile.TileId,
-                            sent.Content.Tile.ParentStableId,
-                            GetAncestorStableIds(facts, sent.Content.Tile.ParentStableId),
-                            sent.SlotIds,
-                            sent.Content.AssetCopyright);
-                        writerState.VisibleSinceByStableId[stableId] = currentTime;
-                    }
-
-                    fact.AssetCopyright = sent.Content.AssetCopyright;
-                    if (sent.Succeeded || sent.SlotIds.Count > 0 || dryRun)
-                    {
-                        fact.CompleteSendFailureCount = 0;
-                        fact.PreparedContent = null;
-                    }
-
-                    break;
-                }
-
-                case RemoveTileCompleted removed:
-                    writerState.InFlightRemoveStableId = null;
-                    if (removed.Succeeded)
-                    {
-                        _ = writerState.FailedRemovalStableIds.Remove(removed.StableId);
-                        _ = writerState.VisibleTiles.Remove(removed.StableId);
-                        _ = writerState.VisibleSinceByStableId.Remove(removed.StableId);
-                    }
-                    else
-                    {
-                        failedTiles += System.Math.Max(1, removed.FailedSlotCount);
-                        _ = writerState.FailedRemovalStableIds.Add(removed.StableId);
-                        if (removed.RemainingSlotIds.Count > 0 &&
-                            writerState.VisibleTiles.TryGetValue(removed.StableId, out RetainedTileState? visibleTile))
-                        {
-                            writerState.VisibleTiles[removed.StableId] = visibleTile with
-                            {
-                                SlotIds = removed.RemainingSlotIds
-                            };
-                        }
-                    }
-
-                    break;
-
-                case SyncSessionMetadataCompleted metadata:
-                    writerState.MetadataInFlight = false;
-                    writerState.AppliedLicenseCredit = metadata.LicenseCredit;
-                    writerState.AppliedProgressValue = metadata.ProgressValue;
-                    writerState.AppliedProgressText = metadata.ProgressText;
-
-                    break;
-
-                case DelayCompleted:
-                    break;
-            }
-        }
-
-        internal bool IsSettled(
-            DiscoveryFacts facts,
-            WriterState writerState,
-            DesiredView desiredView,
-            int inFlightDiscoveryCount,
-            bool writerBusy,
-            ProgressSnapshot progress,
-            bool dryRun)
-        {
-            ArgumentNullException.ThrowIfNull(facts);
-            ArgumentNullException.ThrowIfNull(writerState);
-            ArgumentNullException.ThrowIfNull(desiredView);
-            ArgumentNullException.ThrowIfNull(progress);
-
-            if (inFlightDiscoveryCount != 0 || writerBusy)
-            {
-                return false;
-            }
-
-            if (PlanDiscovery(facts, writerState, availableSlots: int.MaxValue).Count != 0)
-            {
-                return false;
-            }
-
-            HashSet<string> actualVisible = writerState.VisibleTiles.Keys
-                .Where(desiredView.SelectedStableIds.Contains)
-                .ToHashSet(StringComparer.Ordinal);
-            HashSet<string> expectedVisible = desiredView.StableIds
-                .Concat(writerState.FailedRemovalStableIds.Where(writerState.VisibleTiles.ContainsKey))
-                .ToHashSet(StringComparer.Ordinal);
-            if (!actualVisible.SetEquals(expectedVisible))
-            {
-                return false;
-            }
-
-            if (dryRun)
-            {
-                return true;
-            }
-
-            (string desiredLicense, float desiredProgressValue, string desiredProgressText) = BuildDesiredMetadata(
-                facts,
-                writerState,
-                desiredView,
-                progress);
-
-            return string.Equals(desiredLicense, writerState.AppliedLicenseCredit, StringComparison.Ordinal) &&
-                   string.Equals(desiredProgressText, writerState.AppliedProgressText, StringComparison.Ordinal) &&
-                   System.Math.Abs(desiredProgressValue - writerState.AppliedProgressValue) <= 0.0001f;
-        }
-
         internal Dictionary<string, RetainedTileState> BuildVisibleTiles(WriterState writerState)
         {
             ArgumentNullException.ThrowIfNull(writerState);
@@ -585,11 +270,18 @@ namespace ThreeDTilesLink.Core.Pipeline
             return new InteractiveRunCheckpoint(new Dictionary<string, Tileset>(facts.TilesetCache, StringComparer.OrdinalIgnoreCase));
         }
 
-        internal int CountCandidateTiles(DiscoveryFacts facts, WriterState writerState)
+        internal int CountCandidateTiles(DiscoveryFacts facts, SelectionState selectionState)
         {
             ArgumentNullException.ThrowIfNull(facts);
-            ArgumentNullException.ThrowIfNull(writerState);
-            return GetCandidateStableIds(BuildPlanningTree(facts, writerState)).Count;
+            ArgumentNullException.ThrowIfNull(selectionState);
+            return GetCandidateStableIds(BuildPlanningTree(facts, selectionState)).Count;
+        }
+
+        internal PlanningTree BuildPlanningTreeForSelection(DiscoveryFacts facts, SelectionState selectionState)
+        {
+            ArgumentNullException.ThrowIfNull(facts);
+            ArgumentNullException.ThrowIfNull(selectionState);
+            return BuildPlanningTree(facts, selectionState);
         }
 
         private void ExpandDiscoveredTree(
@@ -668,9 +360,9 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        private static PlanningTree BuildPlanningTree(DiscoveryFacts facts, WriterState writerState)
+        private static PlanningTree BuildPlanningTree(DiscoveryFacts facts, SelectionState selectionState)
         {
-            List<RetainedTileState> planningVisibleTiles = GetPlanningVisibleTiles(facts, writerState);
+            List<SelectionVisibleTile> planningVisibleTiles = GetPlanningVisibleTiles(facts, selectionState);
             HashSet<string> selectedStableIds = facts.Branches.Keys.ToHashSet(StringComparer.Ordinal);
             HashSet<string> planningVisibleStableIds = planningVisibleTiles
                 .Select(static tile => tile.StableId)
@@ -744,7 +436,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         private static bool CanHideBehindCoveredChildren(
             PlanningNode node,
             PlanningTree tree,
-            WriterState writerState,
+            SelectionState selectionState,
             HashSet<string> candidateStableIds,
             Dictionary<string, bool> branchHasCandidatesMemo,
             Dictionary<string, bool> subtreeCoveredMemo,
@@ -775,7 +467,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 hasRelevantChild = true;
                 if (!IsSubtreeCovered(
                         child,
-                        writerState,
+                        selectionState,
                         candidateStableIds,
                         branchHasCandidatesMemo,
                         subtreeCoveredMemo))
@@ -876,7 +568,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         private static bool IsSubtreeCovered(
             PlanningNode node,
-            WriterState writerState,
+            SelectionState selectionState,
             HashSet<string> candidateStableIds,
             Dictionary<string, bool> branchHasCandidatesMemo,
             Dictionary<string, bool> memo)
@@ -887,7 +579,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             if (candidateStableIds.Contains(node.StableId) &&
-                IsRenderableAvailable(node.Fact, writerState))
+                IsRenderableAvailable(node.Fact, selectionState))
             {
                 memo[node.StableId] = true;
                 return true;
@@ -910,7 +602,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 hasRelevantChild = true;
                 if (!IsSubtreeCovered(
                         child,
-                        writerState,
+                        selectionState,
                         candidateStableIds,
                         branchHasCandidatesMemo,
                         memo))
@@ -924,28 +616,28 @@ namespace ThreeDTilesLink.Core.Pipeline
             return hasRelevantChild;
         }
 
-        private static bool IsRenderableAvailable(TileBranchFact fact, WriterState writerState)
+        private static bool IsRenderableAvailable(TileBranchFact fact, SelectionState selectionState)
         {
             if (fact.SendFailed &&
-                !writerState.VisibleTiles.ContainsKey(fact.Tile.StableId!))
+                !selectionState.ContainsVisible(fact.Tile.StableId!))
             {
                 return false;
             }
 
-            return writerState.VisibleTiles.ContainsKey(fact.Tile.StableId!) ||
+            return selectionState.ContainsVisible(fact.Tile.StableId!) ||
                    (fact.PrepareStatus == ContentDiscoveryStatus.Ready && fact.PreparedContent is not null);
         }
 
-        private static List<RetainedTileState> GetPlanningVisibleTiles(
+        private static List<SelectionVisibleTile> GetPlanningVisibleTiles(
             DiscoveryFacts facts,
-            WriterState writerState)
+            SelectionState selectionState)
         {
             if (!facts.RemoveOutOfRangeRetainedTiles)
             {
-                return [..writerState.VisibleTiles.Values];
+                return [..selectionState.VisibleTiles.Values];
             }
 
-            return [..writerState.VisibleTiles.Values
+            return [..selectionState.VisibleTiles.Values
                 .Where(tile => facts.Branches.ContainsKey(tile.StableId))
                 ];
         }
@@ -1026,10 +718,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                 .ToArray();
         }
 
-        private static HashSet<string> BuildAncestorsWithVisibleDescendants(IEnumerable<RetainedTileState> visibleTiles)
+        private static HashSet<string> BuildAncestorsWithVisibleDescendants(IEnumerable<SelectionVisibleTile> visibleTiles)
         {
             var ancestors = new HashSet<string>(StringComparer.Ordinal);
-            foreach (RetainedTileState tile in visibleTiles)
+            foreach (SelectionVisibleTile tile in visibleTiles)
             {
                 foreach (string ancestor in tile.AncestorStableIds)
                 {
@@ -1056,230 +748,6 @@ namespace ThreeDTilesLink.Core.Pipeline
             return false;
         }
 
-        private static int GetNearestVisibleAncestorDepth(PlanningNode? parent, IReadOnlySet<string> visibleStableIds)
-        {
-            PlanningNode? current = parent;
-            while (current is not null)
-            {
-                if (visibleStableIds.Contains(current.StableId))
-                {
-                    return current.Fact.Tile.Depth;
-                }
-
-                current = current.Parent;
-            }
-
-            return int.MaxValue;
-        }
-
-        private static bool HasInFlightRelatedSend(PlanningNode? node, HashSet<string> inFlightSendStableIds)
-        {
-            if (node is null || inFlightSendStableIds.Count == 0)
-            {
-                return false;
-            }
-
-            PlanningNode? current = node.Parent;
-            while (current is not null)
-            {
-                if (inFlightSendStableIds.Contains(current.StableId))
-                {
-                    return true;
-                }
-
-                current = current.Parent;
-            }
-
-            return HasInFlightDescendant(node, inFlightSendStableIds);
-        }
-
-        private static bool HasInFlightDescendant(PlanningNode node, HashSet<string> inFlightSendStableIds)
-        {
-            foreach (PlanningNode child in node.Children)
-            {
-                if (inFlightSendStableIds.Contains(child.StableId) ||
-                    HasInFlightDescendant(child, inFlightSendStableIds))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static int CountPendingRemovals(
-            DiscoveryFacts facts,
-            WriterState writerState,
-            DesiredView desiredView)
-        {
-            PlanningTree tree = BuildPlanningTree(facts, writerState);
-            HashSet<string> candidateStableIds = desiredView.CandidateStableIds is HashSet<string> hashSet
-                ? hashSet
-                : desiredView.CandidateStableIds.ToHashSet(StringComparer.Ordinal);
-            HashSet<string> selectionStableIds = desiredView.SelectedStableIds is HashSet<string> selectedHashSet
-                ? selectedHashSet
-                : desiredView.SelectedStableIds.ToHashSet(StringComparer.Ordinal);
-            var branchHasSelectionMemo = new Dictionary<string, bool>(StringComparer.Ordinal);
-            var replacementReadyAtMemo = new Dictionary<string, DateTimeOffset?>(StringComparer.Ordinal);
-
-            return writerState.VisibleTiles.Values.Count(tile =>
-                desiredView.SelectedStableIds.Contains(tile.StableId) &&
-                !desiredView.StableIds.Contains(tile.StableId) &&
-                !writerState.FailedRemovalStableIds.Contains(tile.StableId) &&
-                GetReplacementReadyAt(
-                    tile.StableId,
-                    tree,
-                    writerState,
-                    selectionStableIds,
-                    branchHasSelectionMemo,
-                    replacementReadyAtMemo) is not null);
-        }
-
-        private static DateTimeOffset? GetReplacementReadyAt(
-            string stableId,
-            PlanningTree tree,
-            WriterState writerState,
-            HashSet<string> selectionStableIds,
-            Dictionary<string, bool> branchHasSelectionMemo,
-            Dictionary<string, DateTimeOffset?> memo)
-        {
-            if (!tree.Nodes.TryGetValue(stableId, out PlanningNode? node) ||
-                node.Children.Count == 0)
-            {
-                return null;
-            }
-
-            DateTimeOffset? latest = null;
-            bool hasRelevantChild = false;
-
-            foreach (PlanningNode child in node.Children)
-            {
-                if (!BranchHasSelectedTile(child, selectionStableIds, branchHasSelectionMemo))
-                {
-                    continue;
-                }
-
-                hasRelevantChild = true;
-                DateTimeOffset? childReadyAt = GetVisibleCoverageReadyAt(
-                    child,
-                    tree,
-                    writerState,
-                    selectionStableIds,
-                    branchHasSelectionMemo,
-                    memo);
-                if (childReadyAt is null)
-                {
-                    return null;
-                }
-
-                if (latest is null || childReadyAt > latest)
-                {
-                    latest = childReadyAt;
-                }
-            }
-
-            return hasRelevantChild ? latest : null;
-        }
-
-        private static DateTimeOffset? GetVisibleCoverageReadyAt(
-            PlanningNode node,
-            PlanningTree tree,
-            WriterState writerState,
-            HashSet<string> selectionStableIds,
-            Dictionary<string, bool> branchHasSelectionMemo,
-            Dictionary<string, DateTimeOffset?> memo)
-        {
-            if (memo.TryGetValue(node.StableId, out DateTimeOffset? cached))
-            {
-                return cached;
-            }
-
-            if (tree.PlanningVisibleStableIds.Contains(node.StableId))
-            {
-                DateTimeOffset readyAt = GetVisibleReadyAt(node.StableId, writerState);
-                memo[node.StableId] = readyAt;
-                return readyAt;
-            }
-
-            if (node.Children.Count == 0)
-            {
-                memo[node.StableId] = null;
-                return null;
-            }
-
-            DateTimeOffset? latest = null;
-            bool hasRelevantChild = false;
-
-            foreach (PlanningNode child in node.Children)
-            {
-                if (!BranchHasSelectedTile(child, selectionStableIds, branchHasSelectionMemo))
-                {
-                    continue;
-                }
-
-                hasRelevantChild = true;
-                DateTimeOffset? childReadyAt = GetVisibleCoverageReadyAt(
-                    child,
-                    tree,
-                    writerState,
-                    selectionStableIds,
-                    branchHasSelectionMemo,
-                    memo);
-                if (childReadyAt is null)
-                {
-                    memo[node.StableId] = null;
-                    return null;
-                }
-
-                if (latest is null || childReadyAt > latest)
-                {
-                    latest = childReadyAt;
-                }
-            }
-
-            memo[node.StableId] = hasRelevantChild ? latest : null;
-            return memo[node.StableId];
-        }
-
-        private static DateTimeOffset GetVisibleReadyAt(string stableId, WriterState writerState)
-        {
-            DateTimeOffset visibleSince = writerState.VisibleSinceByStableId.TryGetValue(stableId, out DateTimeOffset timestamp)
-                ? timestamp
-                : DateTimeOffset.MinValue;
-            return visibleSince == DateTimeOffset.MinValue
-                ? DateTimeOffset.MinValue
-                : visibleSince + VisibleReplacementGrace;
-        }
-
-        private static bool BranchHasSelectedTile(
-            PlanningNode node,
-            HashSet<string> selectionStableIds,
-            Dictionary<string, bool> memo)
-        {
-            if (memo.TryGetValue(node.StableId, out bool cached))
-            {
-                return cached;
-            }
-
-            if (selectionStableIds.Contains(node.StableId))
-            {
-                memo[node.StableId] = true;
-                return true;
-            }
-
-            foreach (PlanningNode child in node.Children)
-            {
-                if (BranchHasSelectedTile(child, selectionStableIds, memo))
-                {
-                    memo[node.StableId] = true;
-                    return true;
-                }
-            }
-
-            memo[node.StableId] = false;
-            return false;
-        }
-
         private static bool ShouldPrioritizeCoverage(TileRunRequest request, TileSelectionResult tile)
         {
             return tile.HasChildren &&
@@ -1290,73 +758,5 @@ namespace ThreeDTilesLink.Core.Pipeline
                        : 4d);
         }
 
-        private static List<string> GetAncestorStableIds(DiscoveryFacts facts, string? parentStableId)
-        {
-            var ancestors = new List<string>();
-            string? currentId = parentStableId;
-            while (!string.IsNullOrWhiteSpace(currentId) &&
-                   facts.Branches.TryGetValue(currentId, out TileBranchFact? parent))
-            {
-                ancestors.Add(parent.Tile.StableId!);
-                currentId = parent.Tile.ParentStableId;
-            }
-
-            return ancestors;
-        }
-
-        private static (string LicenseCredit, float ProgressValue, string ProgressText) BuildDesiredMetadata(
-            DiscoveryFacts facts,
-            WriterState writerState,
-            DesiredView desiredView,
-            ProgressSnapshot progress)
-        {
-            string desiredLicense = BuildDesiredLicense(writerState.VisibleTiles.Values);
-
-            int pendingDiscovery = facts.Branches.Values.Count(fact =>
-                (fact.Tile.ContentKind == TileContentKind.Json && fact.NestedStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight) ||
-                (fact.Tile.ContentKind == TileContentKind.Glb && desiredView.CandidateStableIds.Contains(fact.Tile.StableId!) &&
-                 fact.PrepareStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight));
-            int pendingPrepared = facts.Branches.Values.Count(fact =>
-                fact.Tile.ContentKind == TileContentKind.Glb &&
-                desiredView.CandidateStableIds.Contains(fact.Tile.StableId!) &&
-                fact.PreparedContent is not null &&
-                fact.PrepareStatus == ContentDiscoveryStatus.Ready &&
-                !writerState.VisibleTiles.ContainsKey(fact.Tile.StableId!));
-            int pendingSend = desiredView.StableIds.Count(stableId => !writerState.VisibleTiles.ContainsKey(stableId));
-            int pendingRemove = CountPendingRemovals(facts, writerState, desiredView);
-
-            int completedUnits = progress.ProcessedTiles;
-            int pendingUnits = pendingDiscovery + pendingPrepared + pendingSend + pendingRemove +
-                writerState.InFlightSendStableIds.Count +
-                (writerState.InFlightRemoveStableId is null ? 0 : 1) +
-                (writerState.MetadataInFlight ? 1 : 0);
-            int candidateBacklog = System.Math.Max(0, progress.CandidateTiles - completedUnits);
-            int totalUnits = completedUnits + pendingUnits + candidateBacklog;
-            float progressValue = pendingUnits == 0 || totalUnits == 0
-                ? 1f
-                : System.Math.Clamp((float)completedUnits / totalUnits, 0f, 1f);
-            string progressText = pendingUnits == 0
-                ? $"Completed: candidate={progress.CandidateTiles} processed={progress.ProcessedTiles} streamed={progress.StreamedMeshes} failed={progress.FailedTiles}"
-                : $"Running: candidate={progress.CandidateTiles} processed={progress.ProcessedTiles} streamed={progress.StreamedMeshes} failed={progress.FailedTiles} queued-send={pendingSend}";
-
-            return (desiredLicense, progressValue, progressText);
-        }
-
-        private static string BuildDesiredLicense(IEnumerable<RetainedTileState> visibleTiles)
-        {
-            var aggregator = new LicenseCreditAggregator();
-            foreach (RetainedTileState retainedTile in visibleTiles)
-            {
-                IReadOnlyList<string> owners = LicenseCreditAggregator.ParseOwners(
-                    string.IsNullOrWhiteSpace(retainedTile.AssetCopyright)
-                        ? []
-                        : [retainedTile.AssetCopyright]);
-                aggregator.RegisterOrder(owners);
-                _ = aggregator.Activate(owners);
-            }
-
-            string built = aggregator.BuildCreditString();
-            return string.IsNullOrWhiteSpace(built) ? "Google Maps" : built;
-        }
     }
 }

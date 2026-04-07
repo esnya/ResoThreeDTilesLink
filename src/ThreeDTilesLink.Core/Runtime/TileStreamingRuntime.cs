@@ -15,13 +15,15 @@ namespace ThreeDTilesLink.Core.Runtime
     {
         private readonly HttpClient _httpClient;
         private readonly ResoniteSession _session;
+        private readonly RunPerformanceSummary? _performanceSummary;
         private bool _disposed;
 
         internal TileStreamingRuntime(
             ILoggerFactory loggerFactory,
             TimeSpan requestTimeout,
             int maxConcurrentTileProcessing = 8,
-            int resoniteSendWorkers = 1)
+            int resoniteSendWorkers = 8,
+            bool measurePerformance = false)
         {
             ArgumentNullException.ThrowIfNull(loggerFactory);
             if (requestTimeout <= TimeSpan.Zero)
@@ -56,13 +58,15 @@ namespace ThreeDTilesLink.Core.Runtime
                 DefaultRequestVersion = HttpVersion.Version20,
                 DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher
             };
+            _performanceSummary = measurePerformance ? new RunPerformanceSummary() : null;
 
             var transformer = new GeographicCoordinateTransformer();
-            var tilesSource = new HttpTilesSource(_httpClient);
+            var tilesSource = new HttpTilesSource(_httpClient, _performanceSummary);
             var selector = new TileSelector(transformer);
             var traversalCore = new TraversalCore(selector);
+            var reconcilerCore = new ResoniteReconcilerCore(traversalCore);
             var extractor = new GlbMeshExtractor();
-            var contentProcessor = new TileContentProcessor(tilesSource, extractor);
+            var contentProcessor = new TileContentProcessor(tilesSource, extractor, _performanceSummary);
             var meshPlacementService = new MeshPlacementService(transformer);
             var geocodingClient = new GoogleGeocodingClient(_httpClient);
             var searchResolver = new SearchResolver(geocodingClient);
@@ -93,12 +97,14 @@ namespace ThreeDTilesLink.Core.Runtime
             SelectionService = new TileSelectionService(
                 tilesSource,
                 traversalCore,
+                reconcilerCore,
                 contentProcessor,
                 meshPlacementService,
                 selectedTileProjector,
                 loggerFactory.CreateLogger<TileSelectionService>(),
                 maxConcurrentTileProcessing,
-                resoniteSendWorkers);
+                resoniteSendWorkers,
+                _performanceSummary);
 
             InteractiveSupervisor = new InteractiveRunSupervisor(
                 SelectionService,
@@ -129,6 +135,7 @@ namespace ThreeDTilesLink.Core.Runtime
 
             _disposed = true;
             await _session.DisposeAsync().ConfigureAwait(false);
+            _performanceSummary?.Dispose();
             _httpClient.Dispose();
         }
     }

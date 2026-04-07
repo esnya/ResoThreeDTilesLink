@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
 using ThreeDTilesLink.Core.Contracts;
@@ -11,15 +12,18 @@ namespace ThreeDTilesLink.Core.Pipeline
     internal sealed class TileSelectionService(
         ITilesSource tilesSource,
         TraversalCore traversalCore,
+        ResoniteReconcilerCore reconcilerCore,
         IContentProcessor contentProcessor,
         IMeshPlacementService meshPlacementService,
         ISelectedTileProjector selectedTileProjector,
         ILogger logger,
         int maxConcurrentTileProcessing = 1,
-        int maxConcurrentWriterSends = 1) : ITileSelectionService
+        int maxConcurrentWriterSends = 1,
+        RunPerformanceSummary? performanceSummary = null) : ITileSelectionService
     {
         private readonly ITilesSource _tilesSource = tilesSource;
         private readonly TraversalCore _traversalCore = traversalCore;
+        private readonly ResoniteReconcilerCore _reconcilerCore = reconcilerCore;
         private readonly IContentProcessor _contentProcessor = contentProcessor;
         private readonly IMeshPlacementService _meshPlacementService = meshPlacementService;
         private readonly ISelectedTileProjector _selectedTileProjector = selectedTileProjector;
@@ -34,6 +38,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             maxConcurrentTileProcessing,
             min: 2,
             max: 8);
+        private readonly RunPerformanceSummary? _performanceSummary = performanceSummary;
 
         private static readonly Action<ILogger, string, int, Exception?> s_connectingToResonite =
             LoggerMessage.Define<string, int>(
@@ -143,6 +148,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                 new EventId(18, "DisconnectFailedDuringFailure"),
                 "Failed to disconnect Resonite Link while another failure was already in flight.");
 
+        private static readonly Action<ILogger, int, int, int, int, string, string, Exception?> s_progressSnapshot =
+            LoggerMessage.Define<int, int, int, int, string, string>(
+                LogLevel.Information,
+                new EventId(19, "ProgressSnapshot"),
+                "Progress snapshot: candidate={CandidateTiles} processed={ProcessedTiles} streamedMeshes={StreamedMeshes} failed={FailedTiles} state={State} perf={PerfMs}.");
+
         public async Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(request);
@@ -223,6 +234,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             var writerTasks = new List<Task<WriterCompletion>>();
             ExceptionDispatchInfo? pendingFailure = null;
             bool completedSuccessfully = false;
+            DateTimeOffset lastProgressReportAt = DateTimeOffset.MinValue;
 
             DiscoveryFacts? facts = null;
             WriterState? writerState = null;
@@ -256,7 +268,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    DesiredView desiredView = _traversalCore.ComputeDesiredView(facts, writerState);
+                    SelectionState selectionState = writerState.CreateSelectionState();
+                    DesiredView desiredView = _traversalCore.ComputeDesiredView(facts, selectionState);
                     ProgressSnapshot progress = BuildProgressSnapshot(facts, writerState, counters);
 
                     int nestedLoadsInFlight = discoveryTasks.Values.Count(static entry => entry.Work is LoadNestedTilesetWorkItem);
@@ -265,7 +278,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     int availableTilePrepares = System.Math.Max(0, _maxConcurrentTileProcessing - tilePreparesInFlight);
                     foreach (DiscoveryWorkItem work in _traversalCore.PlanDiscovery(
                                  facts,
-                                 writerState,
+                                 selectionState,
                                  availableNestedTilesetLoads,
                                  availableTilePrepares))
                     {
@@ -281,60 +294,38 @@ namespace ThreeDTilesLink.Core.Pipeline
                             ExecuteDiscoveryAsync(work, request, auth, workerCts.Token)));
                     }
 
-                    if (writerState.InFlightRemoveStableId is null && !writerState.MetadataInFlight)
+                    WriterPlan writerPlan = _reconcilerCore.ReduceWriterPlan(
+                        facts,
+                        writerState,
+                        selectionState,
+                        desiredView,
+                        progress,
+                        request.Output.DryRun,
+                        _maxConcurrentWriterSends);
+
+                    if (writerPlan.ControlCommand is not null)
                     {
-                        if (writerTasks.Count == 0)
-                        {
-                            WriterCommand? firstWriterCommand = _traversalCore.PlanWriterCommand(
-                                facts,
-                                writerState,
-                                desiredView,
-                                progress,
-                                request.Output.DryRun,
-                                allowRemoval: true,
-                                allowSend: true,
-                                allowMetadata: true);
-                            if (firstWriterCommand is not null)
-                            {
-                                MarkWriterInFlight(writerState, firstWriterCommand);
-                                writerTasks.Add(ExecuteWriterCommandAsync(firstWriterCommand, request, interactiveContext, workerCts.Token));
-                            }
-                        }
-
-                        while (writerState.InFlightRemoveStableId is null &&
-                               !writerState.MetadataInFlight &&
-                               writerState.InFlightSendStableIds.Count < _maxConcurrentWriterSends)
-                        {
-                            WriterCommand? sendWriterCommand = _traversalCore.PlanWriterCommand(
-                                facts,
-                                writerState,
-                                desiredView,
-                                progress,
-                                request.Output.DryRun,
-                                allowRemoval: false,
-                                allowSend: true,
-                                allowMetadata: false);
-                            if (sendWriterCommand is not SendTileWriterCommand)
-                            {
-                                break;
-                            }
-
-                            MarkWriterInFlight(writerState, sendWriterCommand);
-                            writerTasks.Add(ExecuteWriterCommandAsync(sendWriterCommand, request, interactiveContext, workerCts.Token));
-                        }
+                        MarkWriterInFlight(writerState, writerPlan.ControlCommand);
+                        writerTasks.Add(ExecuteWriterCommandAsync(writerPlan.ControlCommand, request, interactiveContext, workerCts.Token));
                     }
 
-                    desiredView = _traversalCore.ComputeDesiredView(facts, writerState);
+                    foreach (SendTileWriterCommand sendWriterCommand in writerPlan.SendCommands)
+                    {
+                        MarkWriterInFlight(writerState, sendWriterCommand);
+                        writerTasks.Add(ExecuteWriterCommandAsync(sendWriterCommand, request, interactiveContext, workerCts.Token));
+                    }
+
+                    selectionState = writerState.CreateSelectionState();
+                    desiredView = _traversalCore.ComputeDesiredView(facts, selectionState);
                     progress = BuildProgressSnapshot(facts, writerState, counters);
                     UpdateInteractiveState(interactiveContext, facts, writerState, counters);
+                    MaybeLogProgressSnapshot(progress, writerState, discoveryTasks.Count, writerTasks.Count, ref lastProgressReportAt);
 
                     bool writerBusy = writerTasks.Count != 0;
-                    if (_traversalCore.IsSettled(
+                    if (discoveryTasks.Count == 0 && !writerBusy && _reconcilerCore.IsReconciled(
                         facts,
                         writerState,
                         desiredView,
-                        discoveryTasks.Count,
-                        writerBusy,
                         progress,
                         request.Output.DryRun))
                     {
@@ -428,6 +419,41 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
+        private void MaybeLogProgressSnapshot(
+            ProgressSnapshot progress,
+            WriterState writerState,
+            int discoveryInFlight,
+            int writerInFlight,
+            ref DateTimeOffset lastReportAt)
+        {
+            if (_performanceSummary is null)
+            {
+                return;
+            }
+
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            if (lastReportAt != DateTimeOffset.MinValue && now - lastReportAt < TimeSpan.FromSeconds(10))
+            {
+                return;
+            }
+
+            lastReportAt = now;
+            string state = $"disc={discoveryInFlight} writer={writerInFlight} sendInFlight={writerState.InFlightSendStableIds.Count} " +
+                           $"removeInFlight={(writerState.InFlightRemoveStableId is null ? 0 : 1)} metadataInFlight={(writerState.MetadataInFlight ? 1 : 0)}";
+            string perf = $"fetch={_performanceSummary.FetchMilliseconds} extract={_performanceSummary.ExtractMilliseconds} " +
+                          $"placement={_performanceSummary.PlacementMilliseconds} send={_performanceSummary.SendMilliseconds} " +
+                          $"remove={_performanceSummary.RemoveMilliseconds}";
+            s_progressSnapshot(
+                _logger,
+                progress.CandidateTiles,
+                progress.ProcessedTiles,
+                progress.StreamedMeshes,
+                progress.FailedTiles,
+                state,
+                perf,
+                null);
+        }
+
         private async Task ApplyCompletedWorkAsync(
             DiscoveryFacts facts,
             WriterState writerState,
@@ -485,7 +511,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     int processedTiles = counters.ProcessedTiles;
                     int streamedMeshes = counters.StreamedMeshes;
                     int failedTiles = counters.FailedTiles;
-                    _traversalCore.ApplyWriterCompletion(
+                    ResoniteReconcilerCore.ApplyWriterCompletion(
                         facts,
                         writerState,
                         completion,
@@ -723,8 +749,9 @@ namespace ThreeDTilesLink.Core.Pipeline
             WriterState writerState,
             RunCounters counters)
         {
+            SelectionState selectionState = writerState.CreateSelectionState();
             return new ProgressSnapshot(
-                _traversalCore.CountCandidateTiles(facts, writerState),
+                _traversalCore.CountCandidateTiles(facts, selectionState),
                 counters.ProcessedTiles,
                 counters.StreamedMeshes,
                 counters.FailedTiles);
@@ -735,9 +762,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             WriterState writerState,
             RunCounters counters)
         {
-            DesiredView desiredView = _traversalCore.ComputeDesiredView(facts, writerState);
+            SelectionState selectionState = writerState.CreateSelectionState();
+            DesiredView desiredView = _traversalCore.ComputeDesiredView(facts, selectionState);
             var summary = new RunSummary(
-                _traversalCore.CountCandidateTiles(facts, writerState),
+                _traversalCore.CountCandidateTiles(facts, selectionState),
                 counters.ProcessedTiles,
                 counters.StreamedMeshes,
                 counters.FailedTiles);
@@ -793,11 +821,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                         work.Tile,
                         new PreparedTileContent(
                             work.Tile,
-                            _meshPlacementService.Place(
+                            MeasurePlacement(() => _meshPlacementService.Place(
                                 work.Tile,
                                 renderable.Meshes,
                                 request.PlacementReference,
-                                request.Output.MeshParentSlotId),
+                                request.Output.MeshParentSlotId)),
                             renderable.AssetCopyright)),
                     SkippedContentProcessResult skipped => new DiscoverySkipped(work.Tile, skipped.Reason),
                     _ => throw new InvalidOperationException("Unsupported content process result: " + content.GetType().Name)
@@ -854,6 +882,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             TileRunRequest request,
             CancellationToken cancellationToken)
         {
+            RunPerformanceSummary? performanceSummary = _performanceSummary;
+            long startedAt = performanceSummary is null ? 0L : Stopwatch.GetTimestamp();
             try
             {
                 SendMeshResult[] results = await Task.WhenAll(command.Content.Meshes.Select(SendPayloadAsync)).ConfigureAwait(false);
@@ -889,6 +919,13 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 throw;
             }
+            finally
+            {
+                if (performanceSummary is not null)
+                {
+                    performanceSummary.AddSend(Stopwatch.GetElapsedTime(startedAt));
+                }
+            }
 
             async Task<SendMeshResult> SendPayloadAsync(PlacedMeshPayload payload)
             {
@@ -908,6 +945,20 @@ namespace ThreeDTilesLink.Core.Pipeline
                     return new SendMeshResult(null, ex);
                 }
             }
+        }
+
+        private IReadOnlyList<PlacedMeshPayload> MeasurePlacement(Func<IReadOnlyList<PlacedMeshPayload>> action)
+        {
+            RunPerformanceSummary? performanceSummary = _performanceSummary;
+            if (performanceSummary is null)
+            {
+                return action();
+            }
+
+            long startedAt = Stopwatch.GetTimestamp();
+            IReadOnlyList<PlacedMeshPayload> result = action();
+            performanceSummary.AddPlacement(Stopwatch.GetElapsedTime(startedAt));
+            return result;
         }
 
         [SuppressMessage(
@@ -950,36 +1001,48 @@ namespace ThreeDTilesLink.Core.Pipeline
             InteractiveExecutionContext? interactiveContext,
             CancellationToken cancellationToken)
         {
-            int failedSlotCount = 0;
-            Exception? firstError = null;
-            var remainingSlotIds = new List<string>();
-
-            foreach (string slotId in command.SlotIds)
+            RunPerformanceSummary? performanceSummary = _performanceSummary;
+            long startedAt = performanceSummary is null ? 0L : Stopwatch.GetTimestamp();
+            try
             {
-                try
+                int failedSlotCount = 0;
+                Exception? firstError = null;
+                var remainingSlotIds = new List<string>();
+
+                foreach (string slotId in command.SlotIds)
                 {
-                    await _selectedTileProjector.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
-                    interactiveContext?.ForgetNewSlotId(slotId);
+                    try
+                    {
+                        await _selectedTileProjector.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
+                        interactiveContext?.ForgetNewSlotId(slotId);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        failedSlotCount++;
+                        firstError ??= ex;
+                        remainingSlotIds.Add(slotId);
+                    }
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+
+                return new RemoveTileCompleted(
+                    command.StableId,
+                    command.TileId,
+                    failedSlotCount == 0,
+                    failedSlotCount,
+                    remainingSlotIds,
+                    firstError);
+            }
+            finally
+            {
+                if (performanceSummary is not null)
                 {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    failedSlotCount++;
-                    firstError ??= ex;
-                    remainingSlotIds.Add(slotId);
+                    performanceSummary.AddRemove(Stopwatch.GetElapsedTime(startedAt));
                 }
             }
-
-            return new RemoveTileCompleted(
-                command.StableId,
-                command.TileId,
-                failedSlotCount == 0,
-                failedSlotCount,
-                remainingSlotIds,
-                firstError);
         }
 
         [SuppressMessage(

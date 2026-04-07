@@ -22,7 +22,7 @@ namespace ThreeDTilesLink.Tests
             DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: true), interactive: null);
             WriterState writerState = new();
 
-            List<DiscoveryWorkItem> work = core.PlanDiscovery(facts, writerState, availableSlots: 2);
+            List<DiscoveryWorkItem> work = core.PlanDiscovery(facts, writerState.CreateSelectionState(), availableSlots: 2);
 
             _ = work.Should().HaveCount(2);
             _ = work[0].Tile.TileId.Should().Be("c");
@@ -56,11 +56,12 @@ namespace ThreeDTilesLink.Tests
 
             DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: true), interactive: null);
             WriterState writerState = new();
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
             MarkPrepared(facts, "c", CreatePreparedContent("c"), order: 0);
             MarkPrepared(facts, "p", CreatePreparedContent("p", parentTileId: null, hasChildren: true), order: 1);
 
-            DesiredView desired = core.ComputeDesiredView(facts, writerState);
-            WriterCommand? writerCommand = core.PlanWriterCommand(
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            WriterCommand? writerCommand = reconciler.PlanNextWriterCommand(
                 facts,
                 writerState,
                 desired,
@@ -86,10 +87,11 @@ namespace ThreeDTilesLink.Tests
             {
                 [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent")
             });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
             MarkPrepared(facts, "c", CreatePreparedContent("c"), order: 0);
 
-            DesiredView desired = core.ComputeDesiredView(facts, writerState);
-            WriterCommand? firstCommand = core.PlanWriterCommand(
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            WriterCommand? firstCommand = reconciler.PlanNextWriterCommand(
                 facts,
                 writerState,
                 desired,
@@ -107,8 +109,8 @@ namespace ThreeDTilesLink.Tests
                 ["slot_child"],
                 "Google; Child");
 
-            desired = core.ComputeDesiredView(facts, writerState);
-            WriterCommand? removal = core.PlanWriterCommand(
+            desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            WriterCommand? removal = reconciler.PlanNextWriterCommand(
                 facts,
                 writerState,
                 desired,
@@ -134,6 +136,7 @@ namespace ThreeDTilesLink.Tests
             {
                 [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent")
             });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
             MarkPrepared(facts, "c", CreatePreparedContent("c", hasChildren: true), order: 1);
             MarkPrepared(
                 facts,
@@ -142,8 +145,8 @@ namespace ThreeDTilesLink.Tests
                 order: 0,
                 stableId: StableId("g"));
 
-            DesiredView desired = core.ComputeDesiredView(facts, writerState);
-            WriterCommand? writerCommand = core.PlanWriterCommand(
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            WriterCommand? writerCommand = reconciler.PlanNextWriterCommand(
                 facts,
                 writerState,
                 desired,
@@ -171,9 +174,10 @@ namespace ThreeDTilesLink.Tests
                 [StableId("c")] = new(StableId("c"), "c", StableId("p"), [StableId("p")], ["slot_child"], "Google; Child"),
                 [StableId("g")] = new(StableId("g"), "g", StableId("c"), [StableId("p"), StableId("c")], ["slot_grandchild"], "Google; Grandchild")
             });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
 
-            DesiredView desired = core.ComputeDesiredView(facts, writerState);
-            WriterCommand? writerCommand = core.PlanWriterCommand(
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            WriterCommand? writerCommand = reconciler.PlanNextWriterCommand(
                 facts,
                 writerState,
                 desired,
@@ -203,6 +207,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("c0")] = new(StableId("c0"), "c0", StableId("p0"), [StableId("p0")], ["slot_c0"], "Google; c0"),
                 [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; p1")
             });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
             MarkPrepared(
                 facts,
                 "g0",
@@ -216,8 +221,8 @@ namespace ThreeDTilesLink.Tests
                 order: 1,
                 stableId: StableId("c1"));
 
-            DesiredView desired = core.ComputeDesiredView(facts, writerState);
-            WriterCommand? writerCommand = core.PlanWriterCommand(
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            WriterCommand? writerCommand = reconciler.PlanNextWriterCommand(
                 facts,
                 writerState,
                 desired,
@@ -241,7 +246,7 @@ namespace ThreeDTilesLink.Tests
             WriterState writerState = new();
             MarkPrepared(facts, "p", CreatePreparedContent("p", parentTileId: null, hasChildren: true), order: 0);
 
-            DesiredView desired = core.ComputeDesiredView(facts, writerState);
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
 
             _ = desired.StableIds.Should().ContainSingle().Which.Should().Be(StableId("p"));
         }
@@ -263,8 +268,8 @@ namespace ThreeDTilesLink.Tests
                 [childStableId] = new(childStableId, "c", parentStableId, [parentStableId], ["slot_child"], "Google; Child")
             });
 
-            List<DiscoveryWorkItem> work = core.PlanDiscovery(facts, writerState, availableSlots: 2);
-            DesiredView desired = core.ComputeDesiredView(facts, writerState);
+            List<DiscoveryWorkItem> work = core.PlanDiscovery(facts, writerState.CreateSelectionState(), availableSlots: 2);
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
 
             _ = work.Should().BeEmpty();
             _ = desired.StableIds.Should().ContainSingle().Which.Should().Be(childStableId);
@@ -287,7 +292,7 @@ namespace ThreeDTilesLink.Tests
                 [childStableId] = new(childStableId, "c0", StableId("p"), [StableId("p")], ["slot_child"], "Google; Child")
             });
 
-            List<DiscoveryWorkItem> work = core.PlanDiscovery(facts, writerState, availableSlots: 2);
+            List<DiscoveryWorkItem> work = core.PlanDiscovery(facts, writerState.CreateSelectionState(), availableSlots: 2);
 
             _ = work.Should().HaveCount(2);
             _ = work[0].Tile.TileId.Should().Be("p");
@@ -308,7 +313,7 @@ namespace ThreeDTilesLink.Tests
 
             List<DiscoveryWorkItem> work = core.PlanDiscovery(
                 facts,
-                writerState,
+                writerState.CreateSelectionState(),
                 availableNestedSlots: 1,
                 availablePrepareSlots: 1);
 
@@ -342,7 +347,7 @@ namespace ThreeDTilesLink.Tests
             });
             MarkPrepared(facts, "p", CreatePreparedContent("p", parentTileId: null, hasChildren: true), order: 0);
 
-            DesiredView desired = core.ComputeDesiredView(facts, writerState);
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
 
             _ = desired.StableIds.Should().ContainSingle().Which.Should().Be(parentStableId);
         }
@@ -372,8 +377,8 @@ namespace ThreeDTilesLink.Tests
             });
             MarkPrepared(facts, "p", CreatePreparedContent("p", parentTileId: null, hasChildren: true), order: 0);
 
-            DesiredView desired = core.ComputeDesiredView(facts, writerState);
-            List<DiscoveryWorkItem> work = core.PlanDiscovery(facts, writerState, availableSlots: 1);
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            List<DiscoveryWorkItem> work = core.PlanDiscovery(facts, writerState.CreateSelectionState(), availableSlots: 1);
 
             _ = desired.StableIds.Should().BeEmpty();
             _ = work.Should().BeEmpty();
@@ -398,9 +403,10 @@ namespace ThreeDTilesLink.Tests
                 [StableId("g0")] = new(StableId("g0"), "g0", StableId("c0"), [StableId("p"), StableId("c0")], ["slot_g0"], "Google; Grandchild 0"),
                 [StableId("g1")] = new(StableId("g1"), "g1", StableId("c1"), [StableId("p"), StableId("c1")], ["slot_g1"], "Google; Grandchild 1")
             });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
 
-            DesiredView desired = core.ComputeDesiredView(facts, writerState);
-            WriterCommand? writerCommand = core.PlanWriterCommand(
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            WriterCommand? writerCommand = reconciler.PlanNextWriterCommand(
                 facts,
                 writerState,
                 desired,
@@ -431,6 +437,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent"),
                 [StableId("g0")] = new(StableId("g0"), "g0", StableId("c0"), [StableId("p"), StableId("c0")], ["slot_g0"], "Google; Grandchild 0")
             });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
             MarkPrepared(
                 facts,
                 "g1",
@@ -442,7 +449,7 @@ namespace ThreeDTilesLink.Tests
                 new HashSet<string>([StableId("g0"), StableId("g1")], StringComparer.Ordinal),
                 facts.Branches.Keys.ToHashSet(StringComparer.Ordinal),
                 new HashSet<string>([StableId("g0"), StableId("g1")], StringComparer.Ordinal));
-            WriterCommand? writerCommand = core.PlanWriterCommand(
+            WriterCommand? writerCommand = reconciler.PlanNextWriterCommand(
                 facts,
                 writerState,
                 desired,
@@ -475,6 +482,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("g0")] = new(StableId("g0"), "g0", StableId("c0"), [StableId("p"), StableId("c0")], ["slot_g0"], "Google; Grandchild 0"),
                 [StableId("g1")] = new(StableId("g1"), "g1", StableId("c1"), [StableId("p"), StableId("c1")], ["slot_g1"], "Google; Grandchild 1")
             });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
             writerState.VisibleSinceByStableId[StableId("g0")] = now - TimeSpan.FromSeconds(2);
             writerState.VisibleSinceByStableId[StableId("g1")] = now - TimeSpan.FromMilliseconds(250);
 
@@ -482,7 +490,7 @@ namespace ThreeDTilesLink.Tests
                 new HashSet<string>([StableId("g0"), StableId("g1")], StringComparer.Ordinal),
                 facts.Branches.Keys.ToHashSet(StringComparer.Ordinal),
                 new HashSet<string>([StableId("g0"), StableId("g1")], StringComparer.Ordinal));
-            WriterCommand? writerCommand = core.PlanWriterCommand(
+            WriterCommand? writerCommand = reconciler.PlanNextWriterCommand(
                 facts,
                 writerState,
                 desired,
@@ -493,6 +501,43 @@ namespace ThreeDTilesLink.Tests
             _ = desired.StableIds.Should().Contain([StableId("g0"), StableId("g1")]);
             _ = writerCommand.Should().BeOfType<DelayWriterCommand>()
                 .Which.Delay.Should().BeCloseTo(TimeSpan.FromMilliseconds(750), TimeSpan.FromMilliseconds(50));
+        }
+
+        [Fact]
+        public void PlanWriterCommand_AllowsUnrelatedRemovalWhileAnotherBranchSendIsInFlight()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p0", "https://example.com/p0.glb", depth: 0, parentTileId: null, hasChildren: true, span: 120d, stableId: StableId("p0")),
+                CreateTile("c0", "https://example.com/c0.glb", depth: 1, parentTileId: "p0", hasChildren: false, span: 60d, stableId: StableId("c0"), parentStableId: StableId("p0")),
+                CreateTile("p1", "https://example.com/p1.glb", depth: 0, parentTileId: null, hasChildren: true, span: 120d, stableId: StableId("p1")),
+                CreateTile("c1", "https://example.com/c1.glb", depth: 1, parentTileId: "p1", hasChildren: false, span: 60d, stableId: StableId("c1"), parentStableId: StableId("p1"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0"),
+                [StableId("c0")] = new(StableId("c0"), "c0", StableId("p0"), [StableId("p0")], ["slot_c0"], "Google; Child 0"),
+                [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
+            });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            _ = writerState.InFlightSendStableIds.Add(StableId("c1"));
+
+            DesiredView desired = new(
+                new HashSet<string>([StableId("c0"), StableId("c1")], StringComparer.Ordinal),
+                facts.Branches.Keys.ToHashSet(StringComparer.Ordinal),
+                new HashSet<string>([StableId("c0"), StableId("c1")], StringComparer.Ordinal));
+
+            WriterCommand? writerCommand = reconciler.PlanNextWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(4, 3, 2, 0),
+                dryRun: false);
+
+            _ = writerCommand.Should().BeOfType<RemoveTileWriterCommand>()
+                .Which.StableId.Should().Be(StableId("p0"));
         }
 
         [Fact]
@@ -513,6 +558,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent"),
                 [StableId("g0")] = new(StableId("g0"), "g0", StableId("c0"), [StableId("p"), StableId("c0")], ["slot_g0"], "Google; Grandchild 0")
             });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
             MarkPrepared(
                 facts,
                 "g1",
@@ -524,7 +570,7 @@ namespace ThreeDTilesLink.Tests
                 new HashSet<string>([StableId("g0"), StableId("g1")], StringComparer.Ordinal),
                 new HashSet<string>([StableId("p"), StableId("c0"), StableId("c1"), StableId("g0"), StableId("g1")], StringComparer.Ordinal),
                 new HashSet<string>([StableId("p"), StableId("g0")], StringComparer.Ordinal));
-            WriterCommand? writerCommand = core.PlanWriterCommand(
+            WriterCommand? writerCommand = reconciler.PlanNextWriterCommand(
                 facts,
                 writerState,
                 desired,
@@ -564,7 +610,7 @@ namespace ThreeDTilesLink.Tests
             MarkPrepared(facts, "p", CreatePreparedContent("p", parentTileId: null, hasChildren: true), order: 1);
             MarkPrepared(facts, "leaf", CreatePreparedContent("leaf", parentTileId: "j", stableId: StableId("j", "leaf"), parentStableId: StableId("j")), order: 0, stableId: StableId("j", "leaf"));
 
-            DesiredView desired = core.ComputeDesiredView(facts, writerState);
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
 
             _ = facts.Branches.Should().ContainKey(StableId("j", "leaf"));
             _ = desired.StableIds.Should().ContainSingle().Which.Should().Be(StableId("j", "leaf"));
@@ -580,9 +626,10 @@ namespace ThreeDTilesLink.Tests
 
             DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
             WriterState writerState = new();
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
 
-            DesiredView desired = core.ComputeDesiredView(facts, writerState);
-            WriterCommand? command = core.PlanWriterCommand(
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            WriterCommand? command = reconciler.PlanNextWriterCommand(
                 facts,
                 writerState,
                 desired,
@@ -609,6 +656,7 @@ namespace ThreeDTilesLink.Tests
             {
                 [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent")
             });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
             MarkPrepared(
                 facts,
                 "g",
@@ -619,8 +667,8 @@ namespace ThreeDTilesLink.Tests
             writerState.AppliedProgressValue = 0f;
             writerState.AppliedProgressText = "stale";
 
-            DesiredView desired = core.ComputeDesiredView(facts, writerState);
-            WriterCommand? command = core.PlanWriterCommand(
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            WriterCommand? command = reconciler.PlanNextWriterCommand(
                 facts,
                 writerState,
                 desired,
@@ -635,6 +683,11 @@ namespace ThreeDTilesLink.Tests
         private static TraversalCore CreateCore(Func<string, IReadOnlyList<TileSelectionResult>> selectByPrefix)
         {
             return new TraversalCore(new FakeSelector(selectByPrefix));
+        }
+
+        private static ResoniteReconcilerCore CreateReconciler(TraversalCore core)
+        {
+            return new ResoniteReconcilerCore(core);
         }
 
         private static TileRunRequest CreateRequest(bool dryRun, double bootstrapRangeMultiplier = 4d)

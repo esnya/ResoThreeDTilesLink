@@ -33,7 +33,8 @@ namespace ThreeDTilesLink
                 options.LogLevel,
                 TimeSpan.FromSeconds(options.TimeoutSec),
                 options.ContentWorkers,
-                options.ResoniteSendWorkers);
+                options.ResoniteSendWorkers,
+                options.MeasurePerformance);
 #pragma warning restore CA2000
             await using (runtimeHandle.ConfigureAwait(false))
             {

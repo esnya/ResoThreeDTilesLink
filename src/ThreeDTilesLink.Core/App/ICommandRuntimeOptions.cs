@@ -7,6 +7,7 @@ namespace ThreeDTilesLink.Core.App
         int ContentWorkers { get; }
         int ResoniteSendWorkers { get; }
         int TimeoutSec { get; }
+        bool MeasurePerformance { get; }
         LogLevel LogLevel { get; }
     }
 }

@@ -59,6 +59,20 @@ namespace ThreeDTilesLink.Core.Pipeline
             : new Dictionary<string, Tileset>(cachedTilesets, StringComparer.OrdinalIgnoreCase);
     }
 
+    internal sealed record SelectionVisibleTile(
+        string StableId,
+        IReadOnlyList<string> AncestorStableIds,
+        DateTimeOffset VisibleSince);
+
+    internal sealed class SelectionState(IEnumerable<SelectionVisibleTile>? visibleTiles = null)
+    {
+        public Dictionary<string, SelectionVisibleTile> VisibleTiles { get; } = visibleTiles is null
+            ? new Dictionary<string, SelectionVisibleTile>(StringComparer.Ordinal)
+            : visibleTiles.ToDictionary(static tile => tile.StableId, StringComparer.Ordinal);
+
+        public bool ContainsVisible(string stableId) => VisibleTiles.ContainsKey(stableId);
+    }
+
     internal sealed class WriterState(IReadOnlyDictionary<string, RetainedTileState>? initialVisibleTiles = null)
     {
         public Dictionary<string, RetainedTileState> VisibleTiles { get; } = initialVisibleTiles is null
@@ -85,12 +99,46 @@ namespace ThreeDTilesLink.Core.Pipeline
         public float AppliedProgressValue { get; set; } = -1f;
 
         public string AppliedProgressText { get; set; } = string.Empty;
+
+        public WriterState CreatePlanningCopy()
+        {
+            WriterState copy = new(VisibleTiles);
+            copy.VisibleSinceByStableId.Clear();
+            foreach ((string stableId, DateTimeOffset visibleSince) in VisibleSinceByStableId)
+            {
+                copy.VisibleSinceByStableId.Add(stableId, visibleSince);
+            }
+
+            copy.FailedRemovalStableIds.UnionWith(FailedRemovalStableIds);
+            copy.InFlightSendStableIds.UnionWith(InFlightSendStableIds);
+            copy.InFlightRemoveStableId = InFlightRemoveStableId;
+            copy.MetadataInFlight = MetadataInFlight;
+            copy.AppliedLicenseCredit = AppliedLicenseCredit;
+            copy.AppliedProgressValue = AppliedProgressValue;
+            copy.AppliedProgressText = AppliedProgressText;
+            return copy;
+        }
+
+        public SelectionState CreateSelectionState()
+        {
+            return new SelectionState(VisibleTiles.Values.Select(tile => new SelectionVisibleTile(
+                tile.StableId,
+                tile.AncestorStableIds,
+                VisibleSinceByStableId.TryGetValue(tile.StableId, out DateTimeOffset visibleSince)
+                    ? visibleSince
+                    : DateTimeOffset.MinValue)));
+        }
     }
 
     internal sealed record DesiredView(
         IReadOnlySet<string> StableIds,
         IReadOnlySet<string> SelectedStableIds,
         IReadOnlySet<string> CandidateStableIds);
+
+    internal sealed record WriterPlan(
+        WriterCommand? ControlCommand,
+        IReadOnlyList<SendTileWriterCommand> SendCommands,
+        bool HasPendingRemovals);
 
     internal abstract record DiscoveryWorkItem(TileSelectionResult Tile);
 
@@ -186,7 +234,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         TileRunRequest request,
         IReadOnlyDictionary<string, PlanningNode> nodes,
         IReadOnlyList<PlanningNode> roots,
-        IReadOnlyList<RetainedTileState> planningVisibleTiles,
+        IReadOnlyList<SelectionVisibleTile> planningVisibleTiles,
         IReadOnlySet<string> selectedStableIds,
         IReadOnlySet<string> planningVisibleStableIds,
         IReadOnlySet<string> ancestorsWithPlanningVisibleDescendants,
@@ -198,7 +246,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public IReadOnlyList<PlanningNode> Roots { get; } = roots;
 
-        public IReadOnlyList<RetainedTileState> PlanningVisibleTiles { get; } = planningVisibleTiles;
+        public IReadOnlyList<SelectionVisibleTile> PlanningVisibleTiles { get; } = planningVisibleTiles;
 
         public IReadOnlySet<string> SelectedStableIds { get; } = selectedStableIds;
 

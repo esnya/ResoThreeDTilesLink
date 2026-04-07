@@ -11,6 +11,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         internal TileRunCoordinator(
             ITilesSource tilesSource,
             TraversalCore traversalCore,
+            ResoniteReconcilerCore reconcilerCore,
             IContentProcessor contentProcessor,
             IMeshPlacementService meshPlacementService,
             ISelectedTileProjector selectedTileProjector,
@@ -22,6 +23,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             _selectionService = new TileSelectionService(
                 tilesSource,
                 traversalCore,
+                reconcilerCore,
                 contentProcessor,
                 meshPlacementService,
                 selectedTileProjector,

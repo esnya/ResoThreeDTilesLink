@@ -110,7 +110,7 @@ function Resolve-ResoniteLinkTarget {
         }
     }
 
-    $sessions = Get-DiscoveredResoniteLinkSessions -TimeoutSec $DiscoveryTimeoutSec
+    $sessions = @(Get-DiscoveredResoniteLinkSessions -TimeoutSec $DiscoveryTimeoutSec)
 
     if (-not [string]::IsNullOrWhiteSpace($SessionId)) {
         $sessions = @($sessions | Where-Object { $_.SessionId -eq $SessionId })
@@ -142,7 +142,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $scriptDir
 
 if ($Command -eq 'discover') {
-    $sessions = Get-DiscoveredResoniteLinkSessions -TimeoutSec $DiscoveryTimeoutSec
+    $sessions = @(Get-DiscoveredResoniteLinkSessions -TimeoutSec $DiscoveryTimeoutSec)
     if ($sessions.Count -eq 0) {
         throw "No Resonite Link session was discovered within ${DiscoveryTimeoutSec}s."
     }

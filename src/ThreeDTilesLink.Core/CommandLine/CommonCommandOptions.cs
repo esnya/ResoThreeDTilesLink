@@ -24,7 +24,10 @@ namespace ThreeDTilesLink.Core.CommandLine
             new("--content-workers", CommandOptionValueKind.WholeNumber, description, DefaultValue: 10);
 
         internal static CommandOptionDefinition ResoniteSendWorkers(string description) =>
-            new("--resonite-send-workers", CommandOptionValueKind.WholeNumber, description, DefaultValue: 1);
+            new("--resonite-send-workers", CommandOptionValueKind.WholeNumber, description, DefaultValue: 8);
+
+        internal static CommandOptionDefinition MeasurePerformance() =>
+            new("--measure-performance", CommandOptionValueKind.Switch, "Collect stage timing metrics and progress snapshots.", DefaultValue: false);
 
         internal static CommandOptionDefinition Timeout() =>
             new("--timeout", CommandOptionValueKind.WholeNumber, "Request timeout.", DefaultValue: 120, Unit: "sec", RenamedFrom: ["--timeout-sec"]);

@@ -13,6 +13,7 @@ namespace ThreeDTilesLink.Core.CommandLine
         int ContentWorkers,
         int ResoniteSendWorkers,
         int TimeoutSec,
+        bool MeasurePerformance,
         int PollIntervalMs,
         int DebounceMs,
         int ThrottleMs,
@@ -35,6 +36,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 CommonCommandOptions.DetailTarget(),
                 CommonCommandOptions.ContentWorkers("Maximum number of tile content fetch/decode workers per run."),
                 CommonCommandOptions.ResoniteSendWorkers("Maximum number of parallel Resonite send workers."),
+                CommonCommandOptions.MeasurePerformance(),
                 CommonCommandOptions.Timeout(),
                 new("--poll-interval", CommandOptionValueKind.WholeNumber, "Watch polling interval.", DefaultValue: 250, Unit: "ms", RenamedFrom: ["--poll-ms"]),
                 new("--debounce", CommandOptionValueKind.WholeNumber, "Delay after watch changes before starting a run.", DefaultValue: 800, Unit: "ms", RenamedFrom: ["--debounce-ms"]),
@@ -83,6 +85,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--depth-limit", out int depthLimit) ||
                 !CommandInvocationBuilder.TryGetPositiveDouble(parsed, "--detail", out double detailTargetM) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--timeout", out int timeoutSec) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--measure-performance", out bool measurePerformance) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--poll-interval", out int pollIntervalMs) ||
                 !CommandInvocationBuilder.TryGetNonNegativeInt(parsed, "--debounce", out int debounceMs) ||
                 !CommandInvocationBuilder.TryGetNonNegativeInt(parsed, "--throttle", out int throttleMs) ||
@@ -125,6 +128,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                     contentWorkers,
                     resoniteSendWorkers,
                     timeoutSec,
+                    measurePerformance,
                     pollIntervalMs,
                     debounceMs,
                     throttleMs,
