@@ -48,13 +48,12 @@ dotnet run --project src/ThreeDTilesLink -- stream \
   --latitude 35.65858 \
   --longitude 139.745433 \
   --range 400 \
-  --resonite-port 12000
+  --resonite-port PLACEHOLDER
 ```
 
 - `--range` is the minimum coverage range from the center point.
 - Large ranges prioritize coarse ancestor tiles first so the requested coverage is established before finer descendants arrive.
 - Add `--dry-run` to verify only the fetch and conversion path without sending anything to Resonite.
-- `--content-workers` controls bounded fetch/decode parallelism. Default is `8`.
 - If `--resonite-host` is omitted, `localhost` is used.
 - If `--height-offset` is omitted, `0` is used.
 - The anchor height is sea level at the specified latitude/longitude, and `--height-offset` is applied relative to that anchor.
@@ -86,7 +85,7 @@ When `Range` is large, the run first secures visible coverage with coarse ancest
 
 ```bash
 dotnet run --project src/ThreeDTilesLink -- interactive \
-  --resonite-port 12000 \
+  --resonite-port PLACEHOLDER \
   --poll-interval 250 \
   --debounce 800 \
   --throttle 3000 \
@@ -95,7 +94,6 @@ dotnet run --project src/ThreeDTilesLink -- interactive \
 
 Run `dotnet run --project src/ThreeDTilesLink -- interactive --help` for units and defaults.
 
-- `--content-workers` controls bounded fetch/decode parallelism per run. Default is `8`.
 - If `--resonite-host` is omitted, `localhost` is used.
 - The anchor height is sea level at the current latitude/longitude, and `--height-offset` is applied relative to that anchor.
 
