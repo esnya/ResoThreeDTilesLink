@@ -78,7 +78,7 @@ The `World/` paths are exposed as alias `DynamicValueVariable<T>` members driven
 For the Interactive input parameters (`Latitude` / `Longitude` / `Range` / `Search`), `ValueCopy.WriteBack` is enabled so changes from `World/` flow back into the session-side values.
 For observation-only aliases such as progress and credit text, `ValueCopy.WriteBack` stays disabled so changes on the alias side do not overwrite the source values.
 
-Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and old run slots are removed.
+Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and retained tiles are reconciled for the latest selection.
 If `Search` is updated to a non-empty string, the app resolves it with the Google Geocoding API and writes the resulting coordinates back into `Latitude` / `Longitude`.
 If watch `Range` is `0` or less, no streaming run is started.
 When `Range` is large, the run first secures visible coverage with coarse ancestor tiles before refining toward smaller descendants.
