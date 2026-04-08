@@ -97,7 +97,6 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string DynamicValueVariableValueMemberName = "Value";
         private const string StringFieldType = "[FrooxEngine]FrooxEngine.IField<string>";
         private const string FloatFieldType = "[FrooxEngine]FrooxEngine.IField<float>";
-        private const string AssetsSlotName = "Assets";
         private const string GoogleTilesDynamicSpaceName = "Google3DTiles";
         private const string LicenseDynamicVariablePath = "World/ThreeDTilesLink.License";
         private const string ProgressValueVariableLocalName = "Progress";
@@ -127,7 +126,6 @@ namespace ThreeDTilesLink.Core.Resonite
         private readonly ConcurrentDictionary<string, byte> _tempTextureFiles = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _textureFileLocks = new(StringComparer.OrdinalIgnoreCase);
         private readonly string _textureTempDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "textures");
-        private readonly Dictionary<string, string> _assetsSlotByParentSlotId = new(StringComparer.Ordinal);
         private readonly Dictionary<string, SlotProgressBinding> _progressBindingsByParentSlotId = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _connectionGate = new(1, 1);
         private readonly SemaphoreSlim _streamPlacementGate = new(1, 1);
@@ -559,8 +557,6 @@ namespace ThreeDTilesLink.Core.Resonite
                     throw new InvalidOperationException("Session root slot is not initialized.");
                 }
 
-                string assetSlotId = await CreateAssetSlotAsync(parentSlotId, payload.Name, cancellationToken).ConfigureAwait(false);
-
                 string tileSlotId = await CreateSlotAsync(
                     payload.Name,
                     parentSlotId,
@@ -570,7 +566,7 @@ namespace ThreeDTilesLink.Core.Resonite
                     cancellationToken).ConfigureAwait(false);
 
                 string staticMeshId = await AddComponentAsync(
-                    assetSlotId,
+                    tileSlotId,
                     StaticMeshComponentType,
                     new Dictionary<string, Member>
                     {
@@ -604,7 +600,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 if (textureAsset is not null && !string.IsNullOrWhiteSpace(textureMemberName))
                 {
                     string staticTextureId = await AddComponentAsync(
-                        assetSlotId,
+                        tileSlotId,
                         StaticTextureComponentType,
                         new Dictionary<string, Member>
                         {
@@ -619,7 +615,7 @@ namespace ThreeDTilesLink.Core.Resonite
                     };
                 }
 
-                string materialId = await AddComponentAsync(assetSlotId, MaterialComponentType, materialMembers, cancellationToken).ConfigureAwait(false);
+                string materialId = await AddComponentAsync(tileSlotId, MaterialComponentType, materialMembers, cancellationToken).ConfigureAwait(false);
 
                 _ = await AddComponentAsync(
                     tileSlotId,
@@ -738,7 +734,6 @@ namespace ThreeDTilesLink.Core.Resonite
                 return;
             }
 
-            _ = _assetsSlotByParentSlotId.Remove(slotId);
             _ = _progressBindingsByParentSlotId.Remove(slotId);
             Response response = await ExecuteLinkRequestAsync(
                 link => link.RemoveSlot(new RemoveSlot { SlotID = slotId }),
@@ -1100,30 +1095,6 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 return null;
             }
-        }
-
-        private async Task<string> CreateAssetSlotAsync(string parentSlotId, string assetName, CancellationToken cancellationToken = default)
-        {
-            string assetsSlotId = await GetOrCreateAssetsSlotAsync(parentSlotId, cancellationToken).ConfigureAwait(false);
-            string assetSlotId = await CreateSlotAsync($"{assetName} Asset", assetsSlotId, cancellationToken: cancellationToken).ConfigureAwait(false);
-            await AttachAvatarProtectionAsync(assetSlotId).ConfigureAwait(false);
-            await AttachPackageExportableAsync(assetSlotId, cancellationToken).ConfigureAwait(false);
-            return assetSlotId;
-        }
-
-        private async Task<string> GetOrCreateAssetsSlotAsync(string parentSlotId, CancellationToken cancellationToken = default)
-        {
-            if (_assetsSlotByParentSlotId.TryGetValue(parentSlotId, out string? assetsSlotId) &&
-                !string.IsNullOrWhiteSpace(assetsSlotId))
-            {
-                return assetsSlotId;
-            }
-
-            assetsSlotId = await CreateSlotAsync(AssetsSlotName, parentSlotId, cancellationToken: cancellationToken).ConfigureAwait(false);
-            await AttachAvatarProtectionAsync(assetsSlotId).ConfigureAwait(false);
-            await AttachPackageExportableAsync(assetsSlotId, cancellationToken).ConfigureAwait(false);
-            _assetsSlotByParentSlotId[parentSlotId] = assetsSlotId;
-            return assetsSlotId;
         }
 
         private async Task<float> ReadNumericMemberAsFloatAsync(string componentId, string memberName, CancellationToken cancellationToken)
@@ -2162,7 +2133,6 @@ namespace ThreeDTilesLink.Core.Resonite
             _avatarProtectionUnavailable = false;
             _packageExportWarningSlotId = null;
             _sessionDynamicSpaceInitialized = false;
-            _assetsSlotByParentSlotId.Clear();
             _progressBindingsByParentSlotId.Clear();
         }
 
