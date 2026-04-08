@@ -412,18 +412,19 @@ internal sealed class SessionPool : IAsyncDisposable
     public static async Task<SessionPool> ConnectAsync(string host, int port, int poolSize)
     {
         ResoniteSession controller = CreateSession();
+        var workers = new WorkerLease[poolSize];
+        int connectedWorkerCount = 0;
         try
         {
             await controller.ConnectAsync(host, port, CancellationToken.None).ConfigureAwait(false);
 
-            var workers = new WorkerLease[poolSize];
             for (int i = 0; i < workers.Length; i++)
             {
                 ResoniteSession session = CreateSession();
                 try
                 {
                     await session.ConnectAsync(host, port, CancellationToken.None).ConfigureAwait(false);
-                    workers[i] = new WorkerLease(session);
+                    workers[connectedWorkerCount++] = new WorkerLease(session);
                 }
                 catch
                 {
@@ -436,8 +437,28 @@ internal sealed class SessionPool : IAsyncDisposable
         }
         catch
         {
-            await controller.DisposeAsync().ConfigureAwait(false);
+            for (int i = 0; i < connectedWorkerCount; i++)
+            {
+                await TryDisposeIgnoringFailureAsync(workers[i].Session).ConfigureAwait(false);
+            }
+
+            await TryDisposeIgnoringFailureAsync(controller).ConfigureAwait(false);
             throw;
+        }
+    }
+
+    [SuppressMessage(
+        "Reliability",
+        "CA1031:DoNotCatchGeneralExceptionTypes",
+        Justification = "Cleanup path intentionally swallows disposal exceptions to preserve the original connection failure.")]
+    private static async Task TryDisposeIgnoringFailureAsync(ResoniteSession session)
+    {
+        try
+        {
+            await session.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
         }
     }
 

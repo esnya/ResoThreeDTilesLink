@@ -35,9 +35,9 @@ namespace ThreeDTilesLink.Core.Models
             _removeDurationMs = _meter.CreateHistogram<double>(RemoveDurationInstrument, unit: "ms");
 
             _listener = new MeterListener();
-            _listener.InstrumentPublished = static (instrument, listener) =>
+            _listener.InstrumentPublished = (instrument, listener) =>
             {
-                if (instrument.Meter.Name == MeterName)
+                if (ReferenceEquals(instrument.Meter, _meter))
                 {
                     listener.EnableMeasurementEvents(instrument);
                 }
@@ -80,6 +80,11 @@ namespace ThreeDTilesLink.Core.Models
 
         private void OnMeasurementRecorded(Instrument instrument, double measurement, ReadOnlySpan<KeyValuePair<string, object?>> tags, object? state)
         {
+            if (!ReferenceEquals(instrument.Meter, _meter))
+            {
+                return;
+            }
+
             long elapsedMilliseconds = (long)measurement;
             switch (instrument.Name)
             {

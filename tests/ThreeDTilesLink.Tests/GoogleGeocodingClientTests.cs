@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using FluentAssertions;
 using ThreeDTilesLink.Core.Google;
+using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Tests
 {
@@ -111,6 +112,79 @@ namespace ThreeDTilesLink.Tests
 
             _ = await act.Should().ThrowAsync<InvalidOperationException>()
                 .WithMessage("*without any results*");
+        }
+
+        [Fact]
+        public async Task SearchAsync_OkWithoutGeometry_ThrowsMeaningfulError()
+        {
+            using var handler = new StubHttpMessageHandler(
+                """
+                {
+                  "status": "OK",
+                  "results": [
+                    {
+                      "formatted_address": "Tokyo Tower, 4 Chome-2-8 Shibakoen, Minato City, Tokyo 105-0011, Japan",
+                      "foo": {}
+                    }
+                  ]
+                }
+                """);
+            using var httpClient = new HttpClient(handler);
+            var sut = new GoogleGeocodingClient(httpClient);
+
+            Func<Task> act = () => sut.SearchAsync("test-key", "Tokyo Tower", CancellationToken.None);
+
+            _ = await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*missing geometry data*");
+        }
+
+        [Fact]
+        public async Task SearchAsync_OkWithoutLocationCoordinates_ThrowsMeaningfulError()
+        {
+            using var handler = new StubHttpMessageHandler(
+                """
+                {
+                  "status": "OK",
+                  "results": [
+                    {
+                      "formatted_address": "Tokyo Tower, 4 Chome-2-8 Shibakoen, Minato City, Tokyo 105-0011, Japan",
+                      "geometry": {
+                        "location": {
+                          "lat": "35.6",
+                          "lng": 139.7
+                        }
+                      }
+                    }
+                  ]
+                }
+                """);
+            using var httpClient = new HttpClient(handler);
+            var sut = new GoogleGeocodingClient(httpClient);
+
+            Func<Task> act = () => sut.SearchAsync("test-key", "Tokyo Tower", CancellationToken.None);
+
+            _ = await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*valid geometry location coordinates*");
+        }
+
+        [Fact]
+        public async Task RunPerformanceSummary_OnlyCountsOwnMeterMeasurements()
+        {
+            using var first = new RunPerformanceSummary();
+            using var second = new RunPerformanceSummary();
+
+            first.AddFetch(TimeSpan.FromMilliseconds(2.5));
+            await Task.Delay(5);
+
+            _ = first.FetchMilliseconds.Should().BeGreaterThan(0);
+            _ = second.FetchMilliseconds.Should().Be(0);
+            long firstBaseline = first.FetchMilliseconds;
+
+            second.AddFetch(TimeSpan.FromMilliseconds(3.5));
+            await Task.Delay(5);
+
+            _ = second.FetchMilliseconds.Should().BeGreaterThan(0);
+            _ = first.FetchMilliseconds.Should().Be(firstBaseline);
         }
 
         private sealed class StubHttpMessageHandler(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK) : HttpMessageHandler

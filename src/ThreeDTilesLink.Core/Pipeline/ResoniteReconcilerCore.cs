@@ -121,6 +121,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                     _ = writerState.InFlightSendStableIds.Remove(stableId);
                     processedTiles++;
                     streamedMeshes += sent.StreamedMeshCount;
+                    bool partialSendRecoveryNeeded = !sent.Succeeded && sent.SlotIds.Count > 0;
+                    bool shouldMarkVisible = sent.Succeeded || dryRun;
 
                     if (!facts.Branches.TryGetValue(stableId, out TileBranchFact? fact))
                     {
@@ -135,14 +137,17 @@ namespace ThreeDTilesLink.Core.Pipeline
                     if (!sent.Succeeded)
                     {
                         failedTiles++;
-                        fact.SendFailed = sent.SlotIds.Count == 0 &&
-                            !string.IsNullOrWhiteSpace(fact.Tile.ParentStableId);
-                        if (sent.SlotIds.Count == 0)
+                        fact.CompleteSendFailureCount++;
+                        bool canRetrySendFailure = fact.CanRetryCompleteSendFailure;
+                        fact.SendFailed = !string.IsNullOrWhiteSpace(fact.Tile.ParentStableId) &&
+                            (!partialSendRecoveryNeeded || !canRetrySendFailure);
+                        if (!canRetrySendFailure)
                         {
-                            fact.CompleteSendFailureCount++;
-                            fact.PrepareStatus = fact.CanRetryCompleteSendFailure
-                                ? ContentDiscoveryStatus.Ready
-                                : ContentDiscoveryStatus.Failed;
+                            fact.PrepareStatus = ContentDiscoveryStatus.Failed;
+                        }
+                        else if (!partialSendRecoveryNeeded)
+                        {
+                            fact.PrepareStatus = ContentDiscoveryStatus.Ready;
                         }
                     }
                     else
@@ -150,7 +155,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                         fact.SendFailed = false;
                     }
 
-                    if (sent.Succeeded || sent.SlotIds.Count > 0 || dryRun)
+                    if (shouldMarkVisible)
                     {
                         writerState.VisibleTiles[stableId] = new RetainedTileState(
                             stableId,
@@ -163,7 +168,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
 
                     fact.AssetCopyright = sent.Content.AssetCopyright;
-                    if (sent.Succeeded || sent.SlotIds.Count > 0 || dryRun)
+                    if (shouldMarkVisible)
                     {
                         fact.CompleteSendFailureCount = 0;
                         fact.PreparedContent = null;

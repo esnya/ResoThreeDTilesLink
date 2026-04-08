@@ -41,6 +41,63 @@ namespace ThreeDTilesLink.Tests
             _ = logger.Entries[0].Message.Should().Be("Selection input read returned no response.");
         }
 
+        [Fact]
+        public async Task TryReadSelectionInputValuesAsync_ReturnsNull_WhenRangeIsZero()
+        {
+            var logger = new ListLogger<SelectionInputReader>();
+            var monitor = new SelectionInputReader(
+                new ValueWatchStore(new SelectionInputValues(35.0f, 139.0f, 0f)),
+                logger);
+
+            SelectionInputValues? result = await monitor.TryReadSelectionInputValuesAsync(CreateBinding(), CancellationToken.None);
+
+            _ = result.Should().BeNull();
+            _ = logger.Entries.Should().BeEmpty();
+        }
+
+        [Theory]
+        [InlineData(float.NaN)]
+        [InlineData(float.PositiveInfinity)]
+        [InlineData(float.NegativeInfinity)]
+        [InlineData(-10f)]
+        public async Task TryReadSelectionInputValuesAsync_ReturnsNull_WhenRangeIsInvalid(float rangeM)
+        {
+            var logger = new ListLogger<SelectionInputReader>();
+            var monitor = new SelectionInputReader(
+                new ValueWatchStore(new SelectionInputValues(35.0f, 139.0f, rangeM)),
+                logger);
+
+            SelectionInputValues? result = await monitor.TryReadSelectionInputValuesAsync(CreateBinding(), CancellationToken.None);
+
+            _ = result.Should().BeNull();
+            _ = logger.Entries.Should().BeEmpty();
+        }
+
+        [Theory]
+        [InlineData(float.NaN)]
+        [InlineData(float.PositiveInfinity)]
+        [InlineData(float.NegativeInfinity)]
+        public void QueryRange_RejectsNonFinite(double rangeM)
+        {
+            Action act = () => _ = new QueryRange(rangeM);
+            _ = act.Should().Throw<ArgumentOutOfRangeException>();
+        }
+
+        [Fact]
+        public void QueryRange_RejectsNonPositive()
+        {
+            Action act = () => _ = new QueryRange(0d);
+            _ = act.Should().Throw<ArgumentOutOfRangeException>();
+        }
+
+        [Fact]
+        public void QueryRange_AcceptsValidPositiveRange()
+        {
+            var range = new QueryRange(50d);
+            _ = range.Min.Should().Be(-50d);
+            _ = range.Max.Should().Be(50d);
+        }
+
         private static WatchBinding CreateBinding()
         {
             return new WatchBinding(
@@ -84,6 +141,29 @@ namespace ThreeDTilesLink.Tests
                 return _searchException is null
                     ? Task.FromResult<string?>(null)
                     : Task.FromException<string?>(_searchException);
+            }
+
+            public Task UpdateWatchCoordinatesAsync(WatchBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
+            {
+                throw new NotSupportedException();
+            }
+        }
+
+        private sealed class ValueWatchStore(SelectionInputValues values) : IWatchStore
+        {
+            public Task<WatchBinding> CreateWatchAsync(WatchConfiguration configuration, CancellationToken cancellationToken)
+            {
+                throw new NotSupportedException();
+            }
+
+            public Task<SelectionInputValues?> ReadSelectionInputValuesAsync(WatchBinding binding, CancellationToken cancellationToken)
+            {
+                return Task.FromResult<SelectionInputValues?>(values);
+            }
+
+            public Task<string?> ReadWatchSearchAsync(WatchBinding binding, CancellationToken cancellationToken)
+            {
+                return Task.FromResult<string?>(null);
             }
 
             public Task UpdateWatchCoordinatesAsync(WatchBinding binding, double latitude, double longitude, CancellationToken cancellationToken)

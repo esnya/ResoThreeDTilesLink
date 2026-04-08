@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Collections.Concurrent;
+using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 using ResoniteLink;
 using ThreeDTilesLink.Core.Contracts;
@@ -123,7 +124,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private readonly bool _dumpMeshJson = string.Equals(Environment.GetEnvironmentVariable("THREEDTILESLINK_DUMP_MESH_JSON")?.Trim(), "1", StringComparison.Ordinal) ||
                                               string.Equals(Environment.GetEnvironmentVariable("THREEDTILESLINK_DUMP_MESH_JSON")?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
         private readonly string _meshDumpDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "mesh-json");
-        private readonly HashSet<string> _tempTextureFiles = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, byte> _tempTextureFiles = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _textureFileLocks = new(StringComparer.OrdinalIgnoreCase);
         private readonly string _textureTempDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "textures");
         private readonly Dictionary<string, string> _assetsSlotByParentSlotId = new(StringComparer.Ordinal);
@@ -151,21 +152,24 @@ namespace ThreeDTilesLink.Core.Resonite
         public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
             Uri endpoint = new($"ws://{host}:{port}/");
-            bool reusedExistingSessionState;
+            bool reusedExistingSessionState = false;
+            ExceptionDispatchInfo? initializationFailure = null;
 
             await _connectionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
+            if (_linkInterface.IsConnected)
             {
-                if (_linkInterface.IsConnected)
+                if (!MatchesEndpoint(endpoint))
                 {
-                    if (!MatchesEndpoint(endpoint))
-                    {
-                        throw new InvalidOperationException("ResoniteLink is already connected to a different endpoint.");
-                    }
-
-                    return;
+                    _ = _connectionGate.Release();
+                    throw new InvalidOperationException("ResoniteLink is already connected to a different endpoint.");
                 }
 
+                _ = _connectionGate.Release();
+                return;
+            }
+
+            try
+            {
                 bool reuseSessionState = MatchesEndpoint(endpoint) && !string.IsNullOrWhiteSpace(_sessionRootSlotId);
                 if (!reuseSessionState)
                 {
@@ -178,9 +182,19 @@ namespace ThreeDTilesLink.Core.Resonite
                 await _assetImportPool.ConnectAsync(endpoint, cancellationToken).ConfigureAwait(false);
                 reusedExistingSessionState = !string.IsNullOrWhiteSpace(_sessionRootSlotId);
             }
+            catch (Exception ex) when (IsConnectInitializationFailure(ex))
+            {
+                initializationFailure = ExceptionDispatchInfo.Capture(ex);
+            }
             finally
             {
                 _ = _connectionGate.Release();
+            }
+
+            if (initializationFailure is not null)
+            {
+                await CleanupConnectInitializationFailureAsync().ConfigureAwait(false);
+                initializationFailure.Throw();
             }
 
             if (reusedExistingSessionState)
@@ -251,12 +265,45 @@ namespace ThreeDTilesLink.Core.Resonite
             await _connectionGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             try
             {
+                try
+                {
+                    await _assetImportPool.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (InvalidOperationException)
+                {
+                }
+
+                try
+                {
+                    await CleanupTemporaryFilesAsync().ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (InvalidOperationException)
+                {
+                }
+
                 DisposeDirectLink(clearSessionState: true);
             }
             finally
             {
                 _ = _connectionGate.Release();
             }
+        }
+
+        private static bool IsConnectInitializationFailure(Exception exception)
+        {
+            return exception is OperationCanceledException or
+                ResoniteLinkNoResponseException or
+                ResoniteLinkDisconnectedException or
+                TimeoutException or
+                ObjectDisposedException or
+                WebSocketException or
+                InvalidOperationException;
         }
 
         public async Task<string> CreateSessionChildSlotAsync(string name, CancellationToken cancellationToken)
@@ -706,8 +753,8 @@ namespace ThreeDTilesLink.Core.Resonite
             try
             {
                 Log.ClosingSession(_logger);
-                CleanupTemporaryFiles();
                 await _assetImportPool.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+                await CleanupTemporaryFilesAsync().ConfigureAwait(false);
                 DisposeDirectLink(clearSessionState: false);
             }
             finally
@@ -1297,8 +1344,10 @@ namespace ThreeDTilesLink.Core.Resonite
             string ext = NormalizeExtension(extension);
             string path = Path.Combine(_textureTempDir, $"{hash}{ext}");
             SemaphoreSlim textureFileLock = _textureFileLocks.GetOrAdd(path, static _ => new SemaphoreSlim(1, 1));
+            bool lockTaken = false;
 
             await textureFileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            lockTaken = true;
             try
             {
                 if (!File.Exists(path))
@@ -1306,16 +1355,35 @@ namespace ThreeDTilesLink.Core.Resonite
                     await File.WriteAllBytesAsync(path, textureBytes, cancellationToken).ConfigureAwait(false);
                 }
 
-                _ = _tempTextureFiles.Add(path);
+                _ = _tempTextureFiles.TryAdd(path, 0);
+
+                return EnsureSuccess(await _assetImportPool.ImportTextureAsync(
+                    path,
+                    DefaultLinkRequestTimeout,
+                    cancellationToken).ConfigureAwait(false));
             }
             finally
             {
-                _ = textureFileLock.Release();
+                if (lockTaken)
+                {
+                    try
+                    {
+                        if (File.Exists(path))
+                        {
+                            File.Delete(path);
+                        }
+                    }
+                    catch (IOException)
+                    {
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                    }
+
+                    _ = _tempTextureFiles.TryRemove(path, out _);
+                    _ = textureFileLock.Release();
+                }
             }
-            return EnsureSuccess(await _assetImportPool.ImportTextureAsync(
-                path,
-                DefaultLinkRequestTimeout,
-                cancellationToken).ConfigureAwait(false));
         }
 
         private async Task<string?> ResolveMaterialTextureMemberNameAsync()
@@ -2031,10 +2099,20 @@ namespace ThreeDTilesLink.Core.Resonite
             }
         }
 
-        private void CleanupTemporaryFiles()
+        private async Task CleanupTemporaryFilesAsync()
         {
-            foreach (string textureFile in _tempTextureFiles)
+            foreach (string textureFile in _tempTextureFiles.Keys)
             {
+                SemaphoreSlim? textureFileLock = null;
+                bool lockTaken = false;
+
+                if (_textureFileLocks.TryGetValue(textureFile, out SemaphoreSlim? trackedLock))
+                {
+                    textureFileLock = trackedLock;
+                    await textureFileLock.WaitAsync().ConfigureAwait(false);
+                    lockTaken = true;
+                }
+
                 try
                 {
                     if (File.Exists(textureFile))
@@ -2048,9 +2126,19 @@ namespace ThreeDTilesLink.Core.Resonite
                 catch (UnauthorizedAccessException)
                 {
                 }
+                finally
+                {
+                    _ = _tempTextureFiles.TryRemove(textureFile, out _);
+
+                    if (lockTaken && textureFileLock is not null)
+                    {
+                        _ = textureFileLock.Release();
+                    }
+                }
             }
 
             _tempTextureFiles.Clear();
+            _textureFileLocks.Clear();
         }
 
         private void ResetSessionState()

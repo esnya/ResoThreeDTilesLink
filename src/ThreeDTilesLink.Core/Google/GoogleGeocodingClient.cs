@@ -39,7 +39,12 @@ namespace ThreeDTilesLink.Core.Google
                 using JsonDocument document = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 JsonElement root = document.RootElement;
-                string status = root.GetProperty("status").GetString() ?? string.Empty;
+                if (!root.TryGetProperty("status", out JsonElement statusElement))
+                {
+                    throw new InvalidOperationException("Google geocoding response is missing the status field.");
+                }
+
+                string status = statusElement.GetString() ?? string.Empty;
                 if (string.Equals(status, "ZERO_RESULTS", StringComparison.Ordinal))
                 {
                     return null;
@@ -65,15 +70,37 @@ namespace ThreeDTilesLink.Core.Google
                 }
 
                 JsonElement firstResult = resultsElement[0];
+                if (firstResult.ValueKind != JsonValueKind.Object)
+                {
+                    throw new InvalidOperationException("Google geocoding returned an invalid first result.");
+                }
+
                 string formattedAddress = firstResult.TryGetProperty("formatted_address", out JsonElement formattedAddressElement)
                     ? formattedAddressElement.GetString() ?? normalizedQuery
                     : normalizedQuery;
-                JsonElement location = firstResult.GetProperty("geometry").GetProperty("location");
+
+                if (!firstResult.TryGetProperty("geometry", out JsonElement geometryElement) ||
+                    geometryElement.ValueKind != JsonValueKind.Object)
+                {
+                    throw new InvalidOperationException("Google geocoding result is missing geometry data.");
+                }
+
+                if (!geometryElement.TryGetProperty("location", out JsonElement locationElement) ||
+                    locationElement.ValueKind != JsonValueKind.Object)
+                {
+                    throw new InvalidOperationException("Google geocoding result is missing location data.");
+                }
+
+                if (!TryGetCoordinate(locationElement, "lat", out double latitude) ||
+                    !TryGetCoordinate(locationElement, "lng", out double longitude))
+                {
+                    throw new InvalidOperationException("Google geocoding result is missing valid geometry location coordinates.");
+                }
 
                 return new LocationSearchResult(
                     formattedAddress,
-                    location.GetProperty("lat").GetDouble(),
-                    location.GetProperty("lng").GetDouble());
+                    latitude,
+                    longitude);
             }
         }
 
@@ -82,6 +109,20 @@ namespace ThreeDTilesLink.Core.Google
             return new Uri(
                 $"https://maps.googleapis.com/maps/api/geocode/json?address={Uri.EscapeDataString(query)}&key={Uri.EscapeDataString(apiKey)}",
                 UriKind.Absolute);
+        }
+
+        private static bool TryGetCoordinate(JsonElement locationElement, string name, out double value)
+        {
+            if (locationElement.TryGetProperty(name, out JsonElement coordinateElement) &&
+                coordinateElement.ValueKind == JsonValueKind.Number &&
+                coordinateElement.TryGetDouble(out value) &&
+                double.IsFinite(value))
+            {
+                return true;
+            }
+
+            value = default;
+            return false;
         }
     }
 

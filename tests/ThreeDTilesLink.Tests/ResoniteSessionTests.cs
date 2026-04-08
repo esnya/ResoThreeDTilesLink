@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Reflection;
+using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using ResoniteLink;
@@ -84,19 +86,25 @@ namespace ThreeDTilesLink.Tests
 
             FieldInfo? tempTextureFilesField = typeof(ResoniteSession)
                 .GetField("_tempTextureFiles", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? textureFileLocksField = typeof(ResoniteSession)
+                .GetField("_textureFileLocks", BindingFlags.Instance | BindingFlags.NonPublic);
 
             _ = tempTextureFilesField.Should().NotBeNull();
+            _ = textureFileLocksField.Should().NotBeNull();
 
             string tempFile = Path.GetTempFileName();
             try
             {
-                var tempTextureFiles = (HashSet<string>)tempTextureFilesField!.GetValue(session)!;
-                _ = tempTextureFiles.Add(tempFile);
+                var tempTextureFiles = (ConcurrentDictionary<string, byte>)tempTextureFilesField!.GetValue(session)!;
+                _ = tempTextureFiles.TryAdd(tempFile, 0);
 
                 await session.DisconnectAsync(CancellationToken.None);
 
                 _ = File.Exists(tempFile).Should().BeFalse();
                 _ = tempTextureFiles.Should().BeEmpty();
+
+                var textureFileLocks = (ConcurrentDictionary<string, SemaphoreSlim>)textureFileLocksField!.GetValue(session)!;
+                _ = textureFileLocks.Should().BeEmpty();
             }
             finally
             {
@@ -105,6 +113,100 @@ namespace ThreeDTilesLink.Tests
                     File.Delete(tempFile);
                 }
             }
+        }
+
+        [Fact]
+        public async Task ImportTextureAssetAsync_RemovesTrackedFileStateOnFailure()
+        {
+            await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
+
+            MethodInfo? importTextureAssetMethod = typeof(ResoniteSession).GetMethod(
+                "ImportTextureAssetAsync",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? tempTextureFilesField = typeof(ResoniteSession).GetField(
+                "_tempTextureFiles",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? tempTextureDirField = typeof(ResoniteSession).GetField(
+                "_textureTempDir",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? textureFileLocksField = typeof(ResoniteSession).GetField(
+                "_textureFileLocks",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            _ = importTextureAssetMethod.Should().NotBeNull();
+            _ = tempTextureFilesField.Should().NotBeNull();
+            _ = tempTextureDirField.Should().NotBeNull();
+            _ = textureFileLocksField.Should().NotBeNull();
+
+            byte[] textureBytes = [0x03, 0x01, 0x02, 0x07];
+            string extension = "png";
+            string tempTextureDir = (string)tempTextureDirField!.GetValue(session)!;
+            string expectedPath = Path.Combine(tempTextureDir, $"{Convert.ToHexString(SHA256.HashData(textureBytes))}.{extension}");
+
+            if (File.Exists(expectedPath))
+            {
+                File.Delete(expectedPath);
+            }
+
+            Task importTextureTask = (Task)importTextureAssetMethod!.Invoke(
+                session,
+                [textureBytes, extension, CancellationToken.None])!;
+
+            _ = await Assert.ThrowsAnyAsync<Exception>(async () => await importTextureTask);
+
+            var tempTextureFiles = (ConcurrentDictionary<string, byte>)tempTextureFilesField!.GetValue(session)!;
+            var textureFileLocks = (ConcurrentDictionary<string, SemaphoreSlim>)textureFileLocksField!.GetValue(session)!;
+
+            _ = tempTextureFiles.Should().BeEmpty();
+            _ = textureFileLocks.Should().ContainKey(expectedPath);
+            _ = File.Exists(expectedPath).Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task CleanupConnectInitializationFailureAsync_ClearsTrackedState()
+        {
+            await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
+
+            MethodInfo? cleanupMethod = typeof(ResoniteSession).GetMethod(
+                "CleanupConnectInitializationFailureAsync",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? connectionUriField = typeof(ResoniteSession)
+                .GetField("_connectionUri", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? sessionRootSlotField = typeof(ResoniteSession)
+                .GetField("_sessionRootSlotId", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? tempTextureFilesField = typeof(ResoniteSession)
+                .GetField("_tempTextureFiles", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? tempTextureDirField = typeof(ResoniteSession)
+                .GetField("_textureTempDir", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? tempTextureFileLocksField = typeof(ResoniteSession)
+                .GetField("_textureFileLocks", BindingFlags.Instance | BindingFlags.NonPublic);
+
+            _ = cleanupMethod.Should().NotBeNull();
+            _ = connectionUriField.Should().NotBeNull();
+            _ = sessionRootSlotField.Should().NotBeNull();
+            _ = tempTextureFilesField.Should().NotBeNull();
+            _ = tempTextureDirField.Should().NotBeNull();
+            _ = tempTextureFileLocksField.Should().NotBeNull();
+
+            string tempTextureDir = (string)tempTextureDirField!.GetValue(session)!;
+            string expectedPath = Path.Combine(tempTextureDir, $"{Guid.NewGuid():N}.png");
+            _ = Directory.CreateDirectory(tempTextureDir);
+            await File.WriteAllTextAsync(expectedPath, "cleanup failure test");
+
+            connectionUriField!.SetValue(session, new Uri("ws://localhost:6216/"));
+            sessionRootSlotField!.SetValue(session, "slot_session_root");
+            var tempTextureFiles = (ConcurrentDictionary<string, byte>)tempTextureFilesField!.GetValue(session)!;
+            var tempTextureFileLocks = (ConcurrentDictionary<string, SemaphoreSlim>)tempTextureFileLocksField!.GetValue(session)!;
+            _ = tempTextureFiles.TryAdd(expectedPath, 0);
+            _ = tempTextureFileLocks.TryAdd(expectedPath, new SemaphoreSlim(1, 1));
+
+            await ((Task)cleanupMethod!.Invoke(session, null)!);
+
+            _ = connectionUriField.GetValue(session).Should().BeNull();
+            _ = sessionRootSlotField.GetValue(session).Should().BeNull();
+            _ = tempTextureFiles.Should().BeEmpty();
+            _ = tempTextureFileLocks.Should().BeEmpty();
+            _ = File.Exists(expectedPath).Should().BeFalse();
         }
 
         [Fact]

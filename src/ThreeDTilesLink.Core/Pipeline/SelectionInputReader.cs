@@ -66,7 +66,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             try
             {
                 SelectionInputValues? values = await _watchStore.ReadSelectionInputValuesAsync(watchBinding, cancellationToken).ConfigureAwait(false);
-                if (values is null || values.RangeM <= 0d)
+                if (values is null || !IsValidRange(values.RangeM))
                 {
                     return null;
                 }
@@ -106,6 +106,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                 Log.ValuesReadWarning(_logger, ex);
                 return null;
             }
+        }
+
+        private static bool IsValidRange(double rangeM)
+        {
+            return double.IsFinite(rangeM) && rangeM > 0d;
         }
 
         internal static bool HasMeaningfulChange(SelectionInputValues? previous, SelectionInputValues current)
