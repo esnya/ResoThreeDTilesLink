@@ -110,6 +110,12 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public bool MetadataInFlight { get; set; }
 
+        public DateTimeOffset LastMetadataSyncStartedAt { get; set; } = DateTimeOffset.MinValue;
+
+        public int LastMetadataSyncProcessedTiles { get; set; }
+
+        public float LastMetadataSyncProgressValue { get; set; } = -1f;
+
         public string AppliedLicenseCredit { get; set; } = string.Empty;
 
         public float AppliedProgressValue { get; set; } = -1f;
@@ -129,6 +135,9 @@ namespace ThreeDTilesLink.Core.Pipeline
             copy.InFlightSendStableIds.UnionWith(InFlightSendStableIds);
             copy.InFlightRemoveStableId = InFlightRemoveStableId;
             copy.MetadataInFlight = MetadataInFlight;
+            copy.LastMetadataSyncStartedAt = LastMetadataSyncStartedAt;
+            copy.LastMetadataSyncProcessedTiles = LastMetadataSyncProcessedTiles;
+            copy.LastMetadataSyncProgressValue = LastMetadataSyncProgressValue;
             copy.AppliedLicenseCredit = AppliedLicenseCredit;
             copy.AppliedProgressValue = AppliedProgressValue;
             copy.AppliedProgressText = AppliedProgressText;
@@ -196,7 +205,8 @@ namespace ThreeDTilesLink.Core.Pipeline
     internal sealed record SyncSessionMetadataWriterCommand(
         string LicenseCredit,
         float ProgressValue,
-        string ProgressText)
+        string ProgressText,
+        int ProcessedTiles)
         : WriterCommand;
 
     internal abstract record WriterCompletion;

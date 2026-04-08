@@ -18,59 +18,75 @@ static async Task<int> RunAsync(string[] args)
 
     try
     {
-        JsonObject rootSlot = await SendRequestAsync(
-            socket,
-            new JsonObject
-            {
-                ["$type"] = "getSlot",
-                ["slotId"] = "Root",
-                ["includeComponentData"] = false,
-                ["depth"] = 1
-            },
-            cts.Token).ConfigureAwait(false);
-
-        JsonArray children = rootSlot["data"]?["children"]?.AsArray() ?? [];
-        List<string> removed = [];
-
-        foreach (JsonNode? child in children)
+        if (!string.IsNullOrWhiteSpace(options.SlotId))
         {
-            if (child is not JsonObject slot)
-            {
-                continue;
-            }
-
-            string? slotId = slot["id"]?.GetValue<string>();
-            string? slotName = slot["name"]?["value"]?.GetValue<string>();
-            if (string.IsNullOrWhiteSpace(slotId) || string.IsNullOrWhiteSpace(slotName))
-            {
-                continue;
-            }
-
-            if (!slotName.StartsWith("3DTilesLink Session ", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
             _ = await SendRequestAsync(
                 socket,
                 new JsonObject
                 {
                     ["$type"] = "removeSlot",
-                    ["slotId"] = slotId
+                    ["slotId"] = options.SlotId
                 },
                 cts.Token).ConfigureAwait(false);
-            removed.Add($"{slotName} [{slotId}]");
-        }
 
-        if (removed.Count == 0)
-        {
-            Console.WriteLine("No 3DTilesLink session roots found.");
+            Console.WriteLine($"Removed slot {options.SlotId}");
         }
         else
         {
-            foreach (string entry in removed)
+            JsonObject rootSlot = await SendRequestAsync(
+                socket,
+                new JsonObject
+                {
+                    ["$type"] = "getSlot",
+                    ["slotId"] = "Root",
+                    ["includeComponentData"] = false,
+                    ["depth"] = 1
+                },
+                cts.Token).ConfigureAwait(false);
+
+            JsonArray children = rootSlot["data"]?["children"]?.AsArray() ?? [];
+            List<string> removed = [];
+
+            foreach (JsonNode? child in children)
             {
-                Console.WriteLine($"Removed {entry}");
+                if (child is not JsonObject slot)
+                {
+                    continue;
+                }
+
+                string? slotId = slot["id"]?.GetValue<string>();
+                string? slotName = slot["name"]?["value"]?.GetValue<string>();
+                if (string.IsNullOrWhiteSpace(slotId) || string.IsNullOrWhiteSpace(slotName))
+                {
+                    continue;
+                }
+
+                if (!slotName.StartsWith("3DTilesLink Session ", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                _ = await SendRequestAsync(
+                    socket,
+                    new JsonObject
+                    {
+                        ["$type"] = "removeSlot",
+                        ["slotId"] = slotId
+                    },
+                    cts.Token).ConfigureAwait(false);
+                removed.Add($"{slotName} [{slotId}]");
+            }
+
+            if (removed.Count == 0)
+            {
+                Console.WriteLine("No 3DTilesLink session roots found.");
+            }
+            else
+            {
+                foreach (string entry in removed)
+                {
+                    Console.WriteLine($"Removed {entry}");
+                }
             }
         }
     }
@@ -153,13 +169,14 @@ static async Task<JsonObject> ReceiveObjectAsync(ClientWebSocket socket, Cancell
     throw new TimeoutException("Timed out waiting for ResoniteLink response.");
 }
 
-internal sealed record Options(string Host, int Port, int TimeoutSec)
+internal sealed record Options(string Host, int Port, int TimeoutSec, string? SlotId)
 {
     public static Options Parse(IReadOnlyList<string> args)
     {
         string host = "localhost";
         int port = 49379;
         int timeoutSec = 15;
+        string? slotId = null;
 
         for (int i = 0; i < args.Count; i++)
         {
@@ -175,6 +192,9 @@ internal sealed record Options(string Host, int Port, int TimeoutSec)
                 case "--timeout-sec":
                     timeoutSec = int.Parse(ReadRequiredValue(args, ref i, arg), CultureInfo.InvariantCulture);
                     break;
+                case "--slot-id":
+                    slotId = ReadRequiredValue(args, ref i, arg);
+                    break;
                 case "--help":
                 case "-h":
                     PrintHelpAndExit(0);
@@ -184,7 +204,7 @@ internal sealed record Options(string Host, int Port, int TimeoutSec)
             }
         }
 
-        return new Options(host, port, timeoutSec);
+        return new Options(host, port, timeoutSec, slotId);
     }
 
     private static string ReadRequiredValue(IReadOnlyList<string> args, ref int index, string optionName)
@@ -204,6 +224,7 @@ internal sealed record Options(string Host, int Port, int TimeoutSec)
         Console.WriteLine("  --host <host>         Resonite Link host. Default: localhost");
         Console.WriteLine("  --port <port>         Resonite Link port. Default: 49379");
         Console.WriteLine("  --timeout-sec <sec>   Request timeout. Default: 15");
+        Console.WriteLine("  --slot-id <id>        Remove exactly one slot instead of session roots.");
         Environment.Exit(exitCode);
     }
 }

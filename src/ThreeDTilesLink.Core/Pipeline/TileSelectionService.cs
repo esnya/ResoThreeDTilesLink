@@ -299,6 +299,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                             ExecuteDiscoveryAsync(work, request, auth, workerCts.Token)));
                     }
 
+                    DateTimeOffset planningTime = DateTimeOffset.UtcNow;
                     WriterPlan writerPlan = _reconcilerCore.ReduceWriterPlan(
                         facts,
                         writerState,
@@ -306,17 +307,18 @@ namespace ThreeDTilesLink.Core.Pipeline
                         desiredView,
                         progress,
                         request.Output.DryRun,
-                        _maxConcurrentWriterSends);
+                        _maxConcurrentWriterSends,
+                        planningTime);
 
                     if (writerPlan.ControlCommand is not null)
                     {
-                        MarkWriterInFlight(writerState, writerPlan.ControlCommand);
+                        MarkWriterInFlight(writerState, writerPlan.ControlCommand, planningTime);
                         writerTasks.Add(ExecuteWriterCommandAsync(writerPlan.ControlCommand, request, interactiveContext, workerCts.Token));
                     }
 
                     foreach (SendTileWriterCommand sendWriterCommand in writerPlan.SendCommands)
                     {
-                        MarkWriterInFlight(writerState, sendWriterCommand);
+                        MarkWriterInFlight(writerState, sendWriterCommand, planningTime);
                         writerTasks.Add(ExecuteWriterCommandAsync(sendWriterCommand, request, interactiveContext, workerCts.Token));
                     }
 
@@ -739,7 +741,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        private static void MarkWriterInFlight(WriterState writerState, WriterCommand command)
+        private static void MarkWriterInFlight(WriterState writerState, WriterCommand command, DateTimeOffset now)
         {
             switch (command)
             {
@@ -749,8 +751,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                 case RemoveTileWriterCommand remove:
                     writerState.InFlightRemoveStableId = remove.StableId;
                     break;
-                case SyncSessionMetadataWriterCommand:
+                case SyncSessionMetadataWriterCommand metadata:
                     writerState.MetadataInFlight = true;
+                    writerState.LastMetadataSyncStartedAt = now;
+                    writerState.LastMetadataSyncProcessedTiles = metadata.ProcessedTiles;
+                    writerState.LastMetadataSyncProgressValue = metadata.ProgressValue;
                     break;
             }
         }

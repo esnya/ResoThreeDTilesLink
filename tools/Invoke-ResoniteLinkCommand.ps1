@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('discover', 'repl', 'send-json', 'benchmark-send', 'pool-experiment', 'cleanup-slot', 'cleanup-sessions')]
+    [ValidateSet('discover', 'repl', 'send-json', 'pool-experiment', 'cleanup-slot', 'cleanup-sessions')]
     [string]$Command,
 
     [Parameter(Position = 1)]
@@ -159,9 +159,8 @@ $projectPath = switch ($Command) {
     'discover' { $null }
     'repl' { Join-Path $repoRoot 'tools/ResoniteRepl/ResoniteRepl.csproj' }
     'send-json' { Join-Path $repoRoot 'tools/ResoniteRawJson/ResoniteRawJson.csproj' }
-    'benchmark-send' { Join-Path $repoRoot 'tools/ResoniteSendBenchmark/ResoniteSendBenchmark.csproj' }
     'pool-experiment' { Join-Path $repoRoot 'tools/ResonitePoolExperiment/ResonitePoolExperiment.csproj' }
-    'cleanup-slot' { Join-Path $repoRoot 'tools/ResoniteSendBenchmark/ResoniteSendBenchmark.csproj' }
+    'cleanup-slot' { Join-Path $repoRoot 'tools/ResoniteSessionCleanup/ResoniteSessionCleanup.csproj' }
     'cleanup-sessions' { Join-Path $repoRoot 'tools/ResoniteSessionCleanup/ResoniteSessionCleanup.csproj' }
     default { throw "Unsupported command: $Command" }
 }
@@ -222,18 +221,6 @@ switch ($Command) {
         break
     }
 
-    'benchmark-send' {
-        $dotnetArgs += '--host'
-        $dotnetArgs += $resolvedHost
-        $dotnetArgs += '--port'
-        $dotnetArgs += $resolvedPort.ToString()
-        $dotnetArgs += '--mesh-count'
-        $dotnetArgs += $MeshCount.ToString()
-        $dotnetArgs += '--parallelism'
-        $dotnetArgs += $Parallelism
-        break
-    }
-
     'pool-experiment' {
         $dotnetArgs += '--host'
         $dotnetArgs += $resolvedHost
@@ -259,7 +246,7 @@ switch ($Command) {
         $dotnetArgs += $resolvedHost
         $dotnetArgs += '--port'
         $dotnetArgs += $resolvedPort.ToString()
-        $dotnetArgs += '--remove-slot-id'
+        $dotnetArgs += '--slot-id'
         $dotnetArgs += $SlotId
         break
     }

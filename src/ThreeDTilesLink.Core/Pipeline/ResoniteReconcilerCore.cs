@@ -6,6 +6,10 @@ namespace ThreeDTilesLink.Core.Pipeline
 {
     internal sealed class ResoniteReconcilerCore
     {
+        private static readonly TimeSpan MetadataCadence = TimeSpan.FromMilliseconds(250);
+        private const int MetadataProcessedDeltaThreshold = 8;
+        private const float MetadataProgressDeltaThreshold = 0.02f;
+
         internal WriterPlan ReduceWriterPlan(
             DiscoveryFacts facts,
             WriterState writerState,
@@ -13,7 +17,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             DesiredView desiredView,
             ProgressSnapshot progress,
             bool dryRun,
-            int maxConcurrentWriterSends)
+            int maxConcurrentWriterSends,
+            DateTimeOffset? now = null)
         {
             ArgumentNullException.ThrowIfNull(facts);
             ArgumentNullException.ThrowIfNull(writerState);
@@ -22,6 +27,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             ArgumentNullException.ThrowIfNull(progress);
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxConcurrentWriterSends);
 
+            DateTimeOffset planningTime = now ?? DateTimeOffset.UtcNow;
             WriterState planningState = writerState.CreatePlanningCopy();
             bool hasPendingRemovals = HasPendingRemovals(planningState, desiredView);
             int sendConcurrencyLimit = hasPendingRemovals
@@ -39,11 +45,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                     dryRun,
                     allowRemoval: true,
                     allowSend: false,
-                    allowMetadata: planningState.InFlightSendStableIds.Count == 0);
+                    allowMetadata: true,
+                    planningTime);
                 if (nextControlCommand is RemoveTileWriterCommand or SyncSessionMetadataWriterCommand)
                 {
                     controlCommand = nextControlCommand;
-                    ApplyPlanningInFlight(planningState, nextControlCommand);
+                    ApplyPlanningInFlight(planningState, nextControlCommand, planningTime);
                 }
             }
 
@@ -58,14 +65,15 @@ namespace ThreeDTilesLink.Core.Pipeline
                     dryRun,
                     allowRemoval: false,
                     allowSend: true,
-                    allowMetadata: false);
+                    allowMetadata: false,
+                    planningTime);
                 if (sendCommand is not SendTileWriterCommand sendTileCommand)
                 {
                     break;
                 }
 
                 sendCommands.Add(sendTileCommand);
-                ApplyPlanningInFlight(planningState, sendTileCommand);
+                ApplyPlanningInFlight(planningState, sendTileCommand, planningTime);
             }
 
             return new WriterPlan(controlCommand, sendCommands, hasPendingRemovals);
@@ -79,7 +87,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             bool dryRun,
             bool allowRemoval = true,
             bool allowSend = true,
-            bool allowMetadata = true)
+            bool allowMetadata = true,
+            DateTimeOffset? now = null)
         {
             ArgumentNullException.ThrowIfNull(facts);
             ArgumentNullException.ThrowIfNull(writerState);
@@ -94,7 +103,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                 dryRun,
                 allowRemoval,
                 allowSend,
-                allowMetadata);
+                allowMetadata,
+                now ?? DateTimeOffset.UtcNow);
         }
 
         internal static void ApplyWriterCompletion(
@@ -257,11 +267,49 @@ namespace ThreeDTilesLink.Core.Pipeline
             bool dryRun,
             bool allowRemoval,
             bool allowSend,
-            bool allowMetadata)
+            bool allowMetadata,
+            DateTimeOffset now)
         {
             if (writerState.InFlightRemoveStableId is not null)
             {
                 return null;
+            }
+
+            bool metadataChanged = false;
+            bool allowGeneralMetadata = false;
+            string desiredLicense = string.Empty;
+            float desiredProgressValue = 0f;
+            string desiredProgressText = string.Empty;
+
+            if (!dryRun && allowMetadata && !writerState.MetadataInFlight)
+            {
+                (desiredLicense, desiredProgressValue, desiredProgressText) = BuildDesiredMetadata(
+                    facts,
+                    writerState,
+                    desiredView,
+                    progress);
+                bool licenseChanged = !string.Equals(desiredLicense, writerState.AppliedLicenseCredit, StringComparison.Ordinal);
+                bool isCompleted = IsCompletedMetadata(desiredProgressValue, desiredProgressText);
+                bool cadenceElapsed = now - writerState.LastMetadataSyncStartedAt >= MetadataCadence;
+                bool processedDeltaReached = progress.ProcessedTiles - writerState.LastMetadataSyncProcessedTiles >= MetadataProcessedDeltaThreshold;
+                bool progressDeltaReached = writerState.LastMetadataSyncProgressValue < 0f ||
+                    desiredProgressValue - writerState.LastMetadataSyncProgressValue >= MetadataProgressDeltaThreshold;
+                int pendingSend = desiredView.StableIds.Count(stableId => !writerState.VisibleTiles.ContainsKey(stableId));
+                int pendingRemove = CountPendingRemovals(writerState, desiredView);
+                bool quiescent = pendingSend == 0 &&
+                    pendingRemove == 0 &&
+                    writerState.InFlightSendStableIds.Count == 0;
+                metadataChanged = licenseChanged ||
+                    System.Math.Abs(desiredProgressValue - writerState.AppliedProgressValue) > 0.0001f ||
+                    !string.Equals(desiredProgressText, writerState.AppliedProgressText, StringComparison.Ordinal);
+
+                if (metadataChanged)
+                {
+                    allowGeneralMetadata = licenseChanged ||
+                        isCompleted ||
+                        quiescent ||
+                        (cadenceElapsed && (processedDeltaReached || progressDeltaReached));
+                }
             }
 
             if (allowRemoval)
@@ -301,21 +349,9 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
             }
 
-            if (!dryRun && allowMetadata && writerState.InFlightSendStableIds.Count == 0)
+            if (allowGeneralMetadata)
             {
-                (string desiredLicense, float desiredProgressValue, string desiredProgressText) = BuildDesiredMetadata(
-                    facts,
-                    writerState,
-                    desiredView,
-                    progress);
-                bool metadataChanged =
-                    !string.Equals(desiredLicense, writerState.AppliedLicenseCredit, StringComparison.Ordinal) ||
-                    System.Math.Abs(desiredProgressValue - writerState.AppliedProgressValue) > 0.0001f ||
-                    !string.Equals(desiredProgressText, writerState.AppliedProgressText, StringComparison.Ordinal);
-                if (metadataChanged && !writerState.MetadataInFlight)
-                {
-                    return new SyncSessionMetadataWriterCommand(desiredLicense, desiredProgressValue, desiredProgressText);
-                }
+                return new SyncSessionMetadataWriterCommand(desiredLicense, desiredProgressValue, desiredProgressText, progress.ProcessedTiles);
             }
 
             return null;
@@ -384,7 +420,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             return (desiredLicense, progressValue, progressText);
         }
 
-        private static void ApplyPlanningInFlight(WriterState writerState, WriterCommand command)
+        private static void ApplyPlanningInFlight(WriterState writerState, WriterCommand command, DateTimeOffset now)
         {
             switch (command)
             {
@@ -394,11 +430,17 @@ namespace ThreeDTilesLink.Core.Pipeline
                 case RemoveTileWriterCommand remove:
                     writerState.InFlightRemoveStableId = remove.StableId;
                     break;
-                case SyncSessionMetadataWriterCommand:
+                case SyncSessionMetadataWriterCommand metadata:
                     writerState.MetadataInFlight = true;
+                    writerState.LastMetadataSyncStartedAt = now;
+                    writerState.LastMetadataSyncProcessedTiles = metadata.ProcessedTiles;
+                    writerState.LastMetadataSyncProgressValue = metadata.ProgressValue;
                     break;
             }
         }
+
+        private static bool IsCompletedMetadata(float progressValue, string progressText)
+            => progressValue >= 0.9999f || progressText.StartsWith("Completed:", StringComparison.Ordinal);
 
         private static string BuildDesiredLicense(IEnumerable<RetainedTileState> visibleTiles)
         {

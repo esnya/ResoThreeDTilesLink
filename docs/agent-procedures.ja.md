@@ -26,7 +26,7 @@
 7. 自動検知の根拠は Unity Editor の挙動推測ではなく、Resonite Unity SDK と `YellowDogMan.ResoniteLink` の実装である:
    `LinkSessionListener` は UDP `12512` を bind し、JSON の `ResoniteLinkSession` announcement を受け取り、告知された `linkPort` を使う
 8. 単発確認の前に、まず `pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover` を実行する
-9. session が 1 件だけなら、`repl` / `send-json` / `benchmark-send` / `cleanup-slot` では `-Port` を省略し、script 側の自動解決に任せる
+9. session が 1 件だけなら、`repl` / `send-json` / `cleanup-slot` では `-Port` を省略し、script 側の自動解決に任せる
 10. session が複数ある場合は、固定ポートをメモへ残すのではなく `-SessionId` か `-SessionName` で選ぶ
 11. raw JSON だけで足りない場合は、`tools/Invoke-ResoniteLinkCommand.ps1 repl ...` 経由で公式 ResoniteLink REPL を使って live 確認とメンバー確認を行う
 12. アプリ本体の entry point がまだ `--resonite-port` を要求する場合も、実行直前に discover して、その値をその場限りの入力として扱う
