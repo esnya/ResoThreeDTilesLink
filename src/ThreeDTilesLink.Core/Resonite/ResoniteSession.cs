@@ -565,6 +565,9 @@ namespace ThreeDTilesLink.Core.Resonite
                     payload.SlotScale,
                     cancellationToken).ConfigureAwait(false);
 
+                await AttachAvatarProtectionAsync(tileSlotId).ConfigureAwait(false);
+                await AttachPackageExportableAsync(tileSlotId, cancellationToken).ConfigureAwait(false);
+
                 string staticMeshId = await AddComponentAsync(
                     tileSlotId,
                     StaticMeshComponentType,
@@ -629,9 +632,6 @@ namespace ThreeDTilesLink.Core.Resonite
                         }
                     },
                     cancellationToken).ConfigureAwait(false);
-
-                await AttachAvatarProtectionAsync(tileSlotId).ConfigureAwait(false);
-                await AttachPackageExportableAsync(tileSlotId, cancellationToken).ConfigureAwait(false);
                 return tileSlotId;
             }
             finally
