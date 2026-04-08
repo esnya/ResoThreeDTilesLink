@@ -55,6 +55,9 @@ dotnet run --project src/ThreeDTilesLink -- stream \
 - Large ranges prioritize coarse ancestor tiles first so the requested coverage is established before finer descendants arrive.
 - Add `--dry-run` to verify only the fetch and conversion path without sending anything to Resonite.
 - If `--resonite-host` is omitted, `localhost` is used.
+- When running from WSL against a Windows-hosted Resonite session, prefer host-side execution such as `cmd.exe /c dotnet.exe run ...` or `pwsh.exe`, because Linux-side `localhost` does not reliably mean the Windows host.
+- For live verification, clear old `3DTilesLink Session ...` roots before the case by running `tools/Invoke-ResoniteLinkCommand.ps1 cleanup-sessions`.
+- Treat the standard Tokyo Tower live case as `--latitude 35.65858 --longitude 139.745433 --range 60` without extra limiting arguments such as `--depth-limit`, unless the limit itself is what you are testing.
 - If `--height-offset` is omitted, `0` is used.
 - The anchor height is sea level at the specified latitude/longitude, and `--height-offset` is applied relative to that anchor.
 - Run `dotnet run --project src/ThreeDTilesLink -- stream --help` for units and defaults.
@@ -95,6 +98,7 @@ dotnet run --project src/ThreeDTilesLink -- interactive \
 Run `dotnet run --project src/ThreeDTilesLink -- interactive --help` for units and defaults.
 
 - If `--resonite-host` is omitted, `localhost` is used.
+- When running from WSL against a Windows-hosted Resonite session, prefer host-side execution such as `cmd.exe /c dotnet.exe run ...` or `pwsh.exe`, because Linux-side `localhost` does not reliably mean the Windows host.
 - The anchor height is sea level at the current latitude/longitude, and `--height-offset` is applied relative to that anchor.
 
 ## Documentation
