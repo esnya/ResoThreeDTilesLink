@@ -1,9 +1,9 @@
-using System.Collections.Concurrent;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Reflection;
-using System.Security.Cryptography;
+using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using ResoniteLink;
@@ -83,90 +83,49 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task DisconnectAsync_DeletesTrackedTemporaryTextures()
+        public void BuildImportTexture_DecodesPngWithoutTemporaryFiles()
         {
-            await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
+            MethodInfo? buildImportTextureMethod = typeof(ResoniteSession).GetMethod(
+                "BuildImportTexture",
+                BindingFlags.Static | BindingFlags.NonPublic);
 
-            FieldInfo? tempTextureFilesField = typeof(ResoniteSession)
-                .GetField("_tempTextureFiles", BindingFlags.Instance | BindingFlags.NonPublic);
-            FieldInfo? textureFileLocksField = typeof(ResoniteSession)
-                .GetField("_textureFileLocks", BindingFlags.Instance | BindingFlags.NonPublic);
+            _ = buildImportTextureMethod.Should().NotBeNull();
+            _ = typeof(ResoniteSession).GetField("_tempTextureFiles", BindingFlags.Instance | BindingFlags.NonPublic).Should().BeNull();
+            _ = typeof(ResoniteSession).GetField("_textureFileLocks", BindingFlags.Instance | BindingFlags.NonPublic).Should().BeNull();
+            _ = typeof(ResoniteSession).GetField("_textureTempDir", BindingFlags.Instance | BindingFlags.NonPublic).Should().BeNull();
 
-            _ = tempTextureFilesField.Should().NotBeNull();
-            _ = textureFileLocksField.Should().NotBeNull();
+            byte[] pngBytes = CreateSolidPngBytes(2, 1, 0x11, 0x22, 0x33, 0x44);
 
-            string tempFile = Path.GetTempFileName();
-            try
-            {
-                var tempTextureFiles = (ConcurrentDictionary<string, byte>)tempTextureFilesField!.GetValue(session)!;
-                _ = tempTextureFiles.TryAdd(tempFile, 0);
+            ImportTexture2DRawData importTexture = buildImportTextureMethod!
+                .Invoke(null, [pngBytes, ".png"])
+                .Should().BeOfType<ImportTexture2DRawData>().Subject;
 
-                await session.DisconnectAsync(CancellationToken.None);
-
-                _ = File.Exists(tempFile).Should().BeFalse();
-                _ = tempTextureFiles.Should().BeEmpty();
-
-                var textureFileLocks = (ConcurrentDictionary<string, SemaphoreSlim>)textureFileLocksField!.GetValue(session)!;
-                _ = textureFileLocks.Should().BeEmpty();
-            }
-            finally
-            {
-                if (File.Exists(tempFile))
-                {
-                    File.Delete(tempFile);
-                }
-            }
+            _ = importTexture.Width.Should().Be(2);
+            _ = importTexture.Height.Should().Be(1);
+            _ = importTexture.ColorProfile.Should().Be("sRGB");
+            _ = importTexture.RawBinaryPayload.Should().Equal(
+                0x11, 0x22, 0x33, 0x44,
+                0x11, 0x22, 0x33, 0x44);
         }
 
         [Fact]
-        public async Task ImportTextureAssetAsync_RemovesTrackedFileStateOnFailure()
+        public void BuildImportTexture_ThrowsMeaningfulError_ForUnknownFormat()
         {
-            await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
+            MethodInfo? buildImportTextureMethod = typeof(ResoniteSession).GetMethod(
+                "BuildImportTexture",
+                BindingFlags.Static | BindingFlags.NonPublic);
 
-            MethodInfo? importTextureAssetMethod = typeof(ResoniteSession).GetMethod(
-                "ImportTextureAssetAsync",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            FieldInfo? tempTextureFilesField = typeof(ResoniteSession).GetField(
-                "_tempTextureFiles",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            FieldInfo? tempTextureDirField = typeof(ResoniteSession).GetField(
-                "_textureTempDir",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            FieldInfo? textureFileLocksField = typeof(ResoniteSession).GetField(
-                "_textureFileLocks",
-                BindingFlags.Instance | BindingFlags.NonPublic);
+            _ = buildImportTextureMethod.Should().NotBeNull();
 
-            _ = importTextureAssetMethod.Should().NotBeNull();
-            _ = tempTextureFilesField.Should().NotBeNull();
-            _ = tempTextureDirField.Should().NotBeNull();
-            _ = textureFileLocksField.Should().NotBeNull();
+            Action act = () => _ = buildImportTextureMethod!.Invoke(null, [new byte[] { 0x03, 0x01, 0x02, 0x07 }, ".png"]);
 
-            byte[] textureBytes = [0x03, 0x01, 0x02, 0x07];
-            string extension = "png";
-            string tempTextureDir = (string)tempTextureDirField!.GetValue(session)!;
-            string expectedPath = Path.Combine(tempTextureDir, $"{Convert.ToHexString(SHA256.HashData(textureBytes))}.{extension}");
-
-            if (File.Exists(expectedPath))
-            {
-                File.Delete(expectedPath);
-            }
-
-            Task importTextureTask = (Task)importTextureAssetMethod!.Invoke(
-                session,
-                [textureBytes, extension, CancellationToken.None])!;
-
-            _ = await Assert.ThrowsAnyAsync<Exception>(async () => await importTextureTask);
-
-            var tempTextureFiles = (ConcurrentDictionary<string, byte>)tempTextureFilesField!.GetValue(session)!;
-            var textureFileLocks = (ConcurrentDictionary<string, SemaphoreSlim>)textureFileLocksField!.GetValue(session)!;
-
-            _ = tempTextureFiles.Should().BeEmpty();
-            _ = textureFileLocks.Should().ContainKey(expectedPath);
-            _ = File.Exists(expectedPath).Should().BeFalse();
+            TargetInvocationException exception = act.Should().Throw<TargetInvocationException>().Which;
+            _ = exception.InnerException.Should().BeOfType<InvalidOperationException>()
+                .Which.Message.Should().StartWith("Unsupported texture format:");
         }
 
         [Fact]
-        public async Task CleanupConnectInitializationFailureAsync_ClearsTrackedState()
+        public async Task CleanupConnectInitializationFailureAsync_ClearsSessionState()
         {
             await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
 
@@ -177,39 +136,18 @@ namespace ThreeDTilesLink.Tests
                 .GetField("_connectionUri", BindingFlags.Instance | BindingFlags.NonPublic);
             FieldInfo? sessionRootSlotField = typeof(ResoniteSession)
                 .GetField("_sessionRootSlotId", BindingFlags.Instance | BindingFlags.NonPublic);
-            FieldInfo? tempTextureFilesField = typeof(ResoniteSession)
-                .GetField("_tempTextureFiles", BindingFlags.Instance | BindingFlags.NonPublic);
-            FieldInfo? tempTextureDirField = typeof(ResoniteSession)
-                .GetField("_textureTempDir", BindingFlags.Instance | BindingFlags.NonPublic);
-            FieldInfo? tempTextureFileLocksField = typeof(ResoniteSession)
-                .GetField("_textureFileLocks", BindingFlags.Instance | BindingFlags.NonPublic);
 
             _ = cleanupMethod.Should().NotBeNull();
             _ = connectionUriField.Should().NotBeNull();
             _ = sessionRootSlotField.Should().NotBeNull();
-            _ = tempTextureFilesField.Should().NotBeNull();
-            _ = tempTextureDirField.Should().NotBeNull();
-            _ = tempTextureFileLocksField.Should().NotBeNull();
-
-            string tempTextureDir = (string)tempTextureDirField!.GetValue(session)!;
-            string expectedPath = Path.Combine(tempTextureDir, $"{Guid.NewGuid():N}.png");
-            _ = Directory.CreateDirectory(tempTextureDir);
-            await File.WriteAllTextAsync(expectedPath, "cleanup failure test");
 
             connectionUriField!.SetValue(session, new Uri("ws://localhost:6216/"));
             sessionRootSlotField!.SetValue(session, "slot_session_root");
-            var tempTextureFiles = (ConcurrentDictionary<string, byte>)tempTextureFilesField!.GetValue(session)!;
-            var tempTextureFileLocks = (ConcurrentDictionary<string, SemaphoreSlim>)tempTextureFileLocksField!.GetValue(session)!;
-            _ = tempTextureFiles.TryAdd(expectedPath, 0);
-            _ = tempTextureFileLocks.TryAdd(expectedPath, new SemaphoreSlim(1, 1));
 
             await ((Task)cleanupMethod!.Invoke(session, null)!);
 
             _ = connectionUriField.GetValue(session).Should().BeNull();
             _ = sessionRootSlotField.GetValue(session).Should().BeNull();
-            _ = tempTextureFiles.Should().BeEmpty();
-            _ = tempTextureFileLocks.Should().BeEmpty();
-            _ = File.Exists(expectedPath).Should().BeFalse();
         }
 
         [Fact]
@@ -230,21 +168,12 @@ namespace ThreeDTilesLink.Tests
                 .GetField("_sessionLicenseCreditText", BindingFlags.Instance | BindingFlags.NonPublic);
             FieldInfo? sessionDynamicSpaceInitializedField = typeof(ResoniteSession)
                 .GetField("_sessionDynamicSpaceInitialized", BindingFlags.Instance | BindingFlags.NonPublic);
-            FieldInfo? tempTextureFilesField = typeof(ResoniteSession)
-                .GetField("_tempTextureFiles", BindingFlags.Instance | BindingFlags.NonPublic);
-            FieldInfo? tempTextureFileLocksField = typeof(ResoniteSession)
-                .GetField("_textureFileLocks", BindingFlags.Instance | BindingFlags.NonPublic);
-            FieldInfo? tempTextureDirField = typeof(ResoniteSession)
-                .GetField("_textureTempDir", BindingFlags.Instance | BindingFlags.NonPublic);
 
             _ = connectionUriField.Should().NotBeNull();
             _ = sessionRootSlotField.Should().NotBeNull();
             _ = sessionLicenseComponentIdField.Should().NotBeNull();
             _ = sessionLicenseCreditTextField.Should().NotBeNull();
             _ = sessionDynamicSpaceInitializedField.Should().NotBeNull();
-            _ = tempTextureFilesField.Should().NotBeNull();
-            _ = tempTextureFileLocksField.Should().NotBeNull();
-            _ = tempTextureDirField.Should().NotBeNull();
 
             using TcpListener listener = new(IPAddress.Loopback, 0);
             listener.Start();
@@ -269,52 +198,24 @@ namespace ThreeDTilesLink.Tests
             sessionLicenseCreditTextField!.SetValue(session, "stale-license");
             sessionDynamicSpaceInitializedField!.SetValue(session, true);
 
-            string orphanedTextureFile = string.Empty;
-            var tempTextureFiles = (ConcurrentDictionary<string, byte>)tempTextureFilesField!.GetValue(session)!;
-            var tempTextureFileLocks =
-                (ConcurrentDictionary<string, SemaphoreSlim>)tempTextureFileLocksField!.GetValue(session)!;
-            string tempTextureDir = (string)tempTextureDirField!.GetValue(session)!;
-
             try
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-                orphanedTextureFile = Path.Combine(tempTextureDir, $"{Guid.NewGuid():N}.png");
-                _ = Directory.CreateDirectory(tempTextureDir);
-                await File.WriteAllTextAsync(orphanedTextureFile, "stale temp asset");
-                _ = tempTextureFiles.TryAdd(orphanedTextureFile, 0);
-                _ = tempTextureFileLocks.TryAdd(orphanedTextureFile, new SemaphoreSlim(1, 1));
-
                 _ = await Assert.ThrowsAnyAsync<Exception>(async () =>
                 {
                     await session.ConnectAsync("127.0.0.1", failedPort, timeout.Token);
                 });
+
                 _ = connectionUriField.GetValue(session).Should().BeNull();
                 _ = sessionRootSlotField.GetValue(session).Should().BeNull();
                 _ = sessionLicenseComponentIdField.GetValue(session).Should().BeNull();
                 _ = sessionLicenseCreditTextField.GetValue(session).Should().BeNull();
                 _ = sessionDynamicSpaceInitializedField.GetValue(session).Should().Be(false);
-                _ = tempTextureFiles.Should().BeEmpty();
-                _ = tempTextureFileLocks.Should().BeEmpty();
-                _ = File.Exists(orphanedTextureFile).Should().BeFalse();
             }
             finally
             {
                 listener.Stop();
                 await acceptTask;
-
-                if (!string.IsNullOrWhiteSpace(orphanedTextureFile) && File.Exists(orphanedTextureFile))
-                {
-                    try
-                    {
-                        File.Delete(orphanedTextureFile);
-                    }
-                    catch (IOException)
-                    {
-                    }
-                    catch (UnauthorizedAccessException)
-                    {
-                    }
-                }
             }
         }
 
@@ -352,6 +253,93 @@ namespace ThreeDTilesLink.Tests
                 .Should().BeOfType<string>().Subject;
 
             _ = path.Should().Be("Google3DTiles/ThreeDTilesLink.Latitude");
+        }
+
+        private static byte[] CreateSolidPngBytes(int width, int height, byte r, byte g, byte b, byte a)
+        {
+            byte[] scanlineData = new byte[height * ((width * 4) + 1)];
+            for (int y = 0; y < height; y++)
+            {
+                int rowOffset = y * ((width * 4) + 1);
+                for (int x = 0; x < width; x++)
+                {
+                    int pixelOffset = rowOffset + 1 + (x * 4);
+                    scanlineData[pixelOffset] = r;
+                    scanlineData[pixelOffset + 1] = g;
+                    scanlineData[pixelOffset + 2] = b;
+                    scanlineData[pixelOffset + 3] = a;
+                }
+            }
+
+            using var stream = new MemoryStream();
+            stream.Write([137, 80, 78, 71, 13, 10, 26, 10]);
+            WritePngChunk(stream, "IHDR", BuildPngHeader(width, height));
+            WritePngChunk(stream, "IDAT", Compress(scanlineData));
+            WritePngChunk(stream, "IEND", []);
+            return stream.ToArray();
+        }
+
+        private static byte[] BuildPngHeader(int width, int height)
+        {
+            byte[] header = new byte[13];
+            WriteUInt32BigEndian(header.AsSpan(0, 4), (uint)width);
+            WriteUInt32BigEndian(header.AsSpan(4, 4), (uint)height);
+            header[8] = 8;
+            header[9] = 6;
+            return header;
+        }
+
+        private static byte[] Compress(byte[] data)
+        {
+            using var output = new MemoryStream();
+            using (var zlib = new ZLibStream(output, CompressionLevel.SmallestSize, leaveOpen: true))
+            {
+                zlib.Write(data, 0, data.Length);
+            }
+
+            return output.ToArray();
+        }
+
+        private static void WritePngChunk(Stream stream, string chunkType, byte[] data)
+        {
+            byte[] typeBytes = Encoding.ASCII.GetBytes(chunkType);
+            Span<byte> buffer = stackalloc byte[4];
+            WriteUInt32BigEndian(buffer, (uint)data.Length);
+            stream.Write(buffer);
+            stream.Write(typeBytes, 0, typeBytes.Length);
+            stream.Write(data, 0, data.Length);
+            WriteUInt32BigEndian(buffer, ComputeCrc(typeBytes, data));
+            stream.Write(buffer);
+        }
+
+        private static uint ComputeCrc(byte[] typeBytes, byte[] data)
+        {
+            uint crc = 0xFFFFFFFFu;
+            crc = UpdateCrc(crc, typeBytes);
+            crc = UpdateCrc(crc, data);
+            return crc ^ 0xFFFFFFFFu;
+        }
+
+        private static uint UpdateCrc(uint crc, byte[] bytes)
+        {
+            foreach (byte value in bytes)
+            {
+                crc ^= value;
+                for (int bit = 0; bit < 8; bit++)
+                {
+                    crc = (crc & 1) != 0 ? 0xEDB88320u ^ (crc >> 1) : crc >> 1;
+                }
+            }
+
+            return crc;
+        }
+
+        private static void WriteUInt32BigEndian(Span<byte> destination, uint value)
+        {
+            destination[0] = (byte)(value >> 24);
+            destination[1] = (byte)(value >> 16);
+            destination[2] = (byte)(value >> 8);
+            destination[3] = (byte)value;
         }
     }
 #pragma warning restore CA2000, CA2007

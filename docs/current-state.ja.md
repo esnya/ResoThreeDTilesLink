@@ -55,9 +55,12 @@
 - Resonite Unity SDK は `YellowDogMan.ResoniteLink` の `LinkSessionListener` を使って自動検知する。これは UDP `12512` を bind し、JSON の `ResoniteLinkSession` announcement を受け取り、告知された `linkPort` を使う仕組み
 - このリポジトリの `tools/Invoke-ResoniteLinkCommand.ps1` も同じ仕組みに寄せているため、port を script に書き込むより `discover` または `-Port` 省略を優先する
 - WSL からは `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" <command> ...` の形で host 側実行に寄せる
+- `discover` で見える `AnnounceAddress` は session 情報であり、既定の接続先そのものではない。`tools/Invoke-ResoniteLinkCommand.ps1` は接続時に `-LinkHost` を使い、既定では `localhost` を使う
+- WSL 側の `localhost` から Windows host 上の Resonite Link に安定して届かない場合は、アプリ自体を Windows host 側で実行するか、実際に届く host 値を明示する
 - 例で使うポート番号はその時点の live な Resonite Link に合わせる。固定値として扱わない
 - 複数 session が見つかった場合は、`-SessionId` または `-SessionName` で対象を選ぶ
-- Git worktree から検証する場合は、その worktree にも `.env` を置く。アプリは現在の working tree から親ディレクトリ探索で `.env` を読むため、main checkout 側の `.env` は自動では拾われない
+- live の `stream` / `interactive` ケースの前には、`tools/Invoke-ResoniteLinkCommand.ps1 cleanup-sessions` で古い `3DTilesLink Session ...` root を消す
+- Git worktree から検証する場合は、host 側の current directory をその worktree かその配下に置く。アプリは current working directory から親ディレクトリ探索で `.env` を読むため、host 側 run ではその探索経路にある `.env` だけが対象になる
 - WSL から `send-json` の `-JsonFile` を使う場合は Windows パスを渡す。`/tmp/...` のような Linux パスは host 側 `dotnet.exe` から読めない
 - worktree 配下で host 実行すると、MinVer が project directory を Git working directory と見なせず warning を出すことがある。バージョン計算自体を検証対象にしていない限り、この warning は非 blocking として扱う
 - live のメッシュ送信や remove 挙動の確認は、`stream` や `interactive` などアプリ本体の entry point を優先する。`send-json` は主に接続確認と焦点を絞った message 確認に使う
@@ -67,6 +70,7 @@
 ## Live 検証の観点
 
 - `stream` の確認では、東京タワー付近の小さい範囲を優先する。例: `--latitude 35.65858 --longitude 139.745433 --range 60`
+- 東京タワーの標準 live ケースは、上記の条件に対して `--depth-limit` などの制限引数を足さない形とする。制限引数は、その制限自体を検証したい場合だけ追加する
 - `stream` では、粗いタイルから細かいタイルへ収束する過程で、可視範囲が維持されるかを見る
 - `--range` は中心点周辺の近似正方形カバレッジの半幅（X/Z 平面）で、厳密な球面半径ではない
 - 要求した `range` が大きい場合、細かい descendant より先に粗い coverage ancestor が送られることがある。この順序は bootstrap の意図した挙動であり、それだけで退行とはみなさない
@@ -78,6 +82,8 @@
 ```bash
 pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover
 
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" cleanup-sessions
+
 pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" repl
 
 pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json \
@@ -85,6 +91,8 @@ pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand
 
 pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json \
   -JsonFile "$(wslpath -w /tmp/get-slot-root.json)"
+
+cmd.exe /c "cd /d C:\path\to\3DTilesLink\.worktrees\your-worktree && powershell.exe -NoLogo -NoProfile -File tools\Invoke-ResoniteLinkCommand.ps1 cleanup-sessions -Port <live-port> -NoBuild && dotnet.exe run --project src\ThreeDTilesLink -- stream --latitude 35.65858 --longitude 139.745433 --range 60 --resonite-port <live-port> --measure-performance"
 ```
 
 - `send-json` は任意の ResoniteLink JSON をそのまま 1 件送り、`sourceMessageId` が一致するレスポンスを待って整形表示する

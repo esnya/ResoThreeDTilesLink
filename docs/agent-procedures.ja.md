@@ -20,17 +20,19 @@
 1. 型名やメンバー名を推測しない
 2. 必要な値は live の Resonite Link から確認する
 3. WSL から live 検証するときは、`cmd.exe /c dotnet.exe run ...` や `pwsh.exe` ラッパなど host 側実行を優先する
-4. `stream` で live の send/remove 順序を確認する
-5. 大きい `range` に関わる変更では、細かい leaf より先に coarse ancestor で coverage を確保できるか確認する
-6. ポートを手入力するより、`tools/Invoke-ResoniteLinkCommand.ps1` の Resonite Link 自動検知を優先する
-7. 自動検知の根拠は Unity Editor の挙動推測ではなく、Resonite Unity SDK と `YellowDogMan.ResoniteLink` の実装である:
+4. live ケースの前には、`tools/Invoke-ResoniteLinkCommand.ps1 cleanup-sessions` で古い `3DTilesLink Session ...` root を消す
+5. `stream` で live の send/remove 順序を確認する
+6. 大きい `range` に関わる変更では、細かい leaf より先に coarse ancestor で coverage を確保できるか確認する
+7. ポートを手入力するより、`tools/Invoke-ResoniteLinkCommand.ps1` の Resonite Link 自動検知を優先する
+8. 自動検知の根拠は Unity Editor の挙動推測ではなく、Resonite Unity SDK と `YellowDogMan.ResoniteLink` の実装である:
    `LinkSessionListener` は UDP `12512` を bind し、JSON の `ResoniteLinkSession` announcement を受け取り、告知された `linkPort` を使う
-8. 単発確認の前に、まず `pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover` を実行する
-9. session が 1 件だけなら、`repl` / `send-json` / `cleanup-slot` では `-Port` を省略し、script 側の自動解決に任せる
-10. session が複数ある場合は、固定ポートをメモへ残すのではなく `-SessionId` か `-SessionName` で選ぶ
-11. raw JSON だけで足りない場合は、`tools/Invoke-ResoniteLinkCommand.ps1 repl ...` 経由で公式 ResoniteLink REPL を使って live 確認とメンバー確認を行う
-12. アプリ本体の entry point がまだ `--resonite-port` を要求する場合も、実行直前に discover して、その値をその場限りの入力として扱う
-13. 実機確認ができない場合は、その前提を差分説明に明記する
+9. 単発確認の前に、まず `pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover` を実行する
+10. session が 1 件だけなら、`repl` / `send-json` / `cleanup-slot` / `cleanup-sessions` では `-Port` を省略し、script 側の自動解決に任せる
+11. session が複数ある場合は、固定ポートをメモへ残すのではなく `-SessionId` か `-SessionName` で選ぶ
+12. raw JSON だけで足りない場合は、`tools/Invoke-ResoniteLinkCommand.ps1 repl ...` 経由で公式 ResoniteLink REPL を使って live 確認とメンバー確認を行う
+13. 東京タワーの live 標準ケースは、`--depth-limit` などの制限引数を足さない形を既定にし、制限引数はその制限自体を検証したい場合だけ追加する
+14. アプリ本体の entry point がまだ `--resonite-port` を要求する場合も、実行直前に discover して、その値をその場限りの入力として扱う
+15. 実機確認ができない場合は、その前提を差分説明に明記する
 
 ## ドキュメント更新ルール
 

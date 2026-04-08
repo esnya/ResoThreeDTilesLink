@@ -20,17 +20,19 @@ This document contains procedures for AI and coding agents. It keeps only decisi
 1. Do not guess type names or member names.
 2. Confirm required values from the live Resonite Link.
 3. From WSL, prefer host-side execution for live verification, including `cmd.exe /c dotnet.exe run ...` or `pwsh.exe` wrappers.
-4. Use `stream` to confirm live send and remove ordering.
-5. For large-`range` changes, confirm that coarse ancestors can secure coverage before finer leaf tiles.
-6. Prefer Resonite Link autodiscovery over manually typing a port. The Coding Agent entry point is `tools/Invoke-ResoniteLinkCommand.ps1`.
-7. The autodiscovery mechanism is based on the Resonite Unity SDK and `YellowDogMan.ResoniteLink` implementation, not on Unity Editor behavior itself:
+4. Before a live case, clear stale `3DTilesLink Session ...` roots with `tools/Invoke-ResoniteLinkCommand.ps1 cleanup-sessions`.
+5. Use `stream` to confirm live send and remove ordering.
+6. For large-`range` changes, confirm that coarse ancestors can secure coverage before finer leaf tiles.
+7. Prefer Resonite Link autodiscovery over manually typing a port. The Coding Agent entry point is `tools/Invoke-ResoniteLinkCommand.ps1`.
+8. The autodiscovery mechanism is based on the Resonite Unity SDK and `YellowDogMan.ResoniteLink` implementation, not on Unity Editor behavior itself:
    `LinkSessionListener` binds UDP port `12512`, listens for JSON `ResoniteLinkSession` announcements, and uses the announced `linkPort`.
-8. For one-off inspection, first run `pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover`.
-9. If exactly one session is present, omit `-Port` for `repl`, `send-json`, and `cleanup-slot`; the script resolves it automatically.
-10. If multiple sessions are present, select one with `-SessionId` or `-SessionName` instead of copying a fixed port into notes or scripts.
-11. Use the official ResoniteLink REPL via `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` for live inspection and member confirmation when raw JSON inspection is insufficient.
-12. If application entry points still require `--resonite-port`, discover the current session immediately before running and treat that value as ephemeral input only.
-13. If real-environment verification was not possible, state that assumption explicitly in the change description.
+9. For one-off inspection, first run `pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover`.
+10. If exactly one session is present, omit `-Port` for `repl`, `send-json`, `cleanup-slot`, and `cleanup-sessions`; the script resolves it automatically.
+11. If multiple sessions are present, select one with `-SessionId` or `-SessionName` instead of copying a fixed port into notes or scripts.
+12. Use the official ResoniteLink REPL via `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` for live inspection and member confirmation when raw JSON inspection is insufficient.
+13. Use the Tokyo Tower live case without extra limiting arguments such as `--depth-limit` as the default verification path unless the limit itself is under test.
+14. If application entry points still require `--resonite-port`, discover the current session immediately before running and treat that value as ephemeral input only.
+15. If real-environment verification was not possible, state that assumption explicitly in the change description.
 
 ## Documentation Update Rules
 

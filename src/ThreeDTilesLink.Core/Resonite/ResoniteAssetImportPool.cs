@@ -45,10 +45,10 @@ namespace ThreeDTilesLink.Core.Resonite
                 cancellationToken);
         }
 
-        public Task<AssetData> ImportTextureAsync(string filePath, TimeSpan timeout, CancellationToken cancellationToken)
+        public Task<AssetData> ImportTextureAsync(ImportTexture2DRawData importTexture, TimeSpan timeout, CancellationToken cancellationToken)
         {
             return GetNextWorker().ExecuteAsync(
-                link => link.ImportTexture(new ImportTexture2DFile { FilePath = filePath }),
+                link => link.ImportTexture(importTexture),
                 timeout,
                 cancellationToken);
         }

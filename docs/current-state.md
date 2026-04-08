@@ -55,9 +55,12 @@ This document contains only current operational information that is difficult to
 - The Resonite Unity SDK uses `LinkSessionListener` from `YellowDogMan.ResoniteLink` for autodiscovery. It binds UDP port `12512`, listens for JSON `ResoniteLinkSession` announcements, and uses the announced `linkPort`.
 - This repository mirrors that mechanism in `tools/Invoke-ResoniteLinkCommand.ps1`; prefer `discover` or omit `-Port` instead of copying a port into scripts.
 - From WSL, invoke host-side commands in the form `pwsh.exe -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" <command> ...`.
+- Treat the discovered `AnnounceAddress` as session metadata, not as the default command target. `tools/Invoke-ResoniteLinkCommand.ps1` still connects to `-LinkHost` and defaults that host to `localhost`.
+- When WSL-side `localhost` does not reach the Windows-hosted Resonite Link, either run the application on the Windows host or pass an explicit host value that actually resolves to the target Resonite session.
 - The port numbers used in examples must match the live Resonite Link at that moment; do not treat them as fixed values.
 - If more than one session is discovered, select one with `-SessionId` or `-SessionName`.
-- When verifying from a Git worktree, place `.env` in that worktree as well. The app loads `.env` by parent-directory discovery from the current working tree, so the main checkout's `.env` is not picked up automatically.
+- Before a live `stream` or `interactive` case, clear stale `3DTilesLink Session ...` roots with `tools/Invoke-ResoniteLinkCommand.ps1 cleanup-sessions`.
+- When verifying from a Git worktree, make sure the host-side current directory is that worktree or one of its children. The app loads `.env` by parent-directory discovery from the current working directory, so host-side runs only pick up `.env` files that are reachable from that directory chain.
 - When `send-json` uses `-JsonFile` from WSL, pass a Windows path. A Linux path such as `/tmp/...` is not readable from the host-side `dotnet.exe`.
 - In worktree-based host runs, MinVer may warn that a project directory is not a valid Git working directory. Treat that warning as non-blocking unless version calculation itself is the subject of the verification.
 - For live mesh transmission and removal behavior, prefer the application entry points such as `stream` or `interactive`. Use `send-json` mainly for connection checks and focused message inspection.
@@ -67,6 +70,7 @@ This document contains only current operational information that is difficult to
 ## Live Verification Focus
 
 - For stream verification, prefer a small area around Tokyo Tower, for example `--latitude 35.65858 --longitude 139.745433 --range 60`.
+- Treat the standard Tokyo Tower live case as the same command without extra limiting arguments such as `--depth-limit`. Add those only when you are intentionally testing a limit.
 - In stream verification, check that refinement preserves visible coverage while converging from coarse to fine tiles.
 - `--range` is an approximate square local coverage half-width (X/Z extent), not a spherical radius.
 - When the requested range is large, expect coarse coverage ancestors to be streamed before finer descendants. Treat that ordering as intentional bootstrap behavior, not as a regression by itself.
@@ -78,6 +82,8 @@ Example:
 ```bash
 pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover
 
+pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" cleanup-sessions
+
 pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" repl
 
 pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json \
@@ -85,6 +91,8 @@ pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand
 
 pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" send-json \
   -JsonFile "$(wslpath -w /tmp/get-slot-root.json)"
+
+cmd.exe /c "cd /d C:\path\to\3DTilesLink\.worktrees\your-worktree && powershell.exe -NoLogo -NoProfile -File tools\Invoke-ResoniteLinkCommand.ps1 cleanup-sessions -Port <live-port> -NoBuild && dotnet.exe run --project src\ThreeDTilesLink -- stream --latitude 35.65858 --longitude 139.745433 --range 60 --resonite-port <live-port> --measure-performance"
 ```
 
 - `send-json` sends one arbitrary ResoniteLink JSON message as-is, waits for the response with the matching `sourceMessageId`, and prints it in formatted form.
