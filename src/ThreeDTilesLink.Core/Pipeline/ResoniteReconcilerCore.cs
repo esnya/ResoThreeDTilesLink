@@ -155,6 +155,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                         if (!canRetrySendFailure)
                         {
                             fact.PrepareStatus = ContentDiscoveryStatus.Failed;
+                            fact.PreparedContent = null;
                         }
                         else if (!hasRetainedPartialSlots)
                         {
@@ -472,7 +473,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             DesiredView desiredView,
             ProgressSnapshot progress)
         {
-            string desiredLicense = BuildDesiredLicense(writerState.VisibleTiles.Values);
+            string desiredLicense = BuildDesiredLicense(
+                writerState.VisibleTiles.Values.Concat(writerState.CleanupDebtTiles.Values));
 
             int pendingDiscovery = facts.Branches.Values.Count(fact =>
                 (fact.Tile.ContentKind == TileContentKind.Json && fact.NestedStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight) ||
