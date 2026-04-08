@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('discover', 'repl', 'send-json', 'pool-experiment', 'cleanup-slot', 'cleanup-sessions')]
+    [ValidateSet('discover', 'repl', 'send-json', 'cleanup-slot', 'cleanup-sessions')]
     [string]$Command,
 
     [Parameter(Position = 1)]
@@ -24,14 +24,6 @@ param(
     [int]$TimeoutSec = 15,
 
     [switch]$Compact,
-
-    [int]$MeshCount = 8,
-
-    [string]$Parallelism = '1,2,4,8',
-
-    [int]$PoolSize = 4,
-
-    [int]$TextureSize = 1024,
 
     [string]$SlotId
 )
@@ -159,7 +151,6 @@ $projectPath = switch ($Command) {
     'discover' { $null }
     'repl' { Join-Path $repoRoot 'tools/ResoniteRepl/ResoniteRepl.csproj' }
     'send-json' { Join-Path $repoRoot 'tools/ResoniteRawJson/ResoniteRawJson.csproj' }
-    'pool-experiment' { Join-Path $repoRoot 'tools/ResonitePoolExperiment/ResonitePoolExperiment.csproj' }
     'cleanup-slot' { Join-Path $repoRoot 'tools/ResoniteSessionCleanup/ResoniteSessionCleanup.csproj' }
     'cleanup-sessions' { Join-Path $repoRoot 'tools/ResoniteSessionCleanup/ResoniteSessionCleanup.csproj' }
     default { throw "Unsupported command: $Command" }
@@ -218,22 +209,6 @@ switch ($Command) {
         else {
             $dotnetArgs += '--pretty'
         }
-        break
-    }
-
-    'pool-experiment' {
-        $dotnetArgs += '--host'
-        $dotnetArgs += $resolvedHost
-        $dotnetArgs += '--port'
-        $dotnetArgs += $resolvedPort.ToString()
-        $dotnetArgs += '--mesh-count'
-        $dotnetArgs += $MeshCount.ToString()
-        $dotnetArgs += '--pool-size'
-        $dotnetArgs += $PoolSize.ToString()
-        $dotnetArgs += '--texture-size'
-        $dotnetArgs += $TextureSize.ToString()
-        $dotnetArgs += '--parallelism'
-        $dotnetArgs += $Parallelism
         break
     }
 
