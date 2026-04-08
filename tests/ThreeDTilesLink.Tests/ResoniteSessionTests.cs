@@ -1,4 +1,7 @@
 using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Reflection;
 using System.Security.Cryptography;
 using FluentAssertions;
@@ -207,6 +210,112 @@ namespace ThreeDTilesLink.Tests
             _ = tempTextureFiles.Should().BeEmpty();
             _ = tempTextureFileLocks.Should().BeEmpty();
             _ = File.Exists(expectedPath).Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task ConnectAsync_Initializes_CleanupState_OnInitializationFailure()
+        {
+            const string staleRootSlotId = "slot_session_root_for_failure";
+            int failedPort;
+
+            await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
+
+            FieldInfo? connectionUriField = typeof(ResoniteSession)
+                .GetField("_connectionUri", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? sessionRootSlotField = typeof(ResoniteSession)
+                .GetField("_sessionRootSlotId", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? sessionLicenseComponentIdField = typeof(ResoniteSession)
+                .GetField("_sessionLicenseComponentId", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? sessionLicenseCreditTextField = typeof(ResoniteSession)
+                .GetField("_sessionLicenseCreditText", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? sessionDynamicSpaceInitializedField = typeof(ResoniteSession)
+                .GetField("_sessionDynamicSpaceInitialized", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? tempTextureFilesField = typeof(ResoniteSession)
+                .GetField("_tempTextureFiles", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? tempTextureFileLocksField = typeof(ResoniteSession)
+                .GetField("_textureFileLocks", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? tempTextureDirField = typeof(ResoniteSession)
+                .GetField("_textureTempDir", BindingFlags.Instance | BindingFlags.NonPublic);
+
+            _ = connectionUriField.Should().NotBeNull();
+            _ = sessionRootSlotField.Should().NotBeNull();
+            _ = sessionLicenseComponentIdField.Should().NotBeNull();
+            _ = sessionLicenseCreditTextField.Should().NotBeNull();
+            _ = sessionDynamicSpaceInitializedField.Should().NotBeNull();
+            _ = tempTextureFilesField.Should().NotBeNull();
+            _ = tempTextureFileLocksField.Should().NotBeNull();
+            _ = tempTextureDirField.Should().NotBeNull();
+
+            using TcpListener listener = new(IPAddress.Loopback, 0);
+            listener.Start();
+            failedPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+            Task acceptTask = Task.Run(async () =>
+            {
+                try
+                {
+                    using TcpClient _ = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (SocketException)
+                {
+                }
+            });
+
+            connectionUriField!.SetValue(session, new Uri($"ws://127.0.0.1:{failedPort}/"));
+            sessionRootSlotField!.SetValue(session, staleRootSlotId);
+            sessionLicenseComponentIdField!.SetValue(session, "asset_license_comp");
+            sessionLicenseCreditTextField!.SetValue(session, "stale-license");
+            sessionDynamicSpaceInitializedField!.SetValue(session, true);
+
+            string orphanedTextureFile = string.Empty;
+            var tempTextureFiles = (ConcurrentDictionary<string, byte>)tempTextureFilesField!.GetValue(session)!;
+            var tempTextureFileLocks =
+                (ConcurrentDictionary<string, SemaphoreSlim>)tempTextureFileLocksField!.GetValue(session)!;
+            string tempTextureDir = (string)tempTextureDirField!.GetValue(session)!;
+
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                orphanedTextureFile = Path.Combine(tempTextureDir, $"{Guid.NewGuid():N}.png");
+                _ = Directory.CreateDirectory(tempTextureDir);
+                await File.WriteAllTextAsync(orphanedTextureFile, "stale temp asset");
+                _ = tempTextureFiles.TryAdd(orphanedTextureFile, 0);
+                _ = tempTextureFileLocks.TryAdd(orphanedTextureFile, new SemaphoreSlim(1, 1));
+
+                _ = await Assert.ThrowsAnyAsync<Exception>(async () =>
+                {
+                    await session.ConnectAsync("127.0.0.1", failedPort, timeout.Token);
+                });
+                _ = connectionUriField.GetValue(session).Should().BeNull();
+                _ = sessionRootSlotField.GetValue(session).Should().BeNull();
+                _ = sessionLicenseComponentIdField.GetValue(session).Should().BeNull();
+                _ = sessionLicenseCreditTextField.GetValue(session).Should().BeNull();
+                _ = sessionDynamicSpaceInitializedField.GetValue(session).Should().Be(false);
+                _ = tempTextureFiles.Should().BeEmpty();
+                _ = tempTextureFileLocks.Should().BeEmpty();
+                _ = File.Exists(orphanedTextureFile).Should().BeFalse();
+            }
+            finally
+            {
+                listener.Stop();
+                await acceptTask;
+
+                if (!string.IsNullOrWhiteSpace(orphanedTextureFile) && File.Exists(orphanedTextureFile))
+                {
+                    try
+                    {
+                        File.Delete(orphanedTextureFile);
+                    }
+                    catch (IOException)
+                    {
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                    }
+                }
+            }
         }
 
         [Fact]

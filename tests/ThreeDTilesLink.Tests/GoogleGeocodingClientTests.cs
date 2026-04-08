@@ -77,6 +77,28 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task SearchAsync_MissingStatus_ThrowsInvalidOperationException()
+        {
+            using var handler = new StubHttpMessageHandler(
+                """
+                {
+                  "results": [
+                    {
+                      "formatted_address": "Tokyo Tower, 4 Chome-2-8 Shibakoen, Minato City, Tokyo 105-0011, Japan"
+                    }
+                  ]
+                }
+                """);
+            using var httpClient = new HttpClient(handler);
+            var sut = new GoogleGeocodingClient(httpClient);
+
+            Func<Task> act = () => sut.SearchAsync("test-key", "Tokyo Tower", CancellationToken.None);
+
+            _ = await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*missing the status field*");
+        }
+
+        [Fact]
         public async Task SearchAsync_HttpError_IncludesResponseBody()
         {
             using var handler = new StubHttpMessageHandler(
