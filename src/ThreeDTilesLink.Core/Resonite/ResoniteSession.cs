@@ -124,7 +124,6 @@ namespace ThreeDTilesLink.Core.Resonite
         private readonly bool _dumpMeshJson = string.Equals(Environment.GetEnvironmentVariable("THREEDTILESLINK_DUMP_MESH_JSON")?.Trim(), "1", StringComparison.Ordinal) ||
                                               string.Equals(Environment.GetEnvironmentVariable("THREEDTILESLINK_DUMP_MESH_JSON")?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
         private readonly string _meshDumpDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "mesh-json");
-        private readonly Dictionary<string, string> _assetsSlotByParentSlotId = new(StringComparer.Ordinal);
         private readonly Dictionary<string, SlotProgressBinding> _progressBindingsByParentSlotId = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _connectionGate = new(1, 1);
         private readonly SemaphoreSlim _streamPlacementGate = new(1, 1);
