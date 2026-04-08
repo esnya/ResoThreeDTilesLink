@@ -131,8 +131,9 @@ namespace ThreeDTilesLink.Core.Pipeline
                     _ = writerState.InFlightSendStableIds.Remove(stableId);
                     processedTiles++;
                     streamedMeshes += sent.StreamedMeshCount;
-                    bool partialSendRecoveryNeeded = !sent.Succeeded && sent.SlotIds.Count > 0;
-                    bool shouldMarkVisible = sent.Succeeded || dryRun;
+                    bool hasRetainedPartialSlots = !sent.Succeeded && sent.SlotIds.Count > 0;
+                    bool shouldRetainVisibleSlots = sent.Succeeded || dryRun || hasRetainedPartialSlots;
+                    bool canRetrySendFailure = false;
 
                     if (!facts.Branches.TryGetValue(stableId, out TileBranchFact? fact))
                     {
@@ -148,14 +149,14 @@ namespace ThreeDTilesLink.Core.Pipeline
                     {
                         failedTiles++;
                         fact.CompleteSendFailureCount++;
-                        bool canRetrySendFailure = fact.CanRetryCompleteSendFailure;
+                        canRetrySendFailure = fact.CanRetryCompleteSendFailure;
                         fact.SendFailed = !string.IsNullOrWhiteSpace(fact.Tile.ParentStableId) &&
-                            (!partialSendRecoveryNeeded || !canRetrySendFailure);
+                            (!hasRetainedPartialSlots || !canRetrySendFailure);
                         if (!canRetrySendFailure)
                         {
                             fact.PrepareStatus = ContentDiscoveryStatus.Failed;
                         }
-                        else if (!partialSendRecoveryNeeded)
+                        else if (!hasRetainedPartialSlots)
                         {
                             fact.PrepareStatus = ContentDiscoveryStatus.Ready;
                         }
@@ -165,20 +166,33 @@ namespace ThreeDTilesLink.Core.Pipeline
                         fact.SendFailed = false;
                     }
 
-                    if (shouldMarkVisible)
+                    if (shouldRetainVisibleSlots)
                     {
+                        IReadOnlyList<string> slotIds = MergeSlotIds(writerState, stableId, sent.SlotIds);
                         writerState.VisibleTiles[stableId] = new RetainedTileState(
                             stableId,
                             sent.Content.Tile.TileId,
                             sent.Content.Tile.ParentStableId,
                             GetAncestorStableIds(facts, sent.Content.Tile.ParentStableId),
-                            sent.SlotIds,
+                            slotIds,
                             sent.Content.AssetCopyright);
-                        writerState.VisibleSinceByStableId[stableId] = currentTime;
+                        if (!writerState.VisibleSinceByStableId.ContainsKey(stableId))
+                        {
+                            writerState.VisibleSinceByStableId[stableId] = currentTime;
+                        }
+                    }
+
+                    if (hasRetainedPartialSlots && canRetrySendFailure)
+                    {
+                        _ = writerState.IncompleteVisibleStableIds.Add(stableId);
+                    }
+                    else
+                    {
+                        _ = writerState.IncompleteVisibleStableIds.Remove(stableId);
                     }
 
                     fact.AssetCopyright = sent.Content.AssetCopyright;
-                    if (shouldMarkVisible)
+                    if (sent.Succeeded || dryRun)
                     {
                         fact.CompleteSendFailureCount = 0;
                         fact.PreparedContent = null;
@@ -192,6 +206,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     if (removed.Succeeded)
                     {
                         _ = writerState.FailedRemovalStableIds.Remove(removed.StableId);
+                        _ = writerState.IncompleteVisibleStableIds.Remove(removed.StableId);
                         _ = writerState.VisibleTiles.Remove(removed.StableId);
                         _ = writerState.VisibleSinceByStableId.Remove(removed.StableId);
                     }
@@ -220,6 +235,25 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
+        private static IReadOnlyList<string> MergeSlotIds(
+            WriterState writerState,
+            string stableId,
+            IReadOnlyList<string> newSlotIds)
+        {
+            if (!writerState.VisibleTiles.TryGetValue(stableId, out RetainedTileState? existing))
+            {
+                return newSlotIds;
+            }
+
+            return [.. existing.SlotIds.Concat(newSlotIds).Distinct(StringComparer.Ordinal)];
+        }
+
+        private static bool IsSelectionVisible(WriterState writerState, string stableId)
+        {
+            return writerState.VisibleTiles.ContainsKey(stableId) &&
+                !writerState.IncompleteVisibleStableIds.Contains(stableId);
+        }
+
         internal bool IsReconciled(
             DiscoveryFacts facts,
             WriterState writerState,
@@ -233,6 +267,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             ArgumentNullException.ThrowIfNull(progress);
 
             HashSet<string> actualVisible = writerState.VisibleTiles.Keys
+                .Where(stableId => IsSelectionVisible(writerState, stableId))
                 .Where(desiredView.SelectedStableIds.Contains)
                 .ToHashSet(StringComparer.Ordinal);
             HashSet<string> expectedVisible = desiredView.StableIds
@@ -295,7 +330,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 bool processedDeltaReached = progress.ProcessedTiles - writerState.LastMetadataSyncProcessedTiles >= MetadataProcessedDeltaThreshold;
                 bool progressDeltaReached = writerState.LastMetadataSyncProgressValue < 0f ||
                     desiredProgressValue - writerState.LastMetadataSyncProgressValue >= MetadataProgressDeltaThreshold;
-                int pendingSend = desiredView.StableIds.Count(stableId => !writerState.VisibleTiles.ContainsKey(stableId));
+                int pendingSend = desiredView.StableIds.Count(stableId => !IsSelectionVisible(writerState, stableId));
                 int pendingRemove = CountPendingRemovals(writerState, desiredView);
                 bool quiescent = pendingSend == 0 &&
                     pendingRemove == 0 &&
@@ -332,7 +367,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             if (allowSend)
             {
                 TileBranchFact? sendFact = desiredView.StableIds
-                    .Where(stableId => !writerState.VisibleTiles.ContainsKey(stableId))
+                    .Where(stableId => !IsSelectionVisible(writerState, stableId))
                     .Where(stableId => !writerState.InFlightSendStableIds.Contains(stableId))
                     .Where(stableId => facts.Branches.TryGetValue(stableId, out TileBranchFact? fact) &&
                                        fact.PreparedContent is not null &&
@@ -408,8 +443,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                 desiredView.CandidateStableIds.Contains(fact.Tile.StableId!) &&
                 fact.PreparedContent is not null &&
                 fact.PrepareStatus == ContentDiscoveryStatus.Ready &&
-                !writerState.VisibleTiles.ContainsKey(fact.Tile.StableId!));
-            int pendingSend = desiredView.StableIds.Count(stableId => !writerState.VisibleTiles.ContainsKey(stableId));
+                !IsSelectionVisible(writerState, fact.Tile.StableId!));
+            int pendingSend = desiredView.StableIds.Count(stableId => !IsSelectionVisible(writerState, stableId));
             int pendingRemove = CountPendingRemovals(writerState, desiredView);
 
             int completedUnits = progress.ProcessedTiles;

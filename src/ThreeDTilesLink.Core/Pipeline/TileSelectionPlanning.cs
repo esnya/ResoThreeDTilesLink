@@ -106,6 +106,8 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public HashSet<string> InFlightSendStableIds { get; } = new(StringComparer.Ordinal);
 
+        public HashSet<string> IncompleteVisibleStableIds { get; } = new(StringComparer.Ordinal);
+
         public string? InFlightRemoveStableId { get; set; }
 
         public bool MetadataInFlight { get; set; }
@@ -133,6 +135,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             copy.FailedRemovalStableIds.UnionWith(FailedRemovalStableIds);
             copy.InFlightSendStableIds.UnionWith(InFlightSendStableIds);
+            copy.IncompleteVisibleStableIds.UnionWith(IncompleteVisibleStableIds);
             copy.InFlightRemoveStableId = InFlightRemoveStableId;
             copy.MetadataInFlight = MetadataInFlight;
             copy.LastMetadataSyncStartedAt = LastMetadataSyncStartedAt;
@@ -146,12 +149,14 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public SelectionState CreateSelectionState()
         {
-            return new SelectionState(VisibleTiles.Values.Select(tile => new SelectionVisibleTile(
-                tile.StableId,
-                tile.AncestorStableIds,
-                VisibleSinceByStableId.TryGetValue(tile.StableId, out DateTimeOffset visibleSince)
-                    ? visibleSince
-                    : DateTimeOffset.MinValue)));
+            return new SelectionState(VisibleTiles.Values
+                .Where(tile => !IncompleteVisibleStableIds.Contains(tile.StableId))
+                .Select(tile => new SelectionVisibleTile(
+                    tile.StableId,
+                    tile.AncestorStableIds,
+                    VisibleSinceByStableId.TryGetValue(tile.StableId, out DateTimeOffset visibleSince)
+                        ? visibleSince
+                        : DateTimeOffset.MinValue)));
         }
     }
 

@@ -928,14 +928,19 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 if (streamedSlotIds.Count > 0)
                 {
-                    bool rolledBack = await TryRollbackPartialSendAsync(
+                    IReadOnlyList<string> remainingSlotIds = await TryRollbackPartialSendAsync(
                         command.Content.Tile.TileId,
                         streamedSlotIds,
                         cancellationToken).ConfigureAwait(false);
-                    if (rolledBack)
+                    if (remainingSlotIds.Count == 0)
                     {
                         streamedSlotIds.Clear();
                         streamedMeshCount = 0;
+                    }
+                    else
+                    {
+                        streamedSlotIds = [.. remainingSlotIds];
+                        streamedMeshCount = streamedSlotIds.Count;
                     }
                 }
 
@@ -991,12 +996,12 @@ namespace ThreeDTilesLink.Core.Pipeline
             "Reliability",
             "CA1031:DoNotCatchGeneralExceptionTypes",
             Justification = "Slot rollback is best-effort; failures are captured as failed state.")]
-        private async Task<bool> TryRollbackPartialSendAsync(
+        private async Task<IReadOnlyList<string>> TryRollbackPartialSendAsync(
             string tileId,
             IReadOnlyList<string> streamedSlotIds,
             CancellationToken cancellationToken)
         {
-            bool rolledBack = true;
+            var remainingSlotIds = new List<string>();
 
             foreach (string slotId in streamedSlotIds)
             {
@@ -1010,12 +1015,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
                 catch (Exception rollbackEx)
                 {
-                    rolledBack = false;
+                    remainingSlotIds.Add(slotId);
                     s_rollBackPartialSendFailed(_logger, slotId, tileId, rollbackEx);
                 }
             }
 
-            return rolledBack;
+            return remainingSlotIds;
         }
 
         [SuppressMessage(

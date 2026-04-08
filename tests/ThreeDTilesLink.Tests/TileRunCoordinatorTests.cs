@@ -1406,7 +1406,7 @@ namespace ThreeDTilesLink.Tests
             _ = result.Summary.StreamedMeshes.Should().Be(3);
             _ = result.Summary.FailedTiles.Should().Be(1);
             _ = result.VisibleTiles.Should().ContainKey(StableId("multi"));
-            _ = result.VisibleTiles[StableId("multi")].SlotIds.Should().HaveCount(2);
+            _ = result.VisibleTiles[StableId("multi")].SlotIds.Should().HaveCount(3);
         }
 
         [Fact]
@@ -1446,7 +1446,8 @@ namespace ThreeDTilesLink.Tests
             _ = client.RemoveAttemptCount.Should().Be(2);
             _ = client.RemoveCount.Should().Be(0);
             _ = result.Summary.FailedTiles.Should().Be(2);
-            _ = result.VisibleTiles.Should().NotContainKey(StableId("multi"));
+            _ = result.VisibleTiles.Should().ContainKey(StableId("multi"));
+            _ = result.VisibleTiles[StableId("multi")].SlotIds.Should().HaveCount(2);
         }
 
         [Fact]
