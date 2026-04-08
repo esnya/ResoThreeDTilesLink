@@ -908,7 +908,7 @@ namespace ThreeDTilesLink.Tests
 
             SyncSessionMetadataWriterCommand metadata = command.Should().BeOfType<SyncSessionMetadataWriterCommand>().Subject;
             _ = metadata.ProgressValue.Should().BeApproximately(2f / 6f, 0.0001f);
-            _ = metadata.ProgressText.Should().StartWith("Running:");
+            _ = metadata.ProgressText.Should().Be("Running...");
         }
 
         [Fact]
@@ -948,6 +948,223 @@ namespace ThreeDTilesLink.Tests
 
             SyncSessionMetadataWriterCommand metadata = command.Should().BeOfType<SyncSessionMetadataWriterCommand>().Subject;
             _ = metadata.ProgressValue.Should().BeApproximately(3f / 5f, 0.0001f);
+        }
+
+        [Fact]
+        public void PlanWriterCommand_MetadataProgress_UpdatesWhileSendIsInFlightAfterCadenceAndDelta()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p0", "https://example.com/p0.glb", depth: 0, parentTileId: null, hasChildren: false, span: 120d, stableId: StableId("p0")),
+                CreateTile("p1", "https://example.com/p1.glb", depth: 0, parentTileId: null, hasChildren: false, span: 120d, stableId: StableId("p1"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0"),
+                [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
+            });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            writerState.AppliedLicenseCredit = "Google; Parent 0, Parent 1";
+            writerState.AppliedProgressValue = 0f;
+            writerState.AppliedProgressText = "stale";
+            writerState.LastMetadataSyncStartedAt = DateTimeOffset.UtcNow - TimeSpan.FromMilliseconds(500);
+            _ = writerState.InFlightSendStableIds.Add(StableId("p1"));
+
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            WriterCommand? command = reconciler.PlanNextWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(16, 8, 1, 0),
+                dryRun: false,
+                allowRemoval: false,
+                allowSend: false);
+
+            SyncSessionMetadataWriterCommand metadata = command.Should().BeOfType<SyncSessionMetadataWriterCommand>().Subject;
+            _ = metadata.ProcessedTiles.Should().Be(8);
+        }
+
+        [Fact]
+        public void PlanWriterCommand_MetadataProgress_DoesNotUpdateBeforeCadence()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p0", "https://example.com/p0.glb", depth: 0, parentTileId: null, hasChildren: false, span: 120d, stableId: StableId("p0")),
+                CreateTile("p1", "https://example.com/p1.glb", depth: 0, parentTileId: null, hasChildren: false, span: 120d, stableId: StableId("p1"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0"),
+                [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
+            });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            writerState.AppliedLicenseCredit = "Google; Parent 0; Parent 1";
+            writerState.AppliedProgressValue = 0.42f;
+            writerState.AppliedProgressText = "Running:";
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            writerState.LastMetadataSyncStartedAt = now - TimeSpan.FromMilliseconds(100);
+            writerState.LastMetadataSyncProcessedTiles = 0;
+            writerState.LastMetadataSyncProgressValue = 0.42f;
+            _ = writerState.InFlightSendStableIds.Add(StableId("p1"));
+
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+
+            WriterCommand? command = reconciler.PlanNextWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(16, 8, 1, 0),
+                dryRun: false,
+                allowRemoval: false,
+                allowSend: false,
+                now: now);
+
+            _ = command.Should().BeNull();
+        }
+
+        [Fact]
+        public void PlanWriterCommand_MetadataProgress_DoesNotUpdateBelowDeltaThreshold()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p0", "https://example.com/p0.glb", depth: 0, parentTileId: null, hasChildren: false, span: 120d, stableId: StableId("p0")),
+                CreateTile("p1", "https://example.com/p1.glb", depth: 0, parentTileId: null, hasChildren: false, span: 120d, stableId: StableId("p1"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0"),
+                [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
+            });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            writerState.AppliedLicenseCredit = "Google; Parent 0; Parent 1";
+            writerState.AppliedProgressValue = 0.62f;
+            writerState.AppliedProgressText = "Running:";
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            writerState.LastMetadataSyncStartedAt = now - TimeSpan.FromMilliseconds(500);
+            writerState.LastMetadataSyncProcessedTiles = 10;
+            writerState.LastMetadataSyncProgressValue = 0.62f;
+            _ = writerState.InFlightSendStableIds.Add(StableId("p1"));
+
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+
+            WriterCommand? command = reconciler.PlanNextWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(16, 12, 1, 0),
+                dryRun: false,
+                allowRemoval: false,
+                allowSend: false,
+                now: now);
+
+            _ = command.Should().BeNull();
+        }
+
+        [Fact]
+        public void PlanWriterCommand_MetadataProgress_UpdatesImmediatelyWhenLicenseChanges()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p0", "https://example.com/p0.glb", depth: 0, parentTileId: null, hasChildren: false, span: 120d, stableId: StableId("p0"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0")
+            });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            writerState.AppliedLicenseCredit = "Google Maps";
+            writerState.AppliedProgressValue = 0.5f;
+            writerState.AppliedProgressText = "Running:";
+            writerState.LastMetadataSyncStartedAt = DateTimeOffset.UtcNow;
+
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            WriterCommand? command = reconciler.PlanNextWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(1, 0, 0, 0),
+                dryRun: false,
+                allowRemoval: false,
+                allowSend: false);
+
+            _ = command.Should().BeOfType<SyncSessionMetadataWriterCommand>();
+        }
+
+        [Fact]
+        public void PlanWriterCommand_MetadataProgress_UsesCleanupDebtForLicenseAttribution()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p0", "https://example.com/p0.glb", depth: 0, parentTileId: null, hasChildren: false, span: 120d, stableId: StableId("p0"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new();
+            writerState.CleanupDebtTiles[StableId("p0")] = new(
+                StableId("p0"),
+                "p0",
+                null,
+                [],
+                ["slot_p0"],
+                "Google; Parent 0");
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            writerState.AppliedLicenseCredit = "Google Maps";
+            writerState.AppliedProgressValue = 0.5f;
+            writerState.AppliedProgressText = "Running:";
+            writerState.LastMetadataSyncStartedAt = DateTimeOffset.UtcNow;
+
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            SyncSessionMetadataWriterCommand metadata = reconciler.PlanNextWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(1, 0, 0, 0),
+                dryRun: false,
+                allowRemoval: false,
+                allowSend: false).Should().BeOfType<SyncSessionMetadataWriterCommand>().Subject;
+
+            _ = metadata.LicenseCredit.Should().Contain("Parent 0");
+            _ = metadata.UpdateLicense.Should().BeTrue();
+        }
+
+        [Fact]
+        public void ApplyWriterCompletion_ClearsPreparedContent_WhenPartialSendRetriesAreExhausted()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("child", "https://example.com/child.glb", depth: 1, parentTileId: "parent", hasChildren: false, span: 120d, stableId: StableId("child"), parentStableId: StableId("parent"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new();
+            PreparedTileContent content = CreatePreparedContent("child", parentTileId: "parent", stableId: StableId("child"), parentStableId: StableId("parent"));
+            MarkPrepared(facts, "child", content, order: 0, stableId: StableId("child"));
+            TileBranchFact fact = facts.Branches[StableId("child")];
+            fact.CompleteSendFailureCount = 1;
+
+            int processedTiles = 0;
+            int streamedMeshes = 0;
+            int failedTiles = 0;
+
+            ResoniteReconcilerCore.ApplyWriterCompletion(
+                facts,
+                writerState,
+                new SendTileCompleted(content, false, 1, ["slot_partial"], new InvalidOperationException("send failed")),
+                dryRun: false,
+                ref processedTiles,
+                ref streamedMeshes,
+                ref failedTiles);
+
+            _ = fact.PrepareStatus.Should().Be(ContentDiscoveryStatus.Failed);
+            _ = fact.PreparedContent.Should().BeNull();
         }
 
         private static TraversalCore CreateCore(Func<string, IReadOnlyList<TileSelectionResult>> selectByPrefix)

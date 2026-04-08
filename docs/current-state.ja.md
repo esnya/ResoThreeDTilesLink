@@ -68,6 +68,7 @@
 
 - `stream` の確認では、東京タワー付近の小さい範囲を優先する。例: `--latitude 35.65858 --longitude 139.745433 --range 60`
 - `stream` では、粗いタイルから細かいタイルへ収束する過程で、可視範囲が維持されるかを見る
+- `--range` は中心点周辺の近似正方形カバレッジの半幅（X/Z 平面）で、厳密な球面半径ではない
 - 要求した `range` が大きい場合、細かい descendant より先に粗い coverage ancestor が送られることがある。この順序は bootstrap の意図した挙動であり、それだけで退行とはみなさない
 - `stream` のログでは `Streamed tile ...` と `Removed tile ...` の順序を重点確認する。可視範囲を保つために必要な追加より remove が先行してはいけない
 - 単発の `stream` でも refinement 中に `Removed tile ...` は出る。remove は `interactive` だけの現象だと決めつけない

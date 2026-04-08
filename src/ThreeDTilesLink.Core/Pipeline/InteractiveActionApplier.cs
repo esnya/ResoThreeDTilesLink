@@ -68,6 +68,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 state = state with
                 {
                     RetainedTiles = new Dictionary<string, RetainedTileState>(result.VisibleTiles, StringComparer.Ordinal),
+                    CleanupDebtTiles = new Dictionary<string, RetainedTileState>(result.CleanupDebtTiles, StringComparer.Ordinal),
                     Checkpoint = result.Checkpoint
                 };
             }
@@ -235,6 +236,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 state = state with
                 {
                     RetainedTiles = new Dictionary<string, RetainedTileState>(result.VisibleTiles, StringComparer.Ordinal),
+                    CleanupDebtTiles = new Dictionary<string, RetainedTileState>(result.CleanupDebtTiles, StringComparer.Ordinal),
                     Checkpoint = result.Checkpoint
                 };
             }
@@ -263,11 +265,14 @@ namespace ThreeDTilesLink.Core.Pipeline
                 : selectionReference;
             if (!action.Overlaps)
             {
-                await ClearRetainedTilesAsync(state.RetainedTiles, cancellationToken).ConfigureAwait(false);
+                await ClearRetainedTilesAsync(state.RetainedTiles, state.CleanupDebtTiles, cancellationToken).ConfigureAwait(false);
             }
 
             Dictionary<string, RetainedTileState> retainedTiles = action.Overlaps
                 ? state.RetainedTiles
+                : new Dictionary<string, RetainedTileState>(StringComparer.Ordinal);
+            Dictionary<string, RetainedTileState> cleanupDebtTiles = action.Overlaps
+                ? state.CleanupDebtTiles
                 : new Dictionary<string, RetainedTileState>(StringComparer.Ordinal);
             InteractiveRunCheckpoint? checkpoint = action.Overlaps ? state.Checkpoint : null;
             TileRunRequest runRequest = BuildRunRequest(
@@ -282,7 +287,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                 new InteractiveRunInput(
                     retainedTiles,
                     action.Overlaps && options.RemoveOutOfRange,
-                    checkpoint),
+                    checkpoint,
+                    cleanupDebtTiles),
                 activeRunCts.Token);
 
             InteractiveRunSupervisor.Log.RunStarted(
@@ -298,6 +304,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 PlacementReference = placementReference,
                 RetainedTiles = retainedTiles,
+                CleanupDebtTiles = cleanupDebtTiles,
                 Checkpoint = checkpoint,
                 ActiveRun = new InteractiveActiveRun(activeRunTask, activeRunCts)
             };
@@ -309,9 +316,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             Justification = "Non-overlap interactive reruns should continue even if some retained slots fail to clear.")]
         private async Task ClearRetainedTilesAsync(
             IReadOnlyDictionary<string, RetainedTileState> retainedTiles,
+            IReadOnlyDictionary<string, RetainedTileState> cleanupDebtTiles,
             CancellationToken cancellationToken)
         {
-            foreach (RetainedTileState retainedTile in retainedTiles.Values)
+            foreach (RetainedTileState retainedTile in retainedTiles.Values.Concat(cleanupDebtTiles.Values))
             {
                 foreach (string slotId in retainedTile.SlotIds)
                 {

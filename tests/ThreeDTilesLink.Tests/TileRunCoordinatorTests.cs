@@ -1367,6 +1367,92 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task RunInteractive_PartialSend_RollbackFailure_RetainsPreparedContentForRetry()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "multi", ContentUri = new Uri("https://example.com/multi.glb") }
+                ]
+            });
+
+            var client = new FakeResoniteSession(
+                failOnSendNumber: 2,
+                failOnRemoveContains: "slot_1_tile_multi_m0",
+                failOnRemoveNumber: 1);
+            TileRunCoordinator coordinator = CreateCoordinator(
+                new FakeTilesSource(
+                    tileset,
+                    tileContentByUri: new Dictionary<string, byte[]>
+                    {
+                        ["https://example.com/multi.glb"] = [9]
+                    }),
+                client,
+                new FakeExtractor(meshCountByMarker: new Dictionary<byte, int>
+                {
+                    [9] = 2
+                }));
+
+            InteractiveTileRunResult result = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false),
+                new InteractiveRunInput(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal), RemoveOutOfRangeTiles: false),
+                CancellationToken.None);
+
+            _ = client.SendCount.Should().Be(4);
+            _ = client.RemoveAttemptCount.Should().Be(2);
+            _ = client.RemoveCount.Should().Be(1);
+            _ = result.Summary.StreamedMeshes.Should().Be(3);
+            _ = result.Summary.FailedTiles.Should().Be(1);
+            _ = result.VisibleTiles.Should().ContainKey(StableId("multi"));
+            _ = result.VisibleTiles[StableId("multi")].SlotIds.Should().HaveCount(2);
+            _ = result.CleanupDebtTiles.Should().NotContainKey(StableId("multi"));
+        }
+
+        [Fact]
+        public async Task RunInteractive_RepeatedPartialSendRollbackFailure_StopsAfterRetryLimit()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "multi", ContentUri = new Uri("https://example.com/multi.glb") }
+                ]
+            });
+
+            var client = new FakeResoniteSession(
+                failOnNameContains: "tile_multi_m1",
+                failOnRemoveContains: "slot_");
+            TileRunCoordinator coordinator = CreateCoordinator(
+                new FakeTilesSource(
+                    tileset,
+                    tileContentByUri: new Dictionary<string, byte[]>
+                    {
+                        ["https://example.com/multi.glb"] = [9]
+                    }),
+                client,
+                new FakeExtractor(meshCountByMarker: new Dictionary<byte, int>
+                {
+                    [9] = 2
+                }));
+
+            InteractiveTileRunResult result = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false),
+                new InteractiveRunInput(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal), RemoveOutOfRangeTiles: false),
+                CancellationToken.None);
+
+            _ = client.SendCount.Should().Be(4);
+            _ = client.RemoveAttemptCount.Should().Be(3);
+            _ = client.RemoveCount.Should().Be(0);
+            _ = result.Summary.FailedTiles.Should().Be(3);
+            _ = result.VisibleTiles.Should().NotContainKey(StableId("multi"));
+            _ = result.CleanupDebtTiles.Should().ContainKey(StableId("multi"));
+            _ = result.CleanupDebtTiles[StableId("multi")].SlotIds.Should().HaveCount(2);
+        }
+
+        [Fact]
         public async Task Run_MetadataUpdateFailure_DoesNotPreventCompletion()
         {
             var tileset = new Tileset(new Tile
@@ -1690,6 +1776,7 @@ namespace ThreeDTilesLink.Tests
             int? failOnSendNumber = null,
             bool ignoreCancellationDuringStream = false,
             string? failOnRemoveContains = null,
+            int? failOnRemoveNumber = null,
             bool failProgressUpdates = false,
             bool failLicenseUpdates = false,
             bool failDisconnect = false) : ISelectedTileProjector
@@ -1702,17 +1789,24 @@ namespace ThreeDTilesLink.Tests
             private readonly int? _failOnSendNumber = failOnSendNumber;
             private readonly bool _ignoreCancellationDuringStream = ignoreCancellationDuringStream;
             private readonly string? _failOnRemoveContains = failOnRemoveContains;
+            private readonly int? _failOnRemoveNumber = failOnRemoveNumber;
             private readonly bool _failProgressUpdates = failProgressUpdates;
             private readonly bool _failLicenseUpdates = failLicenseUpdates;
             private readonly bool _failDisconnect = failDisconnect;
             private int _activeStreams;
             private int _maxConcurrentStreams;
+            private int _removeAttempts;
+            private int _removeSlotNumber;
+            private string? _currentProgressParentSlotId;
+            private float _currentProgress01;
+            private string _currentProgressText = string.Empty;
 
             public int ConnectCount { get; private set; }
             public int DisconnectCount { get; private set; }
             public int MaxConcurrentStreams => _maxConcurrentStreams;
             public int SendCount { get; private set; }
             public int RemoveCount { get; private set; }
+            public int RemoveAttemptCount => _removeAttempts;
             public List<string> LicenseCredits { get; } = [];
             public List<PlacedMeshPayload> Payloads { get; } = [];
             public List<string> RemovedSlotIds { get; } = [];
@@ -1737,7 +1831,36 @@ namespace ThreeDTilesLink.Tests
 
             public Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken)
             {
-                ProgressUpdates.Add((parentSlotId, progress01, progressText));
+                _currentProgressParentSlotId = parentSlotId;
+                _currentProgress01 = progress01;
+                _currentProgressText = progressText;
+                ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
+                if (_failProgressUpdates)
+                {
+                    throw new InvalidOperationException("synthetic progress update failure");
+                }
+
+                return Task.CompletedTask;
+            }
+
+            public Task SetProgressValueAsync(string? parentSlotId, float progress01, CancellationToken cancellationToken)
+            {
+                _currentProgressParentSlotId = parentSlotId;
+                _currentProgress01 = progress01;
+                ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
+                if (_failProgressUpdates)
+                {
+                    throw new InvalidOperationException("synthetic progress update failure");
+                }
+
+                return Task.CompletedTask;
+            }
+
+            public Task SetProgressTextAsync(string? parentSlotId, string progressText, CancellationToken cancellationToken)
+            {
+                _currentProgressParentSlotId = parentSlotId;
+                _currentProgressText = progressText;
+                ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
                 if (_failProgressUpdates)
                 {
                     throw new InvalidOperationException("synthetic progress update failure");
@@ -1782,8 +1905,11 @@ namespace ThreeDTilesLink.Tests
 
             public Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken)
             {
+                int removeSlotNumber = Interlocked.Increment(ref _removeSlotNumber);
+                _ = Interlocked.Increment(ref _removeAttempts);
                 if (!string.IsNullOrWhiteSpace(_failOnRemoveContains) &&
-                    slotId.Contains(_failOnRemoveContains, StringComparison.Ordinal))
+                    slotId.Contains(_failOnRemoveContains, StringComparison.Ordinal) &&
+                    (_failOnRemoveNumber is null || removeSlotNumber == _failOnRemoveNumber.Value))
                 {
                     throw new InvalidOperationException("synthetic remove failure");
                 }

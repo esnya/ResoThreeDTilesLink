@@ -6,6 +6,10 @@ namespace ThreeDTilesLink.Core.Pipeline
 {
     internal sealed class ResoniteReconcilerCore
     {
+        private static readonly TimeSpan MetadataCadence = TimeSpan.FromMilliseconds(250);
+        private const int MetadataProcessedDeltaThreshold = 8;
+        private const float MetadataProgressDeltaThreshold = 0.02f;
+
         internal WriterPlan ReduceWriterPlan(
             DiscoveryFacts facts,
             WriterState writerState,
@@ -13,7 +17,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             DesiredView desiredView,
             ProgressSnapshot progress,
             bool dryRun,
-            int maxConcurrentWriterSends)
+            int maxConcurrentWriterSends,
+            DateTimeOffset? now = null)
         {
             ArgumentNullException.ThrowIfNull(facts);
             ArgumentNullException.ThrowIfNull(writerState);
@@ -22,6 +27,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             ArgumentNullException.ThrowIfNull(progress);
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxConcurrentWriterSends);
 
+            DateTimeOffset planningTime = now ?? DateTimeOffset.UtcNow;
             WriterState planningState = writerState.CreatePlanningCopy();
             bool hasPendingRemovals = HasPendingRemovals(planningState, desiredView);
             int sendConcurrencyLimit = hasPendingRemovals
@@ -39,11 +45,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                     dryRun,
                     allowRemoval: true,
                     allowSend: false,
-                    allowMetadata: planningState.InFlightSendStableIds.Count == 0);
-                if (nextControlCommand is RemoveTileWriterCommand or SyncSessionMetadataWriterCommand)
+                    allowMetadata: true,
+                    planningTime);
+                if (nextControlCommand is RemoveTileWriterCommand or CleanupTileWriterCommand or SyncSessionMetadataWriterCommand)
                 {
                     controlCommand = nextControlCommand;
-                    ApplyPlanningInFlight(planningState, nextControlCommand);
+                    ApplyPlanningInFlight(planningState, nextControlCommand, planningTime);
                 }
             }
 
@@ -58,14 +65,15 @@ namespace ThreeDTilesLink.Core.Pipeline
                     dryRun,
                     allowRemoval: false,
                     allowSend: true,
-                    allowMetadata: false);
+                    allowMetadata: false,
+                    planningTime);
                 if (sendCommand is not SendTileWriterCommand sendTileCommand)
                 {
                     break;
                 }
 
                 sendCommands.Add(sendTileCommand);
-                ApplyPlanningInFlight(planningState, sendTileCommand);
+                ApplyPlanningInFlight(planningState, sendTileCommand, planningTime);
             }
 
             return new WriterPlan(controlCommand, sendCommands, hasPendingRemovals);
@@ -79,7 +87,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             bool dryRun,
             bool allowRemoval = true,
             bool allowSend = true,
-            bool allowMetadata = true)
+            bool allowMetadata = true,
+            DateTimeOffset? now = null)
         {
             ArgumentNullException.ThrowIfNull(facts);
             ArgumentNullException.ThrowIfNull(writerState);
@@ -94,7 +103,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                 dryRun,
                 allowRemoval,
                 allowSend,
-                allowMetadata);
+                allowMetadata,
+                now ?? DateTimeOffset.UtcNow);
         }
 
         internal static void ApplyWriterCompletion(
@@ -121,6 +131,9 @@ namespace ThreeDTilesLink.Core.Pipeline
                     _ = writerState.InFlightSendStableIds.Remove(stableId);
                     processedTiles++;
                     streamedMeshes += sent.StreamedMeshCount;
+                    bool hasRetainedPartialSlots = !sent.Succeeded && sent.SlotIds.Count > 0;
+                    bool shouldRetainVisibleSlots = sent.Succeeded || dryRun;
+                    bool canRetrySendFailure = false;
 
                     if (!facts.Branches.TryGetValue(stableId, out TileBranchFact? fact))
                     {
@@ -135,14 +148,18 @@ namespace ThreeDTilesLink.Core.Pipeline
                     if (!sent.Succeeded)
                     {
                         failedTiles++;
-                        fact.SendFailed = sent.SlotIds.Count == 0 &&
-                            !string.IsNullOrWhiteSpace(fact.Tile.ParentStableId);
-                        if (sent.SlotIds.Count == 0)
+                        fact.CompleteSendFailureCount++;
+                        canRetrySendFailure = fact.CanRetryCompleteSendFailure;
+                        fact.SendFailed = !string.IsNullOrWhiteSpace(fact.Tile.ParentStableId) &&
+                            (!hasRetainedPartialSlots || !canRetrySendFailure);
+                        if (!canRetrySendFailure)
                         {
-                            fact.CompleteSendFailureCount++;
-                            fact.PrepareStatus = fact.CanRetryCompleteSendFailure
-                                ? ContentDiscoveryStatus.Ready
-                                : ContentDiscoveryStatus.Failed;
+                            fact.PrepareStatus = ContentDiscoveryStatus.Failed;
+                            fact.PreparedContent = null;
+                        }
+                        else if (!hasRetainedPartialSlots)
+                        {
+                            fact.PrepareStatus = ContentDiscoveryStatus.Ready;
                         }
                     }
                     else
@@ -150,7 +167,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                         fact.SendFailed = false;
                     }
 
-                    if (sent.Succeeded || sent.SlotIds.Count > 0 || dryRun)
+                    if (shouldRetainVisibleSlots)
                     {
                         writerState.VisibleTiles[stableId] = new RetainedTileState(
                             stableId,
@@ -159,11 +176,28 @@ namespace ThreeDTilesLink.Core.Pipeline
                             GetAncestorStableIds(facts, sent.Content.Tile.ParentStableId),
                             sent.SlotIds,
                             sent.Content.AssetCopyright);
-                        writerState.VisibleSinceByStableId[stableId] = currentTime;
+                        if (!writerState.VisibleSinceByStableId.ContainsKey(stableId))
+                        {
+                            writerState.VisibleSinceByStableId[stableId] = currentTime;
+                        }
+                    }
+
+                    if (hasRetainedPartialSlots)
+                    {
+                        writerState.CleanupDebtTiles[stableId] = MergeRetainedTileState(
+                            writerState.CleanupDebtTiles,
+                            stableId,
+                            new RetainedTileState(
+                                stableId,
+                                sent.Content.Tile.TileId,
+                                sent.Content.Tile.ParentStableId,
+                                GetAncestorStableIds(facts, sent.Content.Tile.ParentStableId),
+                                sent.SlotIds,
+                                sent.Content.AssetCopyright));
                     }
 
                     fact.AssetCopyright = sent.Content.AssetCopyright;
-                    if (sent.Succeeded || sent.SlotIds.Count > 0 || dryRun)
+                    if (sent.Succeeded || dryRun)
                     {
                         fact.CompleteSendFailureCount = 0;
                         fact.PreparedContent = null;
@@ -196,6 +230,29 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                     break;
 
+                case CleanupTileCompleted cleanup:
+                    writerState.InFlightRemoveStableId = null;
+                    if (cleanup.Succeeded)
+                    {
+                        _ = writerState.FailedCleanupStableIds.Remove(cleanup.StableId);
+                        _ = writerState.CleanupDebtTiles.Remove(cleanup.StableId);
+                    }
+                    else
+                    {
+                        failedTiles += System.Math.Max(1, cleanup.FailedSlotCount);
+                        _ = writerState.FailedCleanupStableIds.Add(cleanup.StableId);
+                        if (cleanup.RemainingSlotIds.Count > 0 &&
+                            writerState.CleanupDebtTiles.TryGetValue(cleanup.StableId, out RetainedTileState? cleanupTile))
+                        {
+                            writerState.CleanupDebtTiles[cleanup.StableId] = cleanupTile with
+                            {
+                                SlotIds = cleanup.RemainingSlotIds
+                            };
+                        }
+                    }
+
+                    break;
+
                 case SyncSessionMetadataCompleted metadata:
                     writerState.MetadataInFlight = false;
                     writerState.AppliedLicenseCredit = metadata.LicenseCredit;
@@ -203,6 +260,22 @@ namespace ThreeDTilesLink.Core.Pipeline
                     writerState.AppliedProgressText = metadata.ProgressText;
                     break;
             }
+        }
+
+        private static RetainedTileState MergeRetainedTileState(
+            Dictionary<string, RetainedTileState> existingTiles,
+            string stableId,
+            RetainedTileState newTile)
+        {
+            if (!existingTiles.TryGetValue(stableId, out RetainedTileState? existing))
+            {
+                return newTile;
+            }
+
+            return newTile with
+            {
+                SlotIds = [.. existing.SlotIds.Concat(newTile.SlotIds).Distinct(StringComparer.Ordinal)]
+            };
         }
 
         internal bool IsReconciled(
@@ -224,6 +297,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                 .Concat(writerState.FailedRemovalStableIds.Where(writerState.VisibleTiles.ContainsKey))
                 .ToHashSet(StringComparer.Ordinal);
             if (!actualVisible.SetEquals(expectedVisible))
+            {
+                return false;
+            }
+
+            if (writerState.CleanupDebtTiles.Keys.Any(stableId => !writerState.FailedCleanupStableIds.Contains(stableId)))
             {
                 return false;
             }
@@ -252,15 +330,65 @@ namespace ThreeDTilesLink.Core.Pipeline
             bool dryRun,
             bool allowRemoval,
             bool allowSend,
-            bool allowMetadata)
+            bool allowMetadata,
+            DateTimeOffset now)
         {
             if (writerState.InFlightRemoveStableId is not null)
             {
                 return null;
             }
 
+            bool metadataChanged = false;
+            bool allowGeneralMetadata = false;
+            string desiredLicense = string.Empty;
+            float desiredProgressValue = 0f;
+            string desiredProgressText = string.Empty;
+
+            if (!dryRun && allowMetadata && !writerState.MetadataInFlight)
+            {
+                (desiredLicense, desiredProgressValue, desiredProgressText) = BuildDesiredMetadata(
+                    facts,
+                    writerState,
+                    desiredView,
+                    progress);
+                bool licenseChanged = !string.Equals(desiredLicense, writerState.AppliedLicenseCredit, StringComparison.Ordinal);
+                bool progressTextChanged = !string.Equals(desiredProgressText, writerState.AppliedProgressText, StringComparison.Ordinal);
+                bool isCompleted = IsCompletedMetadata(desiredProgressValue, desiredProgressText);
+                bool cadenceElapsed = now - writerState.LastMetadataSyncStartedAt >= MetadataCadence;
+                bool processedDeltaReached = progress.ProcessedTiles - writerState.LastMetadataSyncProcessedTiles >= MetadataProcessedDeltaThreshold;
+                bool progressDeltaReached = writerState.LastMetadataSyncProgressValue < 0f ||
+                    desiredProgressValue - writerState.LastMetadataSyncProgressValue >= MetadataProgressDeltaThreshold;
+                int pendingSend = desiredView.StableIds.Count(stableId => !writerState.VisibleTiles.ContainsKey(stableId));
+                int pendingRemove = CountPendingRemovals(writerState, desiredView);
+                bool quiescent = pendingSend == 0 &&
+                    pendingRemove == 0 &&
+                    writerState.InFlightSendStableIds.Count == 0;
+                metadataChanged = licenseChanged ||
+                    System.Math.Abs(desiredProgressValue - writerState.AppliedProgressValue) > 0.0001f ||
+                    progressTextChanged;
+
+                if (metadataChanged)
+                {
+                    allowGeneralMetadata = licenseChanged ||
+                        isCompleted ||
+                        quiescent ||
+                        (cadenceElapsed && (processedDeltaReached || progressDeltaReached));
+                }
+            }
+
             if (allowRemoval)
             {
+                RetainedTileState? cleanup = writerState.CleanupDebtTiles.Values
+                    .Where(tile => !writerState.FailedCleanupStableIds.Contains(tile.StableId))
+                    .OrderByDescending(static tile => tile.AncestorStableIds.Count)
+                    .ThenBy(static tile => tile.TileId, StringComparer.Ordinal)
+                    .FirstOrDefault();
+
+                if (cleanup is not null)
+                {
+                    return new CleanupTileWriterCommand(cleanup.StableId, cleanup.TileId, cleanup.SlotIds);
+                }
+
                 RetainedTileState? removal = writerState.VisibleTiles.Values
                     .Where(tile => desiredView.SelectedStableIds.Contains(tile.StableId))
                     .Where(tile => !desiredView.StableIds.Contains(tile.StableId))
@@ -296,21 +424,17 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
             }
 
-            if (!dryRun && allowMetadata && writerState.InFlightSendStableIds.Count == 0)
+            if (allowGeneralMetadata)
             {
-                (string desiredLicense, float desiredProgressValue, string desiredProgressText) = BuildDesiredMetadata(
-                    facts,
-                    writerState,
-                    desiredView,
-                    progress);
-                bool metadataChanged =
-                    !string.Equals(desiredLicense, writerState.AppliedLicenseCredit, StringComparison.Ordinal) ||
-                    System.Math.Abs(desiredProgressValue - writerState.AppliedProgressValue) > 0.0001f ||
-                    !string.Equals(desiredProgressText, writerState.AppliedProgressText, StringComparison.Ordinal);
-                if (metadataChanged && !writerState.MetadataInFlight)
-                {
-                    return new SyncSessionMetadataWriterCommand(desiredLicense, desiredProgressValue, desiredProgressText);
-                }
+                bool updateLicense = !string.Equals(desiredLicense, writerState.AppliedLicenseCredit, StringComparison.Ordinal);
+                bool updateProgressText = !string.Equals(desiredProgressText, writerState.AppliedProgressText, StringComparison.Ordinal);
+                return new SyncSessionMetadataWriterCommand(
+                    desiredLicense,
+                    desiredProgressValue,
+                    desiredProgressText,
+                    progress.ProcessedTiles,
+                    updateLicense,
+                    updateProgressText);
             }
 
             return null;
@@ -321,7 +445,9 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         private static int CountPendingRemovals(WriterState writerState, DesiredView desiredView)
         {
-            return writerState.VisibleTiles.Values.Count(tile =>
+            return writerState.CleanupDebtTiles.Values.Count(tile =>
+                       !writerState.FailedCleanupStableIds.Contains(tile.StableId)) +
+                   writerState.VisibleTiles.Values.Count(tile =>
                 desiredView.SelectedStableIds.Contains(tile.StableId) &&
                 !desiredView.StableIds.Contains(tile.StableId) &&
                 !writerState.FailedRemovalStableIds.Contains(tile.StableId));
@@ -347,7 +473,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             DesiredView desiredView,
             ProgressSnapshot progress)
         {
-            string desiredLicense = BuildDesiredLicense(writerState.VisibleTiles.Values);
+            string desiredLicense = BuildDesiredLicense(
+                writerState.VisibleTiles.Values.Concat(writerState.CleanupDebtTiles.Values));
 
             int pendingDiscovery = facts.Branches.Values.Count(fact =>
                 (fact.Tile.ContentKind == TileContentKind.Json && fact.NestedStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight) ||
@@ -374,12 +501,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                 : System.Math.Clamp((float)completedUnits / totalUnits, 0f, 1f);
             string progressText = pendingUnits == 0
                 ? $"Completed: candidate={progress.CandidateTiles} processed={progress.ProcessedTiles} streamed={progress.StreamedMeshes} failed={progress.FailedTiles}"
-                : $"Running: candidate={progress.CandidateTiles} processed={progress.ProcessedTiles} streamed={progress.StreamedMeshes} failed={progress.FailedTiles} queued-send={pendingSend}";
+                : "Running...";
 
             return (desiredLicense, progressValue, progressText);
         }
 
-        private static void ApplyPlanningInFlight(WriterState writerState, WriterCommand command)
+        private static void ApplyPlanningInFlight(WriterState writerState, WriterCommand command, DateTimeOffset now)
         {
             switch (command)
             {
@@ -389,11 +516,20 @@ namespace ThreeDTilesLink.Core.Pipeline
                 case RemoveTileWriterCommand remove:
                     writerState.InFlightRemoveStableId = remove.StableId;
                     break;
-                case SyncSessionMetadataWriterCommand:
+                case CleanupTileWriterCommand cleanup:
+                    writerState.InFlightRemoveStableId = cleanup.StableId;
+                    break;
+                case SyncSessionMetadataWriterCommand metadata:
                     writerState.MetadataInFlight = true;
+                    writerState.LastMetadataSyncStartedAt = now;
+                    writerState.LastMetadataSyncProcessedTiles = metadata.ProcessedTiles;
+                    writerState.LastMetadataSyncProgressValue = metadata.ProgressValue;
                     break;
             }
         }
+
+        private static bool IsCompletedMetadata(float progressValue, string progressText)
+            => progressValue >= 0.9999f || progressText.StartsWith("Completed:", StringComparison.Ordinal);
 
         private static string BuildDesiredLicense(IEnumerable<RetainedTileState> visibleTiles)
         {

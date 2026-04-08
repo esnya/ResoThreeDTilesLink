@@ -89,11 +89,17 @@ namespace ThreeDTilesLink.Core.Pipeline
         }
     }
 
-    internal sealed class WriterState(IReadOnlyDictionary<string, RetainedTileState>? initialVisibleTiles = null)
+    internal sealed class WriterState(
+        IReadOnlyDictionary<string, RetainedTileState>? initialVisibleTiles = null,
+        IReadOnlyDictionary<string, RetainedTileState>? initialCleanupDebtTiles = null)
     {
         public Dictionary<string, RetainedTileState> VisibleTiles { get; } = initialVisibleTiles is null
             ? new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             : new Dictionary<string, RetainedTileState>(initialVisibleTiles, StringComparer.Ordinal);
+
+        public Dictionary<string, RetainedTileState> CleanupDebtTiles { get; } = initialCleanupDebtTiles is null
+            ? new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            : new Dictionary<string, RetainedTileState>(initialCleanupDebtTiles, StringComparer.Ordinal);
 
         public Dictionary<string, DateTimeOffset> VisibleSinceByStableId { get; } = initialVisibleTiles is null
             ? new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal)
@@ -104,11 +110,19 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public HashSet<string> FailedRemovalStableIds { get; } = new(StringComparer.Ordinal);
 
+        public HashSet<string> FailedCleanupStableIds { get; } = new(StringComparer.Ordinal);
+
         public HashSet<string> InFlightSendStableIds { get; } = new(StringComparer.Ordinal);
 
         public string? InFlightRemoveStableId { get; set; }
 
         public bool MetadataInFlight { get; set; }
+
+        public DateTimeOffset LastMetadataSyncStartedAt { get; set; } = DateTimeOffset.MinValue;
+
+        public int LastMetadataSyncProcessedTiles { get; set; }
+
+        public float LastMetadataSyncProgressValue { get; set; } = -1f;
 
         public string AppliedLicenseCredit { get; set; } = string.Empty;
 
@@ -118,7 +132,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public WriterState CreatePlanningCopy()
         {
-            WriterState copy = new(VisibleTiles);
+            WriterState copy = new(VisibleTiles, CleanupDebtTiles);
             copy.VisibleSinceByStableId.Clear();
             foreach ((string stableId, DateTimeOffset visibleSince) in VisibleSinceByStableId)
             {
@@ -126,9 +140,13 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             copy.FailedRemovalStableIds.UnionWith(FailedRemovalStableIds);
+            copy.FailedCleanupStableIds.UnionWith(FailedCleanupStableIds);
             copy.InFlightSendStableIds.UnionWith(InFlightSendStableIds);
             copy.InFlightRemoveStableId = InFlightRemoveStableId;
             copy.MetadataInFlight = MetadataInFlight;
+            copy.LastMetadataSyncStartedAt = LastMetadataSyncStartedAt;
+            copy.LastMetadataSyncProcessedTiles = LastMetadataSyncProcessedTiles;
+            copy.LastMetadataSyncProgressValue = LastMetadataSyncProgressValue;
             copy.AppliedLicenseCredit = AppliedLicenseCredit;
             copy.AppliedProgressValue = AppliedProgressValue;
             copy.AppliedProgressText = AppliedProgressText;
@@ -137,12 +155,13 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public SelectionState CreateSelectionState()
         {
-            return new SelectionState(VisibleTiles.Values.Select(tile => new SelectionVisibleTile(
-                tile.StableId,
-                tile.AncestorStableIds,
-                VisibleSinceByStableId.TryGetValue(tile.StableId, out DateTimeOffset visibleSince)
-                    ? visibleSince
-                    : DateTimeOffset.MinValue)));
+            return new SelectionState(VisibleTiles.Values
+                .Select(tile => new SelectionVisibleTile(
+                    tile.StableId,
+                    tile.AncestorStableIds,
+                    VisibleSinceByStableId.TryGetValue(tile.StableId, out DateTimeOffset visibleSince)
+                        ? visibleSince
+                        : DateTimeOffset.MinValue)));
         }
     }
 
@@ -190,13 +209,19 @@ namespace ThreeDTilesLink.Core.Pipeline
     internal sealed record RemoveTileWriterCommand(string StableId, string TileId, IReadOnlyList<string> SlotIds)
         : WriterCommand;
 
+    internal sealed record CleanupTileWriterCommand(string StableId, string TileId, IReadOnlyList<string> SlotIds)
+        : WriterCommand;
+
     internal sealed record DelayWriterCommand(TimeSpan Delay)
         : WriterCommand;
 
     internal sealed record SyncSessionMetadataWriterCommand(
         string LicenseCredit,
         float ProgressValue,
-        string ProgressText)
+        string ProgressText,
+        int ProcessedTiles,
+        bool UpdateLicense,
+        bool UpdateProgressText)
         : WriterCommand;
 
     internal abstract record WriterCompletion;
@@ -210,6 +235,15 @@ namespace ThreeDTilesLink.Core.Pipeline
         : WriterCompletion;
 
     internal sealed record RemoveTileCompleted(
+        string StableId,
+        string TileId,
+        bool Succeeded,
+        int FailedSlotCount,
+        IReadOnlyList<string> RemainingSlotIds,
+        Exception? Error = null)
+        : WriterCompletion;
+
+    internal sealed record CleanupTileCompleted(
         string StableId,
         string TileId,
         bool Succeeded,

@@ -51,7 +51,7 @@ dotnet run --project src/ThreeDTilesLink -- stream \
   --resonite-port PLACEHOLDER
 ```
 
-- `--range` is the minimum coverage range from the center point.
+- `--range` defines the approximate square coverage half-width around the center point (X/Z local extent), not a strict spherical radius.
 - Large ranges prioritize coarse ancestor tiles first so the requested coverage is established before finer descendants arrive.
 - Add `--dry-run` to verify only the fetch and conversion path without sending anything to Resonite.
 - If `--resonite-host` is omitted, `localhost` is used.

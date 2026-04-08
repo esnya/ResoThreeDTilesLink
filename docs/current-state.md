@@ -68,6 +68,7 @@ This document contains only current operational information that is difficult to
 
 - For stream verification, prefer a small area around Tokyo Tower, for example `--latitude 35.65858 --longitude 139.745433 --range 60`.
 - In stream verification, check that refinement preserves visible coverage while converging from coarse to fine tiles.
+- `--range` is an approximate square local coverage half-width (X/Z extent), not a spherical radius.
 - When the requested range is large, expect coarse coverage ancestors to be streamed before finer descendants. Treat that ordering as intentional bootstrap behavior, not as a regression by itself.
 - In stream verification logs, review the ordering of `Streamed tile ...` and `Removed tile ...` carefully. Removal must not get ahead of the additions required to preserve coverage.
 - A single `stream` run can still emit `Removed tile ...` during refinement. Do not assume removal only happens in `interactive`.

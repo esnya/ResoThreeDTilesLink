@@ -26,7 +26,7 @@ This document contains procedures for AI and coding agents. It keeps only decisi
 7. The autodiscovery mechanism is based on the Resonite Unity SDK and `YellowDogMan.ResoniteLink` implementation, not on Unity Editor behavior itself:
    `LinkSessionListener` binds UDP port `12512`, listens for JSON `ResoniteLinkSession` announcements, and uses the announced `linkPort`.
 8. For one-off inspection, first run `pwsh.exe -NoLogo -NoProfile -File "$(wslpath -w tools/Invoke-ResoniteLinkCommand.ps1)" discover`.
-9. If exactly one session is present, omit `-Port` for `repl`, `send-json`, `benchmark-send`, and `cleanup-slot`; the script resolves it automatically.
+9. If exactly one session is present, omit `-Port` for `repl`, `send-json`, and `cleanup-slot`; the script resolves it automatically.
 10. If multiple sessions are present, select one with `-SessionId` or `-SessionName` instead of copying a fixed port into notes or scripts.
 11. Use the official ResoniteLink REPL via `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` for live inspection and member confirmation when raw JSON inspection is insufficient.
 12. If application entry points still require `--resonite-port`, discover the current session immediately before running and treat that value as ephemeral input only.
