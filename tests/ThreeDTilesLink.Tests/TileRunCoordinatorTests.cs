@@ -1794,6 +1794,9 @@ namespace ThreeDTilesLink.Tests
             private int _maxConcurrentStreams;
             private int _removeAttempts;
             private int _removeSlotNumber;
+            private string? _currentProgressParentSlotId;
+            private float _currentProgress01;
+            private string _currentProgressText = string.Empty;
 
             public int ConnectCount { get; private set; }
             public int DisconnectCount { get; private set; }
@@ -1825,7 +1828,36 @@ namespace ThreeDTilesLink.Tests
 
             public Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken)
             {
-                ProgressUpdates.Add((parentSlotId, progress01, progressText));
+                _currentProgressParentSlotId = parentSlotId;
+                _currentProgress01 = progress01;
+                _currentProgressText = progressText;
+                ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
+                if (_failProgressUpdates)
+                {
+                    throw new InvalidOperationException("synthetic progress update failure");
+                }
+
+                return Task.CompletedTask;
+            }
+
+            public Task SetProgressValueAsync(string? parentSlotId, float progress01, CancellationToken cancellationToken)
+            {
+                _currentProgressParentSlotId = parentSlotId;
+                _currentProgress01 = progress01;
+                ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
+                if (_failProgressUpdates)
+                {
+                    throw new InvalidOperationException("synthetic progress update failure");
+                }
+
+                return Task.CompletedTask;
+            }
+
+            public Task SetProgressTextAsync(string? parentSlotId, string progressText, CancellationToken cancellationToken)
+            {
+                _currentProgressParentSlotId = parentSlotId;
+                _currentProgressText = progressText;
+                ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
                 if (_failProgressUpdates)
                 {
                     throw new InvalidOperationException("synthetic progress update failure");

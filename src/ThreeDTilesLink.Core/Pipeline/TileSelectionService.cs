@@ -449,7 +449,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                            $"removeInFlight={(writerState.InFlightRemoveStableId is null ? 0 : 1)} metadataInFlight={(writerState.MetadataInFlight ? 1 : 0)}";
             string perf = $"fetch={_performanceSummary.FetchMilliseconds} extract={_performanceSummary.ExtractMilliseconds} " +
                           $"placement={_performanceSummary.PlacementMilliseconds} send={_performanceSummary.SendMilliseconds} " +
-                          $"remove={_performanceSummary.RemoveMilliseconds}";
+                          $"remove={_performanceSummary.RemoveMilliseconds} " +
+                          $"metadataSync={_performanceSummary.MetadataSyncMilliseconds}/{_performanceSummary.MetadataSyncCount} max={_performanceSummary.MetadataSyncMaxMilliseconds} " +
+                          $"metadataLicense={_performanceSummary.MetadataLicenseMilliseconds}/{_performanceSummary.MetadataLicenseCount} max={_performanceSummary.MetadataLicenseMaxMilliseconds} " +
+                          $"metadataProgress={_performanceSummary.MetadataProgressMilliseconds}/{_performanceSummary.MetadataProgressCount} max={_performanceSummary.MetadataProgressMaxMilliseconds}";
             s_progressSnapshot(
                 _logger,
                 progress.CandidateTiles,
@@ -1077,14 +1080,36 @@ namespace ThreeDTilesLink.Core.Pipeline
             SyncSessionMetadataWriterCommand command,
             CancellationToken cancellationToken)
         {
+            RunPerformanceSummary? performanceSummary = _performanceSummary;
+            long syncStartedAt = performanceSummary is null ? 0L : Stopwatch.GetTimestamp();
             try
             {
-                await _selectedTileProjector.SetSessionLicenseCreditAsync(command.LicenseCredit, cancellationToken).ConfigureAwait(false);
-                await _selectedTileProjector.SetProgressAsync(
+                if (command.UpdateLicense)
+                {
+                    long licenseStartedAt = performanceSummary is null ? 0L : Stopwatch.GetTimestamp();
+                    await _selectedTileProjector.SetSessionLicenseCreditAsync(command.LicenseCredit, cancellationToken).ConfigureAwait(false);
+                    if (performanceSummary is not null)
+                    {
+                        performanceSummary.AddMetadataLicense(Stopwatch.GetElapsedTime(licenseStartedAt));
+                    }
+                }
+
+                long progressStartedAt = performanceSummary is null ? 0L : Stopwatch.GetTimestamp();
+                await _selectedTileProjector.SetProgressValueAsync(
                     request.Output.MeshParentSlotId,
                     command.ProgressValue,
-                    command.ProgressText,
                     cancellationToken).ConfigureAwait(false);
+                if (command.UpdateProgressText)
+                {
+                    await _selectedTileProjector.SetProgressTextAsync(
+                        request.Output.MeshParentSlotId,
+                        command.ProgressText,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                if (performanceSummary is not null)
+                {
+                    performanceSummary.AddMetadataProgress(Stopwatch.GetElapsedTime(progressStartedAt));
+                }
                 return new SyncSessionMetadataCompleted(command.LicenseCredit, command.ProgressValue, command.ProgressText, true);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1094,6 +1119,13 @@ namespace ThreeDTilesLink.Core.Pipeline
             catch (Exception ex)
             {
                 return new SyncSessionMetadataCompleted(command.LicenseCredit, command.ProgressValue, command.ProgressText, false, ex);
+            }
+            finally
+            {
+                if (performanceSummary is not null)
+                {
+                    performanceSummary.AddMetadataSync(Stopwatch.GetElapsedTime(syncStartedAt));
+                }
             }
         }
 

@@ -206,7 +206,9 @@ namespace ThreeDTilesLink.Core.Pipeline
         string LicenseCredit,
         float ProgressValue,
         string ProgressText,
-        int ProcessedTiles)
+        int ProcessedTiles,
+        bool UpdateLicense,
+        bool UpdateProgressText)
         : WriterCommand;
 
     internal abstract record WriterCompletion;

@@ -488,10 +488,36 @@ namespace ThreeDTilesLink.Core.Resonite
 
         public async Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken)
         {
-            ArgumentNullException.ThrowIfNull(progressText);
+            await SetProgressTextAsync(parentSlotId, progressText, cancellationToken).ConfigureAwait(false);
+            await SetProgressValueAsync(parentSlotId, progress01, cancellationToken).ConfigureAwait(false);
+
+            if (System.Math.Clamp(progress01, 0f, 1f) >= 1f)
+            {
+                await SetProgressTextAsync(parentSlotId, progressText, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        public async Task SetProgressValueAsync(string? parentSlotId, float progress01, CancellationToken cancellationToken)
+        {
             cancellationToken.ThrowIfCancellationRequested();
 
             float normalizedProgress = System.Math.Clamp(progress01, 0f, 1f);
+            string effectiveParentSlotId = ResolveEffectiveParentSlotId(parentSlotId);
+            SlotProgressBinding binding = await EnsureProgressBindingAsync(effectiveParentSlotId).ConfigureAwait(false);
+            await UpdateMirroredNumericMemberAsync(
+                binding.ProgressValueComponentId,
+                DynamicValueVariableValueMemberName,
+                binding.ProgressValueAliasComponentId,
+                DynamicValueVariableValueMemberName,
+                normalizedProgress,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task SetProgressTextAsync(string? parentSlotId, string progressText, CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(progressText);
+            cancellationToken.ThrowIfCancellationRequested();
+
             string effectiveParentSlotId = ResolveEffectiveParentSlotId(parentSlotId);
             string normalizedText = progressText.Trim();
             SlotProgressBinding binding = await EnsureProgressBindingAsync(effectiveParentSlotId).ConfigureAwait(false);
@@ -502,24 +528,6 @@ namespace ThreeDTilesLink.Core.Resonite
                 DynamicValueVariableValueMemberName,
                 normalizedText,
                 cancellationToken).ConfigureAwait(false);
-            await UpdateMirroredNumericMemberAsync(
-                binding.ProgressValueComponentId,
-                DynamicValueVariableValueMemberName,
-                binding.ProgressValueAliasComponentId,
-                DynamicValueVariableValueMemberName,
-                normalizedProgress,
-                cancellationToken).ConfigureAwait(false);
-
-            if (normalizedProgress >= 1f)
-            {
-                await UpdateMirroredStringMemberAsync(
-                    binding.ProgressTextComponentId,
-                    DynamicValueVariableValueMemberName,
-                    binding.ProgressTextAliasComponentId,
-                    DynamicValueVariableValueMemberName,
-                    normalizedText,
-                    cancellationToken).ConfigureAwait(false);
-            }
         }
 
         public async Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)

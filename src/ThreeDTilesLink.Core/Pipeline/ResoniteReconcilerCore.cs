@@ -289,6 +289,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     desiredView,
                     progress);
                 bool licenseChanged = !string.Equals(desiredLicense, writerState.AppliedLicenseCredit, StringComparison.Ordinal);
+                bool progressTextChanged = !string.Equals(desiredProgressText, writerState.AppliedProgressText, StringComparison.Ordinal);
                 bool isCompleted = IsCompletedMetadata(desiredProgressValue, desiredProgressText);
                 bool cadenceElapsed = now - writerState.LastMetadataSyncStartedAt >= MetadataCadence;
                 bool processedDeltaReached = progress.ProcessedTiles - writerState.LastMetadataSyncProcessedTiles >= MetadataProcessedDeltaThreshold;
@@ -301,7 +302,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     writerState.InFlightSendStableIds.Count == 0;
                 metadataChanged = licenseChanged ||
                     System.Math.Abs(desiredProgressValue - writerState.AppliedProgressValue) > 0.0001f ||
-                    !string.Equals(desiredProgressText, writerState.AppliedProgressText, StringComparison.Ordinal);
+                    progressTextChanged;
 
                 if (metadataChanged)
                 {
@@ -351,7 +352,15 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             if (allowGeneralMetadata)
             {
-                return new SyncSessionMetadataWriterCommand(desiredLicense, desiredProgressValue, desiredProgressText, progress.ProcessedTiles);
+                bool updateLicense = !string.Equals(desiredLicense, writerState.AppliedLicenseCredit, StringComparison.Ordinal);
+                bool updateProgressText = !string.Equals(desiredProgressText, writerState.AppliedProgressText, StringComparison.Ordinal);
+                return new SyncSessionMetadataWriterCommand(
+                    desiredLicense,
+                    desiredProgressValue,
+                    desiredProgressText,
+                    progress.ProcessedTiles,
+                    updateLicense,
+                    updateProgressText);
             }
 
             return null;
@@ -415,7 +424,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 : System.Math.Clamp((float)completedUnits / totalUnits, 0f, 1f);
             string progressText = pendingUnits == 0
                 ? $"Completed: candidate={progress.CandidateTiles} processed={progress.ProcessedTiles} streamed={progress.StreamedMeshes} failed={progress.FailedTiles}"
-                : $"Running: candidate={progress.CandidateTiles} processed={progress.ProcessedTiles} streamed={progress.StreamedMeshes} failed={progress.FailedTiles} queued-send={pendingSend}";
+                : "Running...";
 
             return (desiredLicense, progressValue, progressText);
         }

@@ -908,7 +908,7 @@ namespace ThreeDTilesLink.Tests
 
             SyncSessionMetadataWriterCommand metadata = command.Should().BeOfType<SyncSessionMetadataWriterCommand>().Subject;
             _ = metadata.ProgressValue.Should().BeApproximately(2f / 6f, 0.0001f);
-            _ = metadata.ProgressText.Should().StartWith("Running:");
+            _ = metadata.ProgressText.Should().Be("Running...");
         }
 
         [Fact]

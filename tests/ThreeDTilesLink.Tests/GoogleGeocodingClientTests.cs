@@ -209,6 +209,25 @@ namespace ThreeDTilesLink.Tests
             _ = first.FetchMilliseconds.Should().Be(firstBaseline);
         }
 
+        [Fact]
+        public async Task RunPerformanceSummary_TracksMetadataDurationsAndCounts()
+        {
+            using var summary = new RunPerformanceSummary();
+
+            summary.AddMetadataLicense(TimeSpan.FromMilliseconds(2.5));
+            summary.AddMetadataProgress(TimeSpan.FromMilliseconds(3.5));
+            summary.AddMetadataSync(TimeSpan.FromMilliseconds(7.5));
+            await Task.Delay(5);
+
+            _ = summary.MetadataLicenseMilliseconds.Should().BeGreaterThan(0);
+            _ = summary.MetadataProgressMilliseconds.Should().BeGreaterThan(0);
+            _ = summary.MetadataSyncMilliseconds.Should().BeGreaterThan(0);
+            _ = summary.MetadataLicenseCount.Should().Be(1);
+            _ = summary.MetadataProgressCount.Should().Be(1);
+            _ = summary.MetadataSyncCount.Should().Be(1);
+            _ = summary.MetadataSyncMaxMilliseconds.Should().BeGreaterThan(0);
+        }
+
         private sealed class StubHttpMessageHandler(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK) : HttpMessageHandler
         {
             private readonly string _responseBody = responseBody;

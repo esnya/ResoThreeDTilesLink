@@ -22,6 +22,16 @@ namespace ThreeDTilesLink.Core.Resonite
             return _session.SetProgressAsync(parentSlotId, progress01, progressText, cancellationToken);
         }
 
+        public Task SetProgressValueAsync(string? parentSlotId, float progress01, CancellationToken cancellationToken)
+        {
+            return _session.SetProgressValueAsync(parentSlotId, progress01, cancellationToken);
+        }
+
+        public Task SetProgressTextAsync(string? parentSlotId, string progressText, CancellationToken cancellationToken)
+        {
+            return _session.SetProgressTextAsync(parentSlotId, progressText, cancellationToken);
+        }
+
         public Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
         {
             return _session.StreamPlacedMeshAsync(payload, cancellationToken);
