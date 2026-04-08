@@ -1,12 +1,11 @@
+using System.Collections.Concurrent;
 using System.Numerics;
 using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Runtime.ExceptionServices;
-using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using ResoniteLink;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
 
@@ -124,6 +123,9 @@ namespace ThreeDTilesLink.Core.Resonite
         private readonly bool _dumpMeshJson = string.Equals(Environment.GetEnvironmentVariable("THREEDTILESLINK_DUMP_MESH_JSON")?.Trim(), "1", StringComparison.Ordinal) ||
                                               string.Equals(Environment.GetEnvironmentVariable("THREEDTILESLINK_DUMP_MESH_JSON")?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
         private readonly string _meshDumpDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "mesh-json");
+        private readonly ConcurrentDictionary<string, byte> _tempTextureFiles = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, SemaphoreSlim> _textureFileLocks = new(StringComparer.OrdinalIgnoreCase);
+        private readonly string _textureTempDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "textures");
         private readonly Dictionary<string, SlotProgressBinding> _progressBindingsByParentSlotId = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _connectionGate = new(1, 1);
         private readonly SemaphoreSlim _streamPlacementGate = new(1, 1);
@@ -264,6 +266,17 @@ namespace ThreeDTilesLink.Core.Resonite
                 try
                 {
                     await _assetImportPool.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (InvalidOperationException)
+                {
+                }
+
+                try
+                {
+                    await CleanupTemporaryFilesAsync().ConfigureAwait(false);
                 }
                 catch (ObjectDisposedException)
                 {
@@ -744,6 +757,7 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 Log.ClosingSession(_logger);
                 await _assetImportPool.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+                await CleanupTemporaryFilesAsync().ConfigureAwait(false);
                 DisposeDirectLink(clearSessionState: false);
             }
             finally
@@ -1303,11 +1317,95 @@ namespace ThreeDTilesLink.Core.Resonite
                 return null;
             }
 
-            ImportTexture2DRawData importTexture = BuildImportTexture(textureBytes, extension);
-            return EnsureSuccess(await _assetImportPool.ImportTextureAsync(
-                importTexture,
-                DefaultLinkRequestTimeout,
-                cancellationToken).ConfigureAwait(false));
+            _ = Directory.CreateDirectory(_textureTempDir);
+
+            string hash = Convert.ToHexString(SHA256.HashData(textureBytes));
+            string ext = NormalizeExtension(extension);
+            string path = Path.Combine(_textureTempDir, $"{hash}{ext}");
+            SemaphoreSlim textureFileLock = _textureFileLocks.GetOrAdd(path, static _ => new SemaphoreSlim(1, 1));
+            bool lockTaken = false;
+
+            await textureFileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            lockTaken = true;
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    await File.WriteAllBytesAsync(path, textureBytes, cancellationToken).ConfigureAwait(false);
+                }
+
+                _ = _tempTextureFiles.TryAdd(path, 0);
+
+                return EnsureSuccess(await _assetImportPool.ImportTextureAsync(
+                    path,
+                    DefaultLinkRequestTimeout,
+                    cancellationToken).ConfigureAwait(false));
+            }
+            finally
+            {
+                if (lockTaken)
+                {
+                    TryDeleteTemporaryFile(path);
+                    _ = _tempTextureFiles.TryRemove(path, out _);
+                    _ = textureFileLock.Release();
+                }
+            }
+        }
+
+        private static string NormalizeExtension(string? ext)
+        {
+            return string.IsNullOrWhiteSpace(ext) ? ".png" : ext.StartsWith('.') ? ext : $".{ext}";
+        }
+
+        private async Task CleanupTemporaryFilesAsync()
+        {
+            HashSet<string> textureFiles = [.. _tempTextureFiles.Keys, .. _textureFileLocks.Keys];
+            foreach (string textureFile in textureFiles)
+            {
+                if (!_textureFileLocks.TryGetValue(textureFile, out SemaphoreSlim? textureFileLock))
+                {
+                    TryDeleteTemporaryFile(textureFile);
+                    _ = _tempTextureFiles.TryRemove(textureFile, out _);
+                    continue;
+                }
+
+                bool lockTaken = false;
+                try
+                {
+                    await textureFileLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                    lockTaken = true;
+                    TryDeleteTemporaryFile(textureFile);
+                }
+                finally
+                {
+                    _ = _tempTextureFiles.TryRemove(textureFile, out _);
+
+                    if (lockTaken)
+                    {
+                        _ = textureFileLock.Release();
+                    }
+                }
+            }
+
+            _tempTextureFiles.Clear();
+            _textureFileLocks.Clear();
+        }
+
+        private static void TryDeleteTemporaryFile(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
 
         private async Task<string?> ResolveMaterialTextureMemberNameAsync()
@@ -1698,37 +1796,6 @@ namespace ThreeDTilesLink.Core.Resonite
             return (typeRef.Type?.Contains("Texture2D", StringComparison.OrdinalIgnoreCase) ?? false) &&
                 (typeRef.Type?.Contains("IAssetProvider", StringComparison.OrdinalIgnoreCase) ?? true) ||
                 typeRef.GenericArguments is not null && typeRef.GenericArguments.Any(IsTextureProvider);
-        }
-
-        private static ImportTexture2DRawData BuildImportTexture(byte[] textureBytes, string? extension)
-        {
-            ArgumentNullException.ThrowIfNull(textureBytes);
-
-            try
-            {
-                using Image<Rgba32> image = Image.Load<Rgba32>(textureBytes);
-                byte[] rawPixelBytes = new byte[checked(image.Width * image.Height * 4)];
-                image.CopyPixelDataTo(MemoryMarshal.Cast<byte, Rgba32>(rawPixelBytes.AsSpan()));
-
-                return new ImportTexture2DRawData
-                {
-                    Width = image.Width,
-                    Height = image.Height,
-                    ColorProfile = ResolveColorProfile(extension),
-                    RawBinaryPayload = rawPixelBytes
-                };
-            }
-            catch (UnknownImageFormatException ex)
-            {
-                throw new InvalidOperationException($"Unsupported texture format: {extension ?? "<unknown>"}", ex);
-            }
-        }
-
-        private static string ResolveColorProfile(string? extension)
-        {
-            return string.Equals(extension?.TrimStart('.'), "hdr", StringComparison.OrdinalIgnoreCase)
-                ? "Linear"
-                : "sRGB";
         }
 
         private static string BuildParentDynamicSpaceName(string parentSlotId)
