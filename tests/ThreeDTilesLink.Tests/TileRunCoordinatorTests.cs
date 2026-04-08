@@ -1401,12 +1401,13 @@ namespace ThreeDTilesLink.Tests
                 CancellationToken.None);
 
             _ = client.SendCount.Should().Be(4);
-            _ = client.RemoveAttemptCount.Should().Be(1);
-            _ = client.RemoveCount.Should().Be(0);
+            _ = client.RemoveAttemptCount.Should().Be(2);
+            _ = client.RemoveCount.Should().Be(1);
             _ = result.Summary.StreamedMeshes.Should().Be(3);
             _ = result.Summary.FailedTiles.Should().Be(1);
             _ = result.VisibleTiles.Should().ContainKey(StableId("multi"));
-            _ = result.VisibleTiles[StableId("multi")].SlotIds.Should().HaveCount(3);
+            _ = result.VisibleTiles[StableId("multi")].SlotIds.Should().HaveCount(2);
+            _ = result.CleanupDebtTiles.Should().NotContainKey(StableId("multi"));
         }
 
         [Fact]
@@ -1443,11 +1444,12 @@ namespace ThreeDTilesLink.Tests
                 CancellationToken.None);
 
             _ = client.SendCount.Should().Be(4);
-            _ = client.RemoveAttemptCount.Should().Be(2);
+            _ = client.RemoveAttemptCount.Should().Be(3);
             _ = client.RemoveCount.Should().Be(0);
-            _ = result.Summary.FailedTiles.Should().Be(2);
-            _ = result.VisibleTiles.Should().ContainKey(StableId("multi"));
-            _ = result.VisibleTiles[StableId("multi")].SlotIds.Should().HaveCount(2);
+            _ = result.Summary.FailedTiles.Should().Be(3);
+            _ = result.VisibleTiles.Should().NotContainKey(StableId("multi"));
+            _ = result.CleanupDebtTiles.Should().ContainKey(StableId("multi"));
+            _ = result.CleanupDebtTiles[StableId("multi")].SlotIds.Should().HaveCount(2);
         }
 
         [Fact]

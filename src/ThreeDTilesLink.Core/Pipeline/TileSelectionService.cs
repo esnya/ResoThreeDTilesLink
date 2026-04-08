@@ -178,7 +178,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             ArgumentNullException.ThrowIfNull(request);
             ArgumentNullException.ThrowIfNull(interactive);
 
-            var interactiveContext = new InteractiveExecutionContext(interactive.RetainedTiles, interactive.RemoveOutOfRangeTiles);
+            var interactiveContext = new InteractiveExecutionContext(
+                interactive.RetainedTiles,
+                interactive.CleanupDebtTiles,
+                interactive.RemoveOutOfRangeTiles);
 
             try
             {
@@ -200,7 +203,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                     execution.Summary,
                     nextRetainedTiles,
                     execution.SelectedTileStableIds,
-                    execution.Checkpoint);
+                    execution.Checkpoint,
+                    execution.CleanupDebtTiles);
             }
             catch (OperationCanceledException)
             {
@@ -266,7 +270,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 Tiles.Tileset rootTileset = await _tilesSource.FetchRootTilesetAsync(auth, cancellationToken).ConfigureAwait(false);
                 facts = _traversalCore.Initialize(rootTileset, request, interactiveInput);
-                writerState = new WriterState(interactiveInput?.RetainedTiles);
+                writerState = new WriterState(interactiveInput?.RetainedTiles, interactiveInput?.CleanupDebtTiles);
                 UpdateInteractiveState(interactiveContext, facts, writerState, counters);
 
                 while (true)
@@ -689,6 +693,21 @@ namespace ThreeDTilesLink.Core.Pipeline
                         removed.Error);
                     break;
 
+                case CleanupTileCompleted cleanup when cleanup.Succeeded:
+                    s_writerTileRemoved(
+                        _logger,
+                        cleanup.TileId,
+                        null);
+                    break;
+
+                case CleanupTileCompleted cleanup:
+                    s_writerTileRemovalFailed(
+                        _logger,
+                        cleanup.TileId,
+                        cleanup.RemainingSlotIds.Count,
+                        cleanup.Error);
+                    break;
+
                 case SyncSessionMetadataCompleted metadata when metadata.Succeeded:
                     s_writerMetadataUpdated(
                         _logger,
@@ -754,6 +773,9 @@ namespace ThreeDTilesLink.Core.Pipeline
                 case RemoveTileWriterCommand remove:
                     writerState.InFlightRemoveStableId = remove.StableId;
                     break;
+                case CleanupTileWriterCommand cleanup:
+                    writerState.InFlightRemoveStableId = cleanup.StableId;
+                    break;
                 case SyncSessionMetadataWriterCommand metadata:
                     writerState.MetadataInFlight = true;
                     writerState.LastMetadataSyncStartedAt = now;
@@ -804,10 +826,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                     static pair => pair.Key,
                     static pair => pair.Value,
                     StringComparer.Ordinal);
+            Dictionary<string, RetainedTileState> cleanupDebtTiles = new(writerState.CleanupDebtTiles, StringComparer.Ordinal);
 
             return new RunExecutionResult(
                 summary,
                 visibleTiles,
+                cleanupDebtTiles,
                 selectedTileStableIds,
                 _traversalCore.BuildCheckpoint(facts));
         }
@@ -881,6 +905,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 SendTileWriterCommand send => await ExecuteSendAsync(send, request, cancellationToken).ConfigureAwait(false),
                 RemoveTileWriterCommand remove => await ExecuteRemoveAsync(remove, interactiveContext, cancellationToken).ConfigureAwait(false),
+                CleanupTileWriterCommand cleanup => await ExecuteCleanupAsync(cleanup, interactiveContext, cancellationToken).ConfigureAwait(false),
                 DelayWriterCommand delay => await ExecuteDelayAsync(delay, cancellationToken).ConfigureAwait(false),
                 SyncSessionMetadataWriterCommand metadata => await ExecuteSyncMetadataAsync(request, metadata, cancellationToken).ConfigureAwait(false),
                 _ => throw new InvalidOperationException("Unsupported writer command type: " + command.GetType().Name)
@@ -1032,6 +1057,45 @@ namespace ThreeDTilesLink.Core.Pipeline
             InteractiveExecutionContext? interactiveContext,
             CancellationToken cancellationToken)
         {
+            return await ExecuteSlotRemovalAsync(
+                command.StableId,
+                command.TileId,
+                command.SlotIds,
+                interactiveContext,
+                isCleanupDebt: false,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "Cleanup debt removal captures slot failures to return retry-aware completion state.")]
+        private async Task<WriterCompletion> ExecuteCleanupAsync(
+            CleanupTileWriterCommand command,
+            InteractiveExecutionContext? interactiveContext,
+            CancellationToken cancellationToken)
+        {
+            return await ExecuteSlotRemovalAsync(
+                command.StableId,
+                command.TileId,
+                command.SlotIds,
+                interactiveContext,
+                isCleanupDebt: true,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "Slot removal captures failures to return retry-aware completion state.")]
+        private async Task<WriterCompletion> ExecuteSlotRemovalAsync(
+            string stableId,
+            string tileId,
+            IReadOnlyList<string> slotIds,
+            InteractiveExecutionContext? interactiveContext,
+            bool isCleanupDebt,
+            CancellationToken cancellationToken)
+        {
             RunPerformanceSummary? performanceSummary = _performanceSummary;
             long startedAt = performanceSummary is null ? 0L : Stopwatch.GetTimestamp();
             try
@@ -1040,7 +1104,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 Exception? firstError = null;
                 var remainingSlotIds = new List<string>();
 
-                foreach (string slotId in command.SlotIds)
+                foreach (string slotId in slotIds)
                 {
                     try
                     {
@@ -1059,13 +1123,21 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
                 }
 
-                return new RemoveTileCompleted(
-                    command.StableId,
-                    command.TileId,
-                    failedSlotCount == 0,
-                    failedSlotCount,
-                    remainingSlotIds,
-                    firstError);
+                return isCleanupDebt
+                    ? new CleanupTileCompleted(
+                        stableId,
+                        tileId,
+                        failedSlotCount == 0,
+                        failedSlotCount,
+                        remainingSlotIds,
+                        firstError)
+                    : new RemoveTileCompleted(
+                        stableId,
+                        tileId,
+                        failedSlotCount == 0,
+                        failedSlotCount,
+                        remainingSlotIds,
+                        firstError);
             }
             finally
             {
@@ -1209,6 +1281,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             CancellationToken cancellationToken)
         {
             IReadOnlyDictionary<string, RetainedTileState> nextRetainedTiles = new Dictionary<string, RetainedTileState>(interactive.RetainedTiles, StringComparer.Ordinal);
+            IReadOnlyDictionary<string, RetainedTileState> nextCleanupDebtTiles = new Dictionary<string, RetainedTileState>(interactive.CleanupDebtTiles, StringComparer.Ordinal);
             IReadOnlySet<string> selectedTileStableIds = new HashSet<string>(StringComparer.Ordinal);
             InteractiveRunCheckpoint? checkpoint = interactive.Checkpoint;
             RunSummary summary = new(0, 0, 0, 0);
@@ -1216,6 +1289,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             if (interactiveContext.LastState is not null)
             {
                 nextRetainedTiles = BuildCanceledRetainedTiles(interactive.RetainedTiles, interactiveContext.LastState.VisibleTiles);
+                nextCleanupDebtTiles = new Dictionary<string, RetainedTileState>(interactiveContext.LastState.CleanupDebtTiles, StringComparer.Ordinal);
                 selectedTileStableIds = interactiveContext.LastState.SelectedTileStableIds;
                 checkpoint = interactiveContext.LastState.Checkpoint;
                 summary = interactiveContext.LastState.Summary;
@@ -1225,7 +1299,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 await ApplyFinalLicenseCreditAsync(request, nextRetainedTiles, cancellationToken).ConfigureAwait(false);
             }
-            return new InteractiveTileRunResult(summary, nextRetainedTiles, selectedTileStableIds, checkpoint);
+            return new InteractiveTileRunResult(summary, nextRetainedTiles, selectedTileStableIds, checkpoint, nextCleanupDebtTiles);
         }
 
         [SuppressMessage(
@@ -1334,6 +1408,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         private sealed record RunExecutionResult(
             RunSummary Summary,
             IReadOnlyDictionary<string, RetainedTileState> VisibleTiles,
+            IReadOnlyDictionary<string, RetainedTileState> CleanupDebtTiles,
             IReadOnlySet<string> SelectedTileStableIds,
             InteractiveRunCheckpoint Checkpoint);
 
@@ -1353,10 +1428,12 @@ namespace ThreeDTilesLink.Core.Pipeline
         private sealed class InteractiveExecutionContext
         {
             private readonly Dictionary<string, RetainedTileState> _retainedTiles = new(StringComparer.Ordinal);
+            private readonly Dictionary<string, RetainedTileState> _cleanupDebtTiles = new(StringComparer.Ordinal);
             private readonly HashSet<string> _newSlotIds = new(StringComparer.Ordinal);
 
             public InteractiveExecutionContext(
                 IReadOnlyDictionary<string, RetainedTileState> retainedTiles,
+                IReadOnlyDictionary<string, RetainedTileState> cleanupDebtTiles,
                 bool removeOutOfRangeTiles)
             {
                 RemoveOutOfRangeTiles = removeOutOfRangeTiles;
@@ -1364,9 +1441,16 @@ namespace ThreeDTilesLink.Core.Pipeline
                 {
                     _retainedTiles[stableId] = retainedTile;
                 }
+
+                foreach ((string stableId, RetainedTileState retainedTile) in cleanupDebtTiles)
+                {
+                    _cleanupDebtTiles[stableId] = retainedTile;
+                }
             }
 
             public IReadOnlyDictionary<string, RetainedTileState> RetainedTiles => _retainedTiles;
+
+            public IReadOnlyDictionary<string, RetainedTileState> CleanupDebtTiles => _cleanupDebtTiles;
 
             public bool RemoveOutOfRangeTiles { get; }
 

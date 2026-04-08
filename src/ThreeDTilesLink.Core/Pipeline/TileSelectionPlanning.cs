@@ -89,11 +89,17 @@ namespace ThreeDTilesLink.Core.Pipeline
         }
     }
 
-    internal sealed class WriterState(IReadOnlyDictionary<string, RetainedTileState>? initialVisibleTiles = null)
+    internal sealed class WriterState(
+        IReadOnlyDictionary<string, RetainedTileState>? initialVisibleTiles = null,
+        IReadOnlyDictionary<string, RetainedTileState>? initialCleanupDebtTiles = null)
     {
         public Dictionary<string, RetainedTileState> VisibleTiles { get; } = initialVisibleTiles is null
             ? new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             : new Dictionary<string, RetainedTileState>(initialVisibleTiles, StringComparer.Ordinal);
+
+        public Dictionary<string, RetainedTileState> CleanupDebtTiles { get; } = initialCleanupDebtTiles is null
+            ? new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            : new Dictionary<string, RetainedTileState>(initialCleanupDebtTiles, StringComparer.Ordinal);
 
         public Dictionary<string, DateTimeOffset> VisibleSinceByStableId { get; } = initialVisibleTiles is null
             ? new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal)
@@ -104,9 +110,9 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public HashSet<string> FailedRemovalStableIds { get; } = new(StringComparer.Ordinal);
 
-        public HashSet<string> InFlightSendStableIds { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> FailedCleanupStableIds { get; } = new(StringComparer.Ordinal);
 
-        public HashSet<string> IncompleteVisibleStableIds { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> InFlightSendStableIds { get; } = new(StringComparer.Ordinal);
 
         public string? InFlightRemoveStableId { get; set; }
 
@@ -126,7 +132,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public WriterState CreatePlanningCopy()
         {
-            WriterState copy = new(VisibleTiles);
+            WriterState copy = new(VisibleTiles, CleanupDebtTiles);
             copy.VisibleSinceByStableId.Clear();
             foreach ((string stableId, DateTimeOffset visibleSince) in VisibleSinceByStableId)
             {
@@ -134,8 +140,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             copy.FailedRemovalStableIds.UnionWith(FailedRemovalStableIds);
+            copy.FailedCleanupStableIds.UnionWith(FailedCleanupStableIds);
             copy.InFlightSendStableIds.UnionWith(InFlightSendStableIds);
-            copy.IncompleteVisibleStableIds.UnionWith(IncompleteVisibleStableIds);
             copy.InFlightRemoveStableId = InFlightRemoveStableId;
             copy.MetadataInFlight = MetadataInFlight;
             copy.LastMetadataSyncStartedAt = LastMetadataSyncStartedAt;
@@ -150,7 +156,6 @@ namespace ThreeDTilesLink.Core.Pipeline
         public SelectionState CreateSelectionState()
         {
             return new SelectionState(VisibleTiles.Values
-                .Where(tile => !IncompleteVisibleStableIds.Contains(tile.StableId))
                 .Select(tile => new SelectionVisibleTile(
                     tile.StableId,
                     tile.AncestorStableIds,
@@ -204,6 +209,9 @@ namespace ThreeDTilesLink.Core.Pipeline
     internal sealed record RemoveTileWriterCommand(string StableId, string TileId, IReadOnlyList<string> SlotIds)
         : WriterCommand;
 
+    internal sealed record CleanupTileWriterCommand(string StableId, string TileId, IReadOnlyList<string> SlotIds)
+        : WriterCommand;
+
     internal sealed record DelayWriterCommand(TimeSpan Delay)
         : WriterCommand;
 
@@ -227,6 +235,15 @@ namespace ThreeDTilesLink.Core.Pipeline
         : WriterCompletion;
 
     internal sealed record RemoveTileCompleted(
+        string StableId,
+        string TileId,
+        bool Succeeded,
+        int FailedSlotCount,
+        IReadOnlyList<string> RemainingSlotIds,
+        Exception? Error = null)
+        : WriterCompletion;
+
+    internal sealed record CleanupTileCompleted(
         string StableId,
         string TileId,
         bool Succeeded,

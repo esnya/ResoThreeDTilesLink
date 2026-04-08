@@ -4,5 +4,10 @@ namespace ThreeDTilesLink.Core.Models
         RunSummary Summary,
         IReadOnlyDictionary<string, RetainedTileState> VisibleTiles,
         IReadOnlySet<string> SelectedTileStableIds,
-        InteractiveRunCheckpoint? Checkpoint);
+        InteractiveRunCheckpoint? Checkpoint,
+        IReadOnlyDictionary<string, RetainedTileState>? CleanupDebtTiles = null)
+    {
+        public IReadOnlyDictionary<string, RetainedTileState> CleanupDebtTiles { get; init; } =
+            CleanupDebtTiles ?? new Dictionary<string, RetainedTileState>(StringComparer.Ordinal);
+    }
 }
