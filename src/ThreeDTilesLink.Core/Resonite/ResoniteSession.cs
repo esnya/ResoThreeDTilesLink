@@ -211,7 +211,7 @@ namespace ThreeDTilesLink.Core.Resonite
                     cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 await AttachSessionMetadataAsync(_sessionRootSlotId, cancellationToken).ConfigureAwait(false);
-                await AttachAvatarProtectionAsync(_sessionRootSlotId).ConfigureAwait(false);
+                await AttachAvatarProtectionAsync(_sessionRootSlotId, cancellationToken).ConfigureAwait(false);
                 await AttachPackageExportableAsync(_sessionRootSlotId, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -552,7 +552,7 @@ namespace ThreeDTilesLink.Core.Resonite
                     payload.SlotScale,
                     cancellationToken).ConfigureAwait(false);
 
-                await AttachAvatarProtectionAsync(tileSlotId).ConfigureAwait(false);
+                await AttachAvatarProtectionAsync(tileSlotId, cancellationToken).ConfigureAwait(false);
                 await AttachPackageExportableAsync(tileSlotId, cancellationToken).ConfigureAwait(false);
 
                 string staticMeshId = await AddComponentAsync(
@@ -580,13 +580,13 @@ namespace ThreeDTilesLink.Core.Resonite
                     cancellationToken).ConfigureAwait(false);
 
                 var materialMembers = new Dictionary<string, Member>();
-                Dictionary<string, MemberDefinition> materialMembersDefinition = await ResolveMaterialMemberDefinitionsAsync().ConfigureAwait(false);
+                Dictionary<string, MemberDefinition> materialMembersDefinition = await ResolveMaterialMemberDefinitionsAsync(cancellationToken).ConfigureAwait(false);
                 if (materialMembersDefinition.ContainsKey("Smoothness"))
                 {
                     materialMembers["Smoothness"] = new Field_float { Value = 0f };
                 }
 
-                string? textureMemberName = await ResolveMaterialTextureMemberNameAsync().ConfigureAwait(false);
+                string? textureMemberName = await ResolveMaterialTextureMemberNameAsync(cancellationToken).ConfigureAwait(false);
                 if (textureAsset is not null && !string.IsNullOrWhiteSpace(textureMemberName))
                 {
                     string staticTextureId = await AddComponentAsync(
@@ -1310,7 +1310,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 cancellationToken).ConfigureAwait(false));
         }
 
-        private async Task<string?> ResolveMaterialTextureMemberNameAsync()
+        private async Task<string?> ResolveMaterialTextureMemberNameAsync(CancellationToken cancellationToken)
         {
             if (_materialTextureFieldResolved)
             {
@@ -1321,7 +1321,7 @@ namespace ThreeDTilesLink.Core.Resonite
 
             try
             {
-                Dictionary<string, MemberDefinition> members = await ResolveMaterialMemberDefinitionsAsync().ConfigureAwait(false);
+                Dictionary<string, MemberDefinition> members = await ResolveMaterialMemberDefinitionsAsync(cancellationToken).ConfigureAwait(false);
                 var textureFields = members
                     .Where(x => x.Value is ReferenceDefinition refDef && IsTextureProvider(refDef.TargetType))
                     .Select(x => x.Key)
@@ -1433,7 +1433,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 return;
             }
 
-            _ = await TryAddComponentAsync(
+            string? dynamicSpaceComponentId = await TryAddComponentAsync(
                 sessionRootSlotId,
                 DynamicVariableSpaceComponentType,
                 new Dictionary<string, Member>
@@ -1442,7 +1442,10 @@ namespace ThreeDTilesLink.Core.Resonite
                     ["OnlyDirectBinding"] = new Field_bool { Value = true }
                 },
                 cancellationToken).ConfigureAwait(false);
-            _sessionDynamicSpaceInitialized = true;
+            if (dynamicSpaceComponentId is not null)
+            {
+                _sessionDynamicSpaceInitialized = true;
+            }
         }
 
         private async Task<SlotProgressBinding> EnsureProgressBindingAsync(string parentSlotId)
@@ -1497,7 +1500,7 @@ namespace ThreeDTilesLink.Core.Resonite
             return binding;
         }
 
-        private async Task ResolveAvatarProtectionContextAsync()
+        private async Task ResolveAvatarProtectionContextAsync(CancellationToken cancellationToken)
         {
             if (_avatarProtectionUnavailable)
             {
@@ -1517,7 +1520,7 @@ namespace ThreeDTilesLink.Core.Resonite
             (string protectionComponentType, Dictionary<string, MemberDefinition> protectionMembers) protectionContext;
             try
             {
-                protectionContext = await ResolveComponentDefinitionAsync([SimpleAvatarProtectionComponentType]).ConfigureAwait(false);
+                protectionContext = await ResolveComponentDefinitionAsync([SimpleAvatarProtectionComponentType], cancellationToken).ConfigureAwait(false);
             }
             catch (InvalidOperationException)
             {
@@ -1544,14 +1547,14 @@ namespace ThreeDTilesLink.Core.Resonite
             _avatarProtectionComponentType = protectionContext.protectionComponentType;
         }
 
-        private async Task AttachAvatarProtectionAsync(string slotId)
+        private async Task AttachAvatarProtectionAsync(string slotId, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(slotId))
             {
                 throw new InvalidOperationException("Target slot is not initialized.");
             }
 
-            await ResolveAvatarProtectionContextAsync().ConfigureAwait(false);
+            await ResolveAvatarProtectionContextAsync(cancellationToken).ConfigureAwait(false);
             if (_avatarProtectionUnavailable ||
                 string.IsNullOrWhiteSpace(_avatarProtectionComponentType))
             {
@@ -1561,7 +1564,8 @@ namespace ThreeDTilesLink.Core.Resonite
             _ = await AddComponentAsync(
                 slotId,
                 _avatarProtectionComponentType,
-                BuildAvatarProtectionMembers()).ConfigureAwait(false);
+                BuildAvatarProtectionMembers(),
+                CancellationToken.None).ConfigureAwait(false);
         }
 
         private static Dictionary<string, Member> BuildAvatarProtectionMembers()
@@ -1623,7 +1627,9 @@ namespace ThreeDTilesLink.Core.Resonite
             };
         }
 
-        private async Task<(string ComponentType, Dictionary<string, MemberDefinition> Members)> ResolveComponentDefinitionAsync(IEnumerable<string> componentTypeCandidates)
+        private async Task<(string ComponentType, Dictionary<string, MemberDefinition> Members)> ResolveComponentDefinitionAsync(
+            IEnumerable<string> componentTypeCandidates,
+            CancellationToken cancellationToken)
         {
             foreach (string componentType in componentTypeCandidates)
             {
@@ -1631,7 +1637,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 {
                     ComponentDefinitionData definition = EnsureSuccess(await ExecuteLinkRequestAsync(
                         link => link.GetComponentDefinition(componentType, flattened: true),
-                        CancellationToken.None).ConfigureAwait(false));
+                        cancellationToken).ConfigureAwait(false));
                     return (componentType, definition.Definition?.Members ?? new Dictionary<string, MemberDefinition>(StringComparer.Ordinal));
                 }
                 catch (OperationCanceledException)
@@ -1661,7 +1667,7 @@ namespace ThreeDTilesLink.Core.Resonite
             throw new InvalidOperationException($"No supported component type was found. Candidates: {string.Join(", ", componentTypeCandidates)}");
         }
 
-        private async Task<Dictionary<string, MemberDefinition>> ResolveMaterialMemberDefinitionsAsync()
+        private async Task<Dictionary<string, MemberDefinition>> ResolveMaterialMemberDefinitionsAsync(CancellationToken cancellationToken)
         {
             if (_materialMemberDefinitions is not null)
             {
@@ -1670,7 +1676,7 @@ namespace ThreeDTilesLink.Core.Resonite
 
             ComponentDefinitionData definition = EnsureSuccess(await ExecuteLinkRequestAsync(
                 link => link.GetComponentDefinition(MaterialComponentType, flattened: true),
-                CancellationToken.None).ConfigureAwait(false));
+                cancellationToken).ConfigureAwait(false));
             _materialMemberDefinitions = definition.Definition?.Members ?? new Dictionary<string, MemberDefinition>(StringComparer.Ordinal);
             return _materialMemberDefinitions;
         }

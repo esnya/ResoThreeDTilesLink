@@ -151,6 +151,43 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task EnsureSessionDynamicSpaceAsync_LeavesRetryAvailable_WhenComponentAddFails()
+        {
+            await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
+
+            MethodInfo? ensureMethod = typeof(ResoniteSession)
+                .GetMethod("EnsureSessionDynamicSpaceAsync", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? sessionRootSlotField = typeof(ResoniteSession)
+                .GetField("_sessionRootSlotId", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? sessionDynamicSpaceInitializedField = typeof(ResoniteSession)
+                .GetField("_sessionDynamicSpaceInitialized", BindingFlags.Instance | BindingFlags.NonPublic);
+
+            _ = ensureMethod.Should().NotBeNull();
+            _ = sessionRootSlotField.Should().NotBeNull();
+            _ = sessionDynamicSpaceInitializedField.Should().NotBeNull();
+
+            sessionRootSlotField!.SetValue(session, "slot_session_root");
+
+            await ((Task)ensureMethod!.Invoke(session, ["slot_session_root", CancellationToken.None])!);
+            _ = ((bool)sessionDynamicSpaceInitializedField.GetValue(session)!).Should().BeFalse();
+
+            await ((Task)ensureMethod!.Invoke(session, ["slot_session_root", CancellationToken.None])!);
+            _ = ((bool)sessionDynamicSpaceInitializedField.GetValue(session)!).Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task ConnectAsync_ThrowsWhenCancellationIsAlreadyRequested()
+        {
+            await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
+
+            using var cts = new CancellationTokenSource();
+            await cts.CancelAsync();
+
+            Func<Task> act = () => session.ConnectAsync("127.0.0.1", 1, cts.Token);
+            _ = await act.Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        [Fact]
         public async Task ConnectAsync_Initializes_CleanupState_OnInitializationFailure()
         {
             const string staleRootSlotId = "slot_session_root_for_failure";
