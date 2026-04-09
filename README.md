@@ -53,7 +53,7 @@ dotnet run --project src/ThreeDTilesLink -- stream \
 
 - `--range` defines the approximate square coverage half-width around the center point (X/Z local extent), not a strict spherical radius.
 - Large ranges prioritize coarse ancestor tiles first so the requested coverage is established before finer descendants arrive.
-- Add `--dry-run` to verify only the fetch and conversion path without sending anything to Resonite.
+- Add `--dry-run` to verify only the fetch and conversion path without sending anything to Resonite; in dry-run mode, `--resonite-port` is optional.
 - Useful tuning flags include `--tile-limit`, `--depth-limit`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
 - If `--resonite-host` is omitted, `localhost` is used.
 - When running from WSL against a Windows-hosted Resonite session, prefer host-side execution such as `cmd.exe /c dotnet.exe run ...` or `pwsh.exe`, because Linux-side `localhost` does not reliably mean the Windows host.

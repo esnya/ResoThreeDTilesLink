@@ -176,6 +176,43 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task ResolveMaterialTextureMemberNameAsync_RetriesAfterDisconnectedLookupFailure()
+        {
+            await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
+
+            MethodInfo? resolveMethod = typeof(ResoniteSession)
+                .GetMethod("ResolveMaterialTextureMemberNameAsync", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? resolvedField = typeof(ResoniteSession)
+                .GetField("_materialTextureFieldResolved", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? definitionsField = typeof(ResoniteSession)
+                .GetField("_materialMemberDefinitions", BindingFlags.Instance | BindingFlags.NonPublic);
+
+            _ = resolveMethod.Should().NotBeNull();
+            _ = resolvedField.Should().NotBeNull();
+            _ = definitionsField.Should().NotBeNull();
+
+            string? firstResult = await ((Task<string?>)resolveMethod!.Invoke(session, [CancellationToken.None])!);
+            _ = firstResult.Should().BeNull();
+            _ = resolvedField!.GetValue(session).Should().Be(false);
+
+            definitionsField!.SetValue(session, new Dictionary<string, MemberDefinition>(StringComparer.Ordinal)
+            {
+                ["MainTexture"] = new ReferenceDefinition
+                {
+                    TargetType = new TypeReference
+                    {
+                        Type = "[FrooxEngine]FrooxEngine.Texture2D"
+                    }
+                }
+            });
+
+            string? retryResult = await ((Task<string?>)resolveMethod.Invoke(session, [CancellationToken.None])!);
+
+            _ = retryResult.Should().Be("MainTexture");
+            _ = resolvedField.GetValue(session).Should().Be(true);
+        }
+
+        [Fact]
         public async Task ConnectAsync_ThrowsWhenCancellationIsAlreadyRequested()
         {
             await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);

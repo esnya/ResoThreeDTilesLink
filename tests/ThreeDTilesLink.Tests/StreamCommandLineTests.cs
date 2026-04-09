@@ -108,6 +108,23 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void Parse_DryRun_DoesNotRequireResonitePort()
+        {
+            CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
+            [
+                "--latitude", "35.65858",
+                "--longitude", "139.745433",
+                "--range", "400",
+                "--dry-run"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeTrue();
+            StreamCommandOptions parsed = invocation.Options!;
+            _ = parsed.DryRun.Should().BeTrue();
+            _ = parsed.ResonitePort.Should().Be(0);
+        }
+
+        [Fact]
         public void Parse_RejectsRenamedArgument()
         {
             CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
@@ -178,8 +195,6 @@ namespace ThreeDTilesLink.Tests
         [Theory]
         [InlineData("--range", "0")]
         [InlineData("--range", "-1")]
-        [InlineData("--resonite-port", "0")]
-        [InlineData("--resonite-port", "65536")]
         [InlineData("--tile-limit", "0")]
         [InlineData("--depth-limit", "0")]
         [InlineData("--detail", "0")]
@@ -198,6 +213,45 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.ShouldRun.Should().BeFalse();
             _ = invocation.ExitCode.Should().Be(1);
             _ = invocation.Output.Should().Contain("Invalid command values.");
+        }
+
+        [Theory]
+        [InlineData("0")]
+        [InlineData("65536")]
+        public void Parse_RejectsInvalidResonitePort(string value)
+        {
+            CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
+            [
+                "--latitude", "35.0",
+                "--longitude", "139.0",
+                "--range", "400",
+                "--resonite-port", value
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(1);
+            _ = invocation.Output.Should().Contain("Invalid value for --resonite-port.");
+        }
+
+        [Theory]
+        [InlineData("--latitude", "90.1")]
+        [InlineData("--latitude", "-90.1")]
+        [InlineData("--longitude", "180.1")]
+        [InlineData("--longitude", "-180.1")]
+        public void Parse_RejectsOutOfRangeCoordinates(string option, string value)
+        {
+            CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
+            [
+                "--latitude", "35.0",
+                "--longitude", "139.0",
+                "--range", "400",
+                "--resonite-port", "12000",
+                option, value
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(1);
+            _ = invocation.Output.Should().Contain($"Invalid value for {option}: {value}");
         }
     }
 }

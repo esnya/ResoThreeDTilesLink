@@ -1367,6 +1367,53 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task Run_CanceledPartialSend_RollsBackAlreadyStreamedSlots()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "multi", ContentUri = new Uri("https://example.com/multi.glb") }
+                ]
+            });
+
+            using var cancellation = new CancellationTokenSource();
+            var client = new FakeResoniteSession(
+                onStreamCompleted: (_, sendCount) =>
+                {
+                    if (!cancellation.IsCancellationRequested)
+                    {
+                        cancellation.Cancel();
+                    }
+                },
+                streamDelayByNameContains: new Dictionary<string, TimeSpan>(StringComparer.Ordinal)
+                {
+                    ["tile_multi_m0"] = TimeSpan.FromMilliseconds(10),
+                    ["tile_multi_m1"] = TimeSpan.FromMilliseconds(200)
+                });
+            TileRunCoordinator coordinator = CreateCoordinator(
+                new FakeTilesSource(
+                    tileset,
+                    tileContentByUri: new Dictionary<string, byte[]>
+                    {
+                        ["https://example.com/multi.glb"] = [9]
+                    }),
+                client,
+                new FakeExtractor(meshCountByMarker: new Dictionary<byte, int>
+                {
+                    [9] = 2
+                }));
+
+            Func<Task> act = () => coordinator.RunAsync(
+                CreateRequest(dryRun: false, manageConnection: false),
+                cancellation.Token);
+
+            _ = await act.Should().ThrowAsync<OperationCanceledException>();
+            _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_multi_m0", StringComparison.Ordinal));
+        }
+
+        [Fact]
         public async Task RunInteractive_PartialSend_RollbackFailure_RetainsPreparedContentForRetry()
         {
             var tileset = new Tileset(new Tile
@@ -1498,6 +1545,32 @@ namespace ThreeDTilesLink.Tests
             _ = await act.Should().ThrowAsync<InvalidOperationException>()
                 .WithMessage("synthetic root fetch failure");
             _ = client.DisconnectCount.Should().Be(1);
+        }
+
+        [Fact]
+        public async Task Run_Cancellation_DisconnectsWithUncanceledToken()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(
+                new FakeTilesSource(tileset, contentDelay: TimeSpan.FromMilliseconds(200)),
+                client);
+
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(20));
+
+            Func<Task> act = () => coordinator.RunAsync(CreateRequest(dryRun: false), cancellation.Token);
+
+            _ = await act.Should().ThrowAsync<OperationCanceledException>();
+            _ = client.DisconnectCount.Should().Be(1);
+            _ = client.LastDisconnectCancellationRequested.Should().BeFalse();
         }
 
         [Fact]
@@ -1771,6 +1844,7 @@ namespace ThreeDTilesLink.Tests
             bool failFirstSend = false,
             string? failOnNameContains = null,
             TimeSpan? streamDelay = null,
+            IReadOnlyDictionary<string, TimeSpan>? streamDelayByNameContains = null,
             Action<PlacedMeshPayload, int>? onStreamCompleted = null,
             Action<string>? onRemoveCompleted = null,
             int? failOnSendNumber = null,
@@ -1784,6 +1858,8 @@ namespace ThreeDTilesLink.Tests
             private readonly bool _failFirstSend = failFirstSend;
             private readonly string? _failOnNameContains = failOnNameContains;
             private readonly TimeSpan _streamDelay = streamDelay ?? TimeSpan.Zero;
+            private readonly IReadOnlyDictionary<string, TimeSpan> _streamDelayByNameContains = streamDelayByNameContains ??
+                new Dictionary<string, TimeSpan>(StringComparer.Ordinal);
             private readonly Action<PlacedMeshPayload, int>? _onStreamCompleted = onStreamCompleted;
             private readonly Action<string>? _onRemoveCompleted = onRemoveCompleted;
             private readonly int? _failOnSendNumber = failOnSendNumber;
@@ -1807,6 +1883,7 @@ namespace ThreeDTilesLink.Tests
             public int SendCount { get; private set; }
             public int RemoveCount { get; private set; }
             public int RemoveAttemptCount => _removeAttempts;
+            public bool LastDisconnectCancellationRequested { get; private set; }
             public List<string> LicenseCredits { get; } = [];
             public List<PlacedMeshPayload> Payloads { get; } = [];
             public List<string> RemovedSlotIds { get; } = [];
@@ -1879,10 +1956,18 @@ namespace ThreeDTilesLink.Tests
 
                 try
                 {
-                    if (_streamDelay > TimeSpan.Zero)
+                    TimeSpan effectiveDelay = _streamDelayByNameContains
+                        .FirstOrDefault(entry => payload.Name.Contains(entry.Key, StringComparison.Ordinal))
+                        .Value;
+                    if (effectiveDelay == TimeSpan.Zero)
+                    {
+                        effectiveDelay = _streamDelay;
+                    }
+
+                    if (effectiveDelay > TimeSpan.Zero)
                     {
                         await Task.Delay(
-                            _streamDelay,
+                            effectiveDelay,
                             _ignoreCancellationDuringStream ? CancellationToken.None : cancellationToken).ConfigureAwait(false);
                     }
 
@@ -1923,6 +2008,7 @@ namespace ThreeDTilesLink.Tests
             public Task DisconnectAsync(CancellationToken cancellationToken)
             {
                 DisconnectCount++;
+                LastDisconnectCancellationRequested = cancellationToken.IsCancellationRequested;
                 if (_failDisconnect)
                 {
                     throw new InvalidOperationException("synthetic disconnect failure");
