@@ -81,46 +81,53 @@ namespace ThreeDTilesLink.Core.Runtime
             {
 #pragma warning disable CA2000
                 linkInterface = new LinkInterface();
-#pragma warning restore CA2000
                 resoniteSession = new ResoniteSession(
                     linkInterface,
                     loggerFactory.CreateLogger<ResoniteSession>(),
                     assetImportWorkers: resoniteSendWorkers);
+#pragma warning restore CA2000
             }
             catch
             {
                 linkInterface?.Dispose();
                 throw;
             }
-            _session = resoniteSession;
+            try
+            {
+                _session = resoniteSession;
+                var selectionInputReader = new SelectionInputReader(
+                    resoniteSession,
+                    loggerFactory.CreateLogger<SelectionInputReader>());
 
-            var selectedTileProjector = new ResoniteSelectedTileProjector(resoniteSession);
-            var selectionInputReader = new SelectionInputReader(
-                resoniteSession,
-                loggerFactory.CreateLogger<SelectionInputReader>());
+                SelectionService = new TileSelectionService(
+                    tilesSource,
+                    traversalCore,
+                    reconcilerCore,
+                    contentProcessor,
+                    meshPlacementService,
+                    resoniteSession,
+                    resoniteSession,
+                    loggerFactory.CreateLogger<TileSelectionService>(),
+                    maxConcurrentTileProcessing,
+                    resoniteSendWorkers,
+                    _performanceSummary);
 
-            SelectionService = new TileSelectionService(
-                tilesSource,
-                traversalCore,
-                reconcilerCore,
-                contentProcessor,
-                meshPlacementService,
-                selectedTileProjector,
-                loggerFactory.CreateLogger<TileSelectionService>(),
-                maxConcurrentTileProcessing,
-                resoniteSendWorkers,
-                _performanceSummary);
-
-            InteractiveSupervisor = new InteractiveRunSupervisor(
-                SelectionService,
-                resoniteSession,
-                resoniteSession,
-                searchResolver,
-                transformer,
-                _geoReferenceResolver,
-                new SystemClock(),
-                selectionInputReader,
-                loggerFactory.CreateLogger<InteractiveRunSupervisor>());
+                InteractiveSupervisor = new InteractiveRunSupervisor(
+                    SelectionService,
+                    resoniteSession,
+                    resoniteSession,
+                    searchResolver,
+                    transformer,
+                    _geoReferenceResolver,
+                    new SystemClock(),
+                    selectionInputReader,
+                    loggerFactory.CreateLogger<InteractiveRunSupervisor>());
+            }
+            catch
+            {
+                resoniteSession.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                throw;
+            }
         }
 
         internal TileSelectionService SelectionService { get; }

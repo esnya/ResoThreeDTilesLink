@@ -93,7 +93,7 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
-        private sealed class StubResoniteSession : IResoniteSession
+        private sealed class StubResoniteSession : IResoniteSession, IResoniteSessionMetadataPort
         {
             public Task ConnectAsync(string host, int port, CancellationToken cancellationToken) => Task.CompletedTask;
             public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken) => Task.CompletedTask;

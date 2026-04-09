@@ -16,7 +16,7 @@ namespace ThreeDTilesLink.Core.Resonite
         LinkInterface resoniteLink,
         ILogger<ResoniteSession> logger,
         Func<LinkInterface>? linkInterfaceFactory = null,
-        int assetImportWorkers = 1) : IResoniteSession, IInteractiveInputStore, IAsyncDisposable
+        int assetImportWorkers = 1) : IResoniteSession, IResoniteSessionMetadataPort, IInteractiveInputStore, IAsyncDisposable
     {
         private static partial class Log
         {

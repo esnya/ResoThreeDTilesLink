@@ -15,7 +15,8 @@ namespace ThreeDTilesLink.Core.Pipeline
         ResoniteReconcilerCore reconcilerCore,
         IContentProcessor contentProcessor,
         IMeshPlacementService meshPlacementService,
-        ISelectedTileProjector selectedTileProjector,
+        IResoniteSession resoniteSession,
+        IResoniteSessionMetadataPort sessionMetadataPort,
         ILogger logger,
         int maxConcurrentTileProcessing = 1,
         int maxConcurrentWriterSends = 1,
@@ -26,7 +27,8 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly ResoniteReconcilerCore _reconcilerCore = reconcilerCore;
         private readonly IContentProcessor _contentProcessor = contentProcessor;
         private readonly IMeshPlacementService _meshPlacementService = meshPlacementService;
-        private readonly ISelectedTileProjector _selectedTileProjector = selectedTileProjector;
+        private readonly IResoniteSession _resoniteSession = resoniteSession;
+        private readonly IResoniteSessionMetadataPort _sessionMetadataPort = sessionMetadataPort;
         private readonly ILogger _logger = logger;
         private readonly int _maxConcurrentTileProcessing = maxConcurrentTileProcessing > 0
             ? maxConcurrentTileProcessing
@@ -235,7 +237,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             if (!request.Output.DryRun && request.Output.ManageConnection)
             {
                 s_connectingToResonite(_logger, request.Output.Host, request.Output.Port, null);
-                await _selectedTileProjector.ConnectAsync(request.Output.Host, request.Output.Port, cancellationToken).ConfigureAwait(false);
+                await _resoniteSession.ConnectAsync(request.Output.Host, request.Output.Port, cancellationToken).ConfigureAwait(false);
             }
 
             using var workerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -256,7 +258,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 {
                     try
                     {
-                        await _selectedTileProjector.SetProgressAsync(
+                        await _sessionMetadataPort.SetProgressAsync(
                             request.Output.MeshParentSlotId,
                             0f,
                             "Fetching root tileset...",
@@ -410,13 +412,13 @@ namespace ThreeDTilesLink.Core.Pipeline
                 {
                     if (completedSuccessfully && pendingFailure is null)
                     {
-                        await _selectedTileProjector.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                        await _resoniteSession.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
                     }
                     else
                     {
                         try
                         {
-                            await _selectedTileProjector.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                            await _resoniteSession.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
                         }
                         catch (OperationCanceledException)
                         {
@@ -1004,7 +1006,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 {
                     string? slotId = request.Output.DryRun
                         ? null
-                        : await _selectedTileProjector.StreamPlacedMeshAsync(payload, cancellationToken).ConfigureAwait(false);
+                        : await _resoniteSession.StreamPlacedMeshAsync(payload, cancellationToken).ConfigureAwait(false);
                     return new SendMeshResult(slotId, null);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1047,7 +1049,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 try
                 {
-                    await _selectedTileProjector.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
+                    await _resoniteSession.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -1123,7 +1125,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 {
                     try
                     {
-                        await _selectedTileProjector.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
+                        await _resoniteSession.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
                         interactiveContext?.ForgetNewSlotId(slotId);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1179,7 +1181,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 if (command.UpdateLicense)
                 {
                     long licenseStartedAt = performanceSummary is null ? 0L : Stopwatch.GetTimestamp();
-                    await _selectedTileProjector.SetSessionLicenseCreditAsync(command.LicenseCredit, cancellationToken).ConfigureAwait(false);
+                    await _sessionMetadataPort.SetSessionLicenseCreditAsync(command.LicenseCredit, cancellationToken).ConfigureAwait(false);
                     if (performanceSummary is not null)
                     {
                         performanceSummary.AddMetadataLicense(Stopwatch.GetElapsedTime(licenseStartedAt));
@@ -1187,13 +1189,13 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
 
                 long progressStartedAt = performanceSummary is null ? 0L : Stopwatch.GetTimestamp();
-                await _selectedTileProjector.SetProgressValueAsync(
+                await _sessionMetadataPort.SetProgressValueAsync(
                     request.Output.MeshParentSlotId,
                     command.ProgressValue,
                     cancellationToken).ConfigureAwait(false);
                 if (command.UpdateProgressText)
                 {
-                    await _selectedTileProjector.SetProgressTextAsync(
+                    await _sessionMetadataPort.SetProgressTextAsync(
                         request.Output.MeshParentSlotId,
                         command.ProgressText,
                         cancellationToken).ConfigureAwait(false);
@@ -1278,7 +1280,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 try
                 {
-                    await _selectedTileProjector.RemoveSlotAsync(slotId, CancellationToken.None).ConfigureAwait(false);
+                    await _resoniteSession.RemoveSlotAsync(slotId, CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -1332,7 +1334,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 try
                 {
-                    await _selectedTileProjector.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
+                    await _resoniteSession.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -1370,7 +1372,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             string built = aggregator.BuildCreditString();
-            await _selectedTileProjector.SetSessionLicenseCreditAsync(
+            await _sessionMetadataPort.SetSessionLicenseCreditAsync(
                 string.IsNullOrWhiteSpace(built) ? "Google Maps" : built,
                 cancellationToken).ConfigureAwait(false);
         }
