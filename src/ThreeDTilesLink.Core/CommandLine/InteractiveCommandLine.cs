@@ -19,7 +19,6 @@ namespace ThreeDTilesLink.Core.CommandLine
         int ThrottleMs,
         bool RemoveOutOfRange,
         bool DryRun,
-        string WatchPath,
         LogLevel LogLevel) : ICommandRuntimeOptions;
 
     internal static class InteractiveCommandLine
@@ -42,7 +41,6 @@ namespace ThreeDTilesLink.Core.CommandLine
                 new("--debounce", CommandOptionValueKind.WholeNumber, "Delay after watch changes before starting a run.", DefaultValue: 800, Unit: "ms", RenamedFrom: ["--debounce-ms"]),
                 new("--throttle", CommandOptionValueKind.WholeNumber, "Minimum time between run starts.", DefaultValue: 3000, Unit: "ms", RenamedFrom: ["--throttle-ms"]),
                 new("--remove-out-of-range", CommandOptionValueKind.Switch, "During overlapping updates, remove retained tiles that fall outside the latest range.", DefaultValue: false),
-                new("--watch-path", CommandOptionValueKind.Text, "Watch variable path prefix. Must start with World/; segments are normalized to alphanumeric names.", DefaultValue: "World/ThreeDTilesLink", ValueName: "path"),
                 CommonCommandOptions.DryRun(),
                 CommonCommandOptions.LogLevelOption()
             ],
@@ -90,8 +88,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 !CommandInvocationBuilder.TryGetNonNegativeInt(parsed, "--debounce", out int debounceMs) ||
                 !CommandInvocationBuilder.TryGetNonNegativeInt(parsed, "--throttle", out int throttleMs) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--remove-out-of-range", out bool removeOutOfRange) ||
-                !CommandInvocationBuilder.TryGetValue(parsed, "--dry-run", out bool dryRun) ||
-                !CommandInvocationBuilder.TryGetValue(parsed, "--watch-path", out string? watchPath))
+                !CommandInvocationBuilder.TryGetValue(parsed, "--dry-run", out bool dryRun))
             {
                 return CommandInvocationBuilder.Error<InteractiveCommandOptions>("Invalid command values.", RenderHelp);
             }
@@ -99,21 +96,6 @@ namespace ThreeDTilesLink.Core.CommandLine
             if (string.IsNullOrWhiteSpace(resoniteHost))
             {
                 return CommandInvocationBuilder.Error<InteractiveCommandOptions>("Invalid value for --resonite-host.", RenderHelp);
-            }
-
-            if (string.IsNullOrWhiteSpace(watchPath))
-            {
-                return CommandInvocationBuilder.Error<InteractiveCommandOptions>("Invalid value for --watch-path.", RenderHelp);
-            }
-
-            string normalizedWatchPath;
-            try
-            {
-                normalizedWatchPath = InteractiveWatchPath.Parse(watchPath).BasePath;
-            }
-            catch (InvalidOperationException ex)
-            {
-                return CommandInvocationBuilder.Error<InteractiveCommandOptions>(ex.Message, RenderHelp);
             }
 
             return new CommandInvocation<InteractiveCommandOptions>(
@@ -134,7 +116,6 @@ namespace ThreeDTilesLink.Core.CommandLine
                     throttleMs,
                     removeOutOfRange,
                     dryRun,
-                    normalizedWatchPath,
                     logLevel),
                 0,
                 string.Empty,

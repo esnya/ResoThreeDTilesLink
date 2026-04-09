@@ -37,6 +37,7 @@
 - live 環境によっては `SimpleAvatarProtection` が公開されていないことがある。その場合でも接続とメッシュ送信は継続できる前提で扱う
 - Session root や親スロットに付ける常設の書き込み元は、まず session-side の `DynamicValueVariable<T>` として置く
 - `DynamicVariableSpace.OnlyDirectBinding` が有効な場合、session-side の source DV 名には `SpaceName/` を明示して含める
+- Interactive の入力 watch path は固定の `World/ThreeDTilesLink.Latitude`、`World/ThreeDTilesLink.Longitude`、`World/ThreeDTilesLink.Range`、`World/ThreeDTilesLink.Search` に保つ
 - `World/` alias は `DynamicField` ではなく、session-side の値を `ValueCopy<T>` で Drive する別の `DynamicValueVariable<T>` として公開する
 - Target 側からの上書きは `ValueCopy.WriteBack` で制御し、`World/` から session-side へ戻す必要がある Interactive 入力パラメーターにだけ有効化する
 - Progress は親スロットに置いた session-side の `DynamicValueVariable<float>` から `ValueCopy<float>` 経由で `World/ThreeDTilesLink.Progress` へ `0.0..1.0` の float として公開する

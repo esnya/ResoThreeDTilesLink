@@ -37,6 +37,7 @@ This document contains only current operational information that is difficult to
 - In some live environments, `SimpleAvatarProtection` may not be exposed. Even in that case, assume connection and mesh transmission can continue.
 - Put persistent writable `DynamicValueVariable<T>` members attached to the session root or parent slot on the session side first.
 - When `DynamicVariableSpace.OnlyDirectBinding` is enabled, the session-side source DV name must explicitly include `SpaceName/`.
+- Keep the Interactive input watch paths fixed at `World/ThreeDTilesLink.Latitude`, `World/ThreeDTilesLink.Longitude`, `World/ThreeDTilesLink.Range`, and `World/ThreeDTilesLink.Search`.
 - Expose `World/` aliases as separate `DynamicValueVariable<T>` members driven from the session-side source by `ValueCopy<T>`, instead of `DynamicField`.
 - Control target-side overwrite through `ValueCopy.WriteBack`; enable it only for Interactive input parameters that must flow from `World/` back into the session-side values.
 - Publish progress as a float in the range `0.0..1.0` from a session-side `DynamicValueVariable<float>` on the parent slot to `World/ThreeDTilesLink.Progress` through `ValueCopy<float>`.
