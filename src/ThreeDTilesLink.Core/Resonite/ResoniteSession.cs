@@ -76,6 +76,12 @@ namespace ThreeDTilesLink.Core.Resonite
                 Level = LogLevel.Warning,
                 Message = "Failed to update mirrored string alias component {ComponentId}.")]
             public static partial void MirroredStringAliasUpdateFailed(ILogger logger, Exception exception, string componentId);
+
+            [LoggerMessage(
+                EventId = 2009,
+                Level = LogLevel.Warning,
+                Message = "Bundled Google Maps attribution logo asset was not found at {BundledLogoPath}. Continuing with text attribution only.")]
+            public static partial void AttributionLogoMissing(ILogger logger, string bundledLogoPath);
         }
 
         private const string SlotWorkerType = "[FrooxEngine]FrooxEngine.Slot";
@@ -1459,10 +1465,11 @@ namespace ThreeDTilesLink.Core.Resonite
                     cancellationToken).ConfigureAwait(false);
             }
 
+            string bundledLogoRelativePath = ResolveBundledGoogleMapsLogoRelativePath();
             DynamicVariableBinding? attributionLogoAssetBinding = await TryAddDynamicStringValueVariableAsync(
                 sessionRootSlotId,
                 BuildScopedVariablePath(GoogleTilesDynamicSpaceName, AttributionLogoAssetVariableLocalName),
-                GoogleMapsCompliance.BundledLogoRelativePath,
+                bundledLogoRelativePath,
                 cancellationToken).ConfigureAwait(false);
             if (attributionLogoAssetBinding is not null)
             {
@@ -1474,16 +1481,30 @@ namespace ThreeDTilesLink.Core.Resonite
                     cancellationToken).ConfigureAwait(false);
             }
 
-            await AttachGoogleMapsAttributionLogoAsync(sessionRootSlotId, cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(bundledLogoRelativePath))
+            {
+                await AttachGoogleMapsAttributionLogoAsync(sessionRootSlotId, bundledLogoRelativePath, cancellationToken).ConfigureAwait(false);
+            }
         }
 
-        private async Task AttachGoogleMapsAttributionLogoAsync(string sessionRootSlotId, CancellationToken cancellationToken)
+        private string ResolveBundledGoogleMapsLogoRelativePath()
         {
             string bundledLogoPath = Path.Combine(AppContext.BaseDirectory, GoogleMapsCompliance.BundledLogoRelativePath);
             if (!File.Exists(bundledLogoPath))
             {
-                throw new InvalidOperationException($"Bundled Google Maps logo asset is missing: {bundledLogoPath}");
+                Log.AttributionLogoMissing(_logger, bundledLogoPath);
+                return string.Empty;
             }
+
+            return GoogleMapsCompliance.BundledLogoRelativePath;
+        }
+
+        private async Task AttachGoogleMapsAttributionLogoAsync(
+            string sessionRootSlotId,
+            string bundledLogoRelativePath,
+            CancellationToken cancellationToken)
+        {
+            string bundledLogoPath = Path.Combine(AppContext.BaseDirectory, bundledLogoRelativePath);
 
             byte[] logoBytes = await File.ReadAllBytesAsync(bundledLogoPath, cancellationToken).ConfigureAwait(false);
             float aspectRatio;
