@@ -7,7 +7,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 {
     internal sealed partial class InteractiveRunSupervisor
     {
-        private readonly IWatchStore _watchStore;
+        private readonly IInteractiveInputStore _interactiveInputStore;
         private readonly ICoordinateTransformer _coordinateTransformer;
         private readonly IGeoReferenceResolver _geoReferenceResolver;
         private readonly IClock _clock;
@@ -18,7 +18,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         internal InteractiveRunSupervisor(
             ITileSelectionService tileRunCoordinator,
             IResoniteSession resoniteSession,
-            IWatchStore watchStore,
+            IInteractiveInputStore interactiveInputStore,
             ISearchResolver searchResolver,
             ICoordinateTransformer coordinateTransformer,
             IGeoReferenceResolver geoReferenceResolver,
@@ -26,7 +26,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             SelectionInputReader selectionInputReader,
             ILogger<InteractiveRunSupervisor> logger)
         {
-            _watchStore = watchStore;
+            _interactiveInputStore = interactiveInputStore;
             _coordinateTransformer = coordinateTransformer;
             _geoReferenceResolver = geoReferenceResolver;
             _clock = clock;
@@ -35,7 +35,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             _actionApplier = new InteractiveActionApplier(
                 tileRunCoordinator,
                 resoniteSession,
-                watchStore,
+                interactiveInputStore,
                 searchResolver,
                 coordinateTransformer,
                 clock,
@@ -54,30 +54,11 @@ namespace ThreeDTilesLink.Core.Pipeline
                 Log.ConnectingToResonite(_logger, options.ResoniteHost, options.ResonitePort);
                 await _actionApplier.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
                 state = state with { Connected = true };
-
-                WatchBinding watchBinding = await _watchStore.CreateWatchAsync(cancellationToken).ConfigureAwait(false);
-                state = state with { WatchBinding = watchBinding };
-                Log.WatchBindingAttached(_logger);
+                state = await InitializeInputBindingAsync(state, cancellationToken).ConfigureAwait(false);
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    state = await _actionApplier.FinalizeCompletedRunAsync(state, cancellationToken).ConfigureAwait(false);
-
-                    SelectionInputSnapshot snapshot = await _selectionInputReader.ReadAsync(state.WatchBinding!, cancellationToken).ConfigureAwait(false);
-                    DateTimeOffset now = _clock.UtcNow;
-                    InteractiveLoopState previousState = state;
-                    InteractiveDecisionResult decision = InteractiveDecisionEngine.Evaluate(
-                        state,
-                        snapshot,
-                        options.Watch,
-                        options.HeightOffset,
-                        now,
-                        _geoReferenceResolver.Resolve,
-                        Overlaps);
-                    state = decision.State;
-                    LogInputChanges(previousState, state);
-                    state = await _actionApplier.ApplyAsync(state, decision.Actions, options, cancellationToken).ConfigureAwait(false);
-
+                    state = await RunLoopIterationAsync(state, options, cancellationToken).ConfigureAwait(false);
                     await _clock.Delay(options.Watch.PollInterval, cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -85,6 +66,38 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 state = await _actionApplier.DisconnectAsync(state, CancellationToken.None).ConfigureAwait(false);
             }
+        }
+
+        private async Task<InteractiveLoopState> InitializeInputBindingAsync(
+            InteractiveLoopState state,
+            CancellationToken cancellationToken)
+        {
+            InteractiveInputBinding inputBinding = await _interactiveInputStore.CreateInteractiveInputBindingAsync(cancellationToken).ConfigureAwait(false);
+            Log.InteractiveInputAttached(_logger);
+            return state with { InputBinding = inputBinding };
+        }
+
+        private async Task<InteractiveLoopState> RunLoopIterationAsync(
+            InteractiveLoopState state,
+            InteractiveRunRequest options,
+            CancellationToken cancellationToken)
+        {
+            state = await _actionApplier.FinalizeCompletedRunAsync(state, cancellationToken).ConfigureAwait(false);
+
+            SelectionInputSnapshot snapshot = await _selectionInputReader.ReadAsync(state.InputBinding!, cancellationToken).ConfigureAwait(false);
+            DateTimeOffset now = _clock.UtcNow;
+            InteractiveLoopState previousState = state;
+            InteractiveDecisionResult decision = InteractiveDecisionEngine.Evaluate(
+                state,
+                snapshot,
+                options.Watch,
+                options.HeightOffset,
+                now,
+                _geoReferenceResolver.Resolve,
+                Overlaps);
+            state = decision.State;
+            LogInputChanges(previousState, state);
+            return await _actionApplier.ApplyAsync(state, decision.Actions, options, cancellationToken).ConfigureAwait(false);
         }
 
         private void LogInputChanges(InteractiveLoopState previousState, InteractiveLoopState state)
@@ -127,7 +140,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 EventId = 2,
                 Level = LogLevel.Information,
                 Message = "Interactive input bindings attached on the session root slot: Latitude, Longitude, Range, Search.")]
-            public static partial void WatchBindingAttached(ILogger logger);
+            public static partial void InteractiveInputAttached(ILogger logger);
 
             [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Search query changed: {Query}")]
             public static partial void SearchQueryChanged(ILogger logger, string query);

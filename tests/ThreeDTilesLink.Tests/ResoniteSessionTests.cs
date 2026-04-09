@@ -7,6 +7,7 @@ using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using ResoniteLink;
+using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Resonite;
 
 namespace ThreeDTilesLink.Tests
@@ -80,6 +81,18 @@ namespace ThreeDTilesLink.Tests
 
             _ = sessionRootSlotField.GetValue(session).Should().Be("slot_session_root");
             _ = connectionUriField.GetValue(session).Should().BeEquivalentTo(new Uri("ws://localhost:6216/"));
+        }
+
+        [Fact]
+        public void MetadataOperations_RemainConcreteSessionMembers()
+        {
+            Type sessionType = typeof(ResoniteSession);
+
+            _ = typeof(IResoniteSessionMetadataPort).IsAssignableFrom(sessionType).Should().BeTrue();
+            _ = sessionType.GetMethod(nameof(ResoniteSession.SetSessionLicenseCreditAsync)).Should().NotBeNull();
+            _ = sessionType.GetMethod(nameof(ResoniteSession.SetProgressAsync)).Should().NotBeNull();
+            _ = sessionType.GetMethod(nameof(ResoniteSession.SetProgressValueAsync)).Should().NotBeNull();
+            _ = sessionType.GetMethod(nameof(ResoniteSession.SetProgressTextAsync)).Should().NotBeNull();
         }
 
         [Fact]

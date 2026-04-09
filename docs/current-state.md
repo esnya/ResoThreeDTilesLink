@@ -51,6 +51,7 @@ This document contains only current operational information that is difficult to
 - Expose `World/` aliases as separate `DynamicValueVariable<T>` members driven from the session-side source by `ValueCopy<T>`, instead of `DynamicField`.
 - Keep the Interactive input source values and the observation aliases distinct: the input source values live on the session root slot, while the observation aliases remain fixed under `World/ThreeDTilesLink.*`.
 - Control target-side overwrite through `ValueCopy.WriteBack`; enable it only for Interactive input parameters that must flow from `World/` back into the session-side values, and keep it disabled for observation-only aliases.
+- In interactive mode, overlapping reruns remove retained tiles that fall outside the latest `Range` by default so visible coverage tracks the current selection.
 - Publish the session license credit from a session-side `DynamicValueVariable<string>` to the fixed alias `World/ThreeDTilesLink.License`.
 - Treat `World/ThreeDTilesLink.License` as mandatory compliance output for the current Google tiles, not as optional metadata.
 - Publish the renderer-side compliance guidance through the fixed alias `World/ThreeDTilesLink.AttributionRequirements`.

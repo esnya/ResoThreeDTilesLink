@@ -14,7 +14,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             ResoniteReconcilerCore reconcilerCore,
             IContentProcessor contentProcessor,
             IMeshPlacementService meshPlacementService,
-            ISelectedTileProjector selectedTileProjector,
+            IResoniteSession resoniteSession,
+            IResoniteSessionMetadataPort sessionMetadataPort,
             ILogger<TileRunCoordinator> logger,
             int maxConcurrentTileProcessing = 1)
         {
@@ -26,7 +27,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                 reconcilerCore,
                 contentProcessor,
                 meshPlacementService,
-                selectedTileProjector,
+                resoniteSession,
+                sessionMetadataPort,
                 logger,
                 maxConcurrentTileProcessing);
         }

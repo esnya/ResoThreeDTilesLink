@@ -95,6 +95,19 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void Parse_DefaultsRemoveOutOfRangeToTrue()
+        {
+            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
+            [
+                "--resonite-port", "12000"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeTrue();
+            InteractiveCommandOptions parsed = invocation.Options!;
+            _ = parsed.RemoveOutOfRange.Should().BeTrue();
+        }
+
+        [Fact]
         public void Parse_RejectsInteractiveRangeArgument()
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(

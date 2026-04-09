@@ -9,7 +9,11 @@ namespace ThreeDTilesLink.Core.Pipeline
 
     internal sealed record CancelActiveRunAction() : InteractiveAction;
 
-    internal sealed record StartRunAction(SelectionInputValues Values, GeoReference SelectionReference, bool Overlaps) : InteractiveAction;
+    internal sealed record StartRunAction(
+        SelectionInputValues Values,
+        GeoReference SelectionReference,
+        bool Overlaps,
+        bool ReuseCheckpoint) : InteractiveAction;
 
     internal sealed record InteractiveDecisionResult(
         InteractiveLoopState State,
@@ -67,7 +71,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                 next.PendingValuesChangedAt is not null)
             {
                 bool debounceElapsed = now - next.PendingValuesChangedAt.Value >= options.Debounce;
-                bool throttleElapsed = next.LastRunStartedAt == DateTimeOffset.MinValue ||
+                bool throttleElapsed = next.ActiveRun is not null ||
+                    next.LastRunStartedAt == DateTimeOffset.MinValue ||
                     now - next.LastRunStartedAt >= options.Throttle;
 
                 if (debounceElapsed && throttleElapsed)
@@ -77,16 +82,19 @@ namespace ThreeDTilesLink.Core.Pipeline
                         next.PendingValues.Longitude,
                         heightOffset);
                     var currentFootprint = new InteractiveRangeFootprint(selectionReference, next.PendingValues.RangeM);
-                    bool canReuseSlot = next.LastRequestedFootprint is not null &&
+                    bool rangeChanged = next.LastRequestedFootprint is not null &&
+                        System.Math.Abs(next.LastRequestedFootprint.RangeM - currentFootprint.RangeM) > 0.1d;
+                    bool overlapsPrevious = next.LastRequestedFootprint is not null &&
                         overlaps(next.LastRequestedFootprint, currentFootprint) &&
                         next.PlacementReference is not null;
+                    bool reuseCheckpoint = overlapsPrevious && !rangeChanged;
 
                     if (next.ActiveRun is not null)
                     {
                         actions.Add(new CancelActiveRunAction());
                     }
 
-                    actions.Add(new StartRunAction(next.PendingValues, selectionReference, canReuseSlot));
+                    actions.Add(new StartRunAction(next.PendingValues, selectionReference, overlapsPrevious, reuseCheckpoint));
                     next = next with
                     {
                         LastRequestedFootprint = currentFootprint,

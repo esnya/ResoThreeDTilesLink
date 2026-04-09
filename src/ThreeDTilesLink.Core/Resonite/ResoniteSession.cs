@@ -17,7 +17,7 @@ namespace ThreeDTilesLink.Core.Resonite
         LinkInterface resoniteLink,
         ILogger<ResoniteSession> logger,
         Func<LinkInterface>? linkInterfaceFactory = null,
-        int assetImportWorkers = 1) : IResoniteSession, IWatchStore, IAsyncDisposable
+        int assetImportWorkers = 1) : IResoniteSession, IResoniteSessionMetadataPort, IInteractiveInputStore, IAsyncDisposable
     {
         private static partial class Log
         {
@@ -313,7 +313,7 @@ namespace ThreeDTilesLink.Core.Resonite
             return await CreateSlotAsync(name, _sessionRootSlotId, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task<WatchBinding> CreateWatchAsync(CancellationToken cancellationToken)
+        public async Task<InteractiveInputBinding> CreateInteractiveInputBindingAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -368,7 +368,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 writeBack: true,
                 cancellationToken).ConfigureAwait(false);
 
-            return new WatchBinding(
+            return new InteractiveInputBinding(
                 latBinding.ComponentId,
                 DynamicValueVariableValueMemberName,
                 latAliasBinding.ComponentId,
@@ -387,7 +387,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 DynamicValueVariableValueMemberName);
         }
 
-        public async Task<SelectionInputValues?> ReadSelectionInputValuesAsync(WatchBinding binding, CancellationToken cancellationToken)
+        public async Task<SelectionInputValues?> ReadInteractiveInputValuesAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(binding);
 
@@ -403,14 +403,14 @@ namespace ThreeDTilesLink.Core.Resonite
             return new SelectionInputValues(lat, lon, range);
         }
 
-        public async Task<string?> ReadWatchSearchAsync(WatchBinding binding, CancellationToken cancellationToken)
+        public async Task<string?> ReadInteractiveInputSearchAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(binding);
 
             return await ReadStringMemberAsync(binding.SearchComponentId, binding.SearchValueMemberName, cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task UpdateWatchCoordinatesAsync(WatchBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
+        public async Task UpdateInteractiveInputCoordinatesAsync(InteractiveInputBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(binding);
 
@@ -418,7 +418,7 @@ namespace ThreeDTilesLink.Core.Resonite
             float lon = checked((float)longitude);
             if (!float.IsFinite(lat) || !float.IsFinite(lon))
             {
-                throw new InvalidOperationException("Watch coordinates must be finite values.");
+                throw new InvalidOperationException("Interactive input coordinates must be finite values.");
             }
 
             await UpdateMirroredNumericMemberAsync(

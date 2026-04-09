@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Numerics;
+using System.Reflection;
 using System.Threading;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Math;
@@ -117,6 +118,32 @@ namespace ThreeDTilesLink.Tests
             _ = client.ConnectCount.Should().Be(0);
             _ = client.DisconnectCount.Should().Be(0);
             _ = client.ProgressUpdates.Should().NotBeEmpty();
+        }
+
+        [Fact]
+        public async Task Run_UsesSeparateMetadataPort_WhenProvided()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") }
+                ]
+            });
+
+            var session = new FakeResoniteSession();
+            var metadataPort = new FakeMetadataPort();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), session, metadataPort: metadataPort);
+
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, manageConnection: false), CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(1);
+            _ = session.SendCount.Should().Be(1);
+            _ = session.ProgressUpdates.Should().BeEmpty();
+            _ = session.LicenseCredits.Should().BeEmpty();
+            _ = metadataPort.ProgressUpdates.Should().NotBeEmpty();
+            _ = metadataPort.LicenseCredits.Should().NotBeEmpty();
         }
 
         [Fact]
@@ -516,6 +543,111 @@ namespace ThreeDTilesLink.Tests
             _ = client.SendCount.Should().Be(0);
             _ = result.VisibleTiles.Should().ContainKey(childStableId);
             _ = result.VisibleTiles.Should().NotContainKey(parentStableId);
+        }
+
+        [Fact]
+        public async Task RunInteractive_RangeExpansion_StreamsNewTilesDuringOverlapRerun()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "near",
+                        ContentUri = new Uri("https://example.com/near.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 10d)
+                    },
+                    new Tile
+                    {
+                        Id = "far",
+                        ContentUri = new Uri("https://example.com/far.glb"),
+                        BoundingVolume = CreateBox(300d, 0d, 0d, 10d)
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+
+            InteractiveTileRunResult initial = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false, rangeM: 100d),
+                new InteractiveRunInput(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal), RemoveOutOfRangeTiles: false),
+                CancellationToken.None);
+
+            int sendsAfterInitialRun = client.SendCount;
+            _ = initial.VisibleTiles.Should().ContainKey(StableId("near"));
+            _ = initial.VisibleTiles.Should().NotContainKey(StableId("far"));
+
+            InteractiveTileRunResult expanded = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false, rangeM: 400d),
+                new InteractiveRunInput(
+                    new Dictionary<string, RetainedTileState>(initial.VisibleTiles, StringComparer.Ordinal),
+                    RemoveOutOfRangeTiles: false,
+                    initial.Checkpoint,
+                    new Dictionary<string, RetainedTileState>(initial.CleanupDebtTiles, StringComparer.Ordinal)),
+                CancellationToken.None);
+
+            _ = client.SendCount.Should().BeGreaterThan(sendsAfterInitialRun);
+            _ = expanded.VisibleTiles.Should().ContainKey(StableId("near"));
+            _ = expanded.VisibleTiles.Should().ContainKey(StableId("far"));
+        }
+
+        [Fact]
+        public async Task RunInteractive_RangeExpansionAcrossSiblingBranches_StreamsAdditionalCoverage()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 3000d),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "c0",
+                                ContentUri = new Uri("https://example.com/c0.glb"),
+                                BoundingVolume = CreateBox(0d, 0d, 0d, 40d)
+                            },
+                            new Tile
+                            {
+                                Id = "c1",
+                                ContentUri = new Uri("https://example.com/c1.glb"),
+                                BoundingVolume = CreateBox(350d, 0d, 0d, 40d)
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+
+            InteractiveTileRunResult initial = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false, rangeM: 100d),
+                new InteractiveRunInput(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal), RemoveOutOfRangeTiles: true),
+                CancellationToken.None);
+
+            int sendsAfterInitialRun = client.SendCount;
+            _ = initial.VisibleTiles.Keys.Should().Equal(StableId("c0"));
+
+            InteractiveTileRunResult expanded = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false, rangeM: 400d),
+                new InteractiveRunInput(
+                    new Dictionary<string, RetainedTileState>(initial.VisibleTiles, StringComparer.Ordinal),
+                    RemoveOutOfRangeTiles: true,
+                    initial.Checkpoint,
+                    new Dictionary<string, RetainedTileState>(initial.CleanupDebtTiles, StringComparer.Ordinal)),
+                CancellationToken.None);
+
+            _ = client.SendCount.Should().BeGreaterThan(sendsAfterInitialRun);
+            _ = expanded.VisibleTiles.Keys.Should().Contain(StableId("c1"));
         }
 
         [Fact]
@@ -1639,10 +1771,34 @@ namespace ThreeDTilesLink.Tests
             _ = result.VisibleTiles[stableId].SlotIds.Should().Equal("slot_keep");
         }
 
+        [Fact]
+        public void Constructors_ExposeSeparateSessionMetadataPortDependency()
+        {
+            Type[] coordinatorParameters = typeof(TileRunCoordinator)
+                .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .Single(ctor => ctor.GetParameters().Any(parameter => parameter.ParameterType == typeof(IResoniteSessionMetadataPort)))
+                .GetParameters()
+                .Select(parameter => parameter.ParameterType)
+                .ToArray();
+            Type[] selectionParameters = typeof(TileSelectionService)
+                .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .Select(static ctor => ctor.GetParameters().Select(static parameter => parameter.ParameterType).ToArray())
+                .FirstOrDefault(static parameters => parameters.Contains(typeof(IResoniteSessionMetadataPort)))
+                ?? [];
+
+            _ = coordinatorParameters.Should().ContainInOrder(
+                typeof(IResoniteSession),
+                typeof(IResoniteSessionMetadataPort));
+            _ = selectionParameters.Should().ContainInOrder(
+                typeof(IResoniteSession),
+                typeof(IResoniteSessionMetadataPort));
+        }
+
         private static TileRunCoordinator CreateCoordinator(
             ITilesSource tilesSource,
             FakeResoniteSession session,
             IGlbMeshExtractor? extractor = null,
+            IResoniteSessionMetadataPort? metadataPort = null,
             int maxConcurrentTileProcessing = 1)
         {
             var transformer = new PassThroughTransformer();
@@ -1654,6 +1810,7 @@ namespace ThreeDTilesLink.Tests
                 new TileContentProcessor(tilesSource, extractor ?? new FakeExtractor()),
                 new MeshPlacementService(transformer),
                 session,
+                metadataPort ?? session,
                 NullLogger<TileRunCoordinator>.Instance,
                 maxConcurrentTileProcessing);
         }
@@ -1663,13 +1820,14 @@ namespace ThreeDTilesLink.Tests
             int maxTiles = 16,
             int maxDepth = 8,
             double bootstrapRangeMultiplier = 4d,
+            double rangeM = 500d,
             bool manageConnection = true,
             string? apiKey = "k")
         {
             return new TileRunRequest(
                 new GeoReference(0d, 0d, 0d),
                 new GeoReference(0d, 0d, 0d),
-                new TraversalOptions(500d, maxTiles, maxDepth, 40d, bootstrapRangeMultiplier),
+                new TraversalOptions(rangeM, maxTiles, maxDepth, 40d, bootstrapRangeMultiplier),
                 new ResoniteOutputOptions("127.0.0.1", 12345, dryRun, manageConnection),
                 apiKey);
         }
@@ -1853,7 +2011,7 @@ namespace ThreeDTilesLink.Tests
             int? failOnRemoveNumber = null,
             bool failProgressUpdates = false,
             bool failLicenseUpdates = false,
-            bool failDisconnect = false) : ISelectedTileProjector
+            bool failDisconnect = false) : IResoniteSession, IResoniteSessionMetadataPort
         {
             private readonly bool _failFirstSend = failFirstSend;
             private readonly string? _failOnNameContains = failOnNameContains;
@@ -1866,16 +2024,12 @@ namespace ThreeDTilesLink.Tests
             private readonly bool _ignoreCancellationDuringStream = ignoreCancellationDuringStream;
             private readonly string? _failOnRemoveContains = failOnRemoveContains;
             private readonly int? _failOnRemoveNumber = failOnRemoveNumber;
-            private readonly bool _failProgressUpdates = failProgressUpdates;
-            private readonly bool _failLicenseUpdates = failLicenseUpdates;
             private readonly bool _failDisconnect = failDisconnect;
+            private readonly FakeSessionMetadataPort _metadata = new(failProgressUpdates, failLicenseUpdates);
             private int _activeStreams;
             private int _maxConcurrentStreams;
             private int _removeAttempts;
             private int _removeSlotNumber;
-            private string? _currentProgressParentSlotId;
-            private float _currentProgress01;
-            private string _currentProgressText = string.Empty;
 
             public int ConnectCount { get; private set; }
             public int DisconnectCount { get; private set; }
@@ -1884,10 +2038,10 @@ namespace ThreeDTilesLink.Tests
             public int RemoveCount { get; private set; }
             public int RemoveAttemptCount => _removeAttempts;
             public bool LastDisconnectCancellationRequested { get; private set; }
-            public List<string> LicenseCredits { get; } = [];
+            public List<string> LicenseCredits => _metadata.LicenseCredits;
             public List<PlacedMeshPayload> Payloads { get; } = [];
             public List<string> RemovedSlotIds { get; } = [];
-            public List<(string? ParentSlotId, float Progress01, string ProgressText)> ProgressUpdates { get; } = [];
+            public List<(string? ParentSlotId, float Progress01, string ProgressText)> ProgressUpdates => _metadata.ProgressUpdates;
 
             public Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
             {
@@ -1897,53 +2051,22 @@ namespace ThreeDTilesLink.Tests
 
             public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
             {
-                LicenseCredits.Add(creditString);
-                if (_failLicenseUpdates)
-                {
-                    throw new InvalidOperationException("synthetic license update failure");
-                }
-
-                return Task.CompletedTask;
+                return _metadata.SetSessionLicenseCreditAsync(creditString, cancellationToken);
             }
 
             public Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken)
             {
-                _currentProgressParentSlotId = parentSlotId;
-                _currentProgress01 = progress01;
-                _currentProgressText = progressText;
-                ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
-                if (_failProgressUpdates)
-                {
-                    throw new InvalidOperationException("synthetic progress update failure");
-                }
-
-                return Task.CompletedTask;
+                return _metadata.SetProgressAsync(parentSlotId, progress01, progressText, cancellationToken);
             }
 
             public Task SetProgressValueAsync(string? parentSlotId, float progress01, CancellationToken cancellationToken)
             {
-                _currentProgressParentSlotId = parentSlotId;
-                _currentProgress01 = progress01;
-                ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
-                if (_failProgressUpdates)
-                {
-                    throw new InvalidOperationException("synthetic progress update failure");
-                }
-
-                return Task.CompletedTask;
+                return _metadata.SetProgressValueAsync(parentSlotId, progress01, cancellationToken);
             }
 
             public Task SetProgressTextAsync(string? parentSlotId, string progressText, CancellationToken cancellationToken)
             {
-                _currentProgressParentSlotId = parentSlotId;
-                _currentProgressText = progressText;
-                ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
-                if (_failProgressUpdates)
-                {
-                    throw new InvalidOperationException("synthetic progress update failure");
-                }
-
-                return Task.CompletedTask;
+                return _metadata.SetProgressTextAsync(parentSlotId, progressText, cancellationToken);
             }
 
             public async Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
@@ -2029,6 +2152,144 @@ namespace ThreeDTilesLink.Tests
                     }
                 }
                 while (Interlocked.CompareExchange(ref _maxConcurrentStreams, current, observed) != observed);
+            }
+
+            private sealed class FakeSessionMetadataPort(
+                bool failProgressUpdates,
+                bool failLicenseUpdates)
+            {
+                private readonly bool _failProgressUpdates = failProgressUpdates;
+                private readonly bool _failLicenseUpdates = failLicenseUpdates;
+                private string? _currentProgressParentSlotId;
+                private float _currentProgress01;
+                private string _currentProgressText = string.Empty;
+
+                public List<string> LicenseCredits { get; } = [];
+                public List<(string? ParentSlotId, float Progress01, string ProgressText)> ProgressUpdates { get; } = [];
+
+                public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
+                {
+                    _ = cancellationToken;
+                    LicenseCredits.Add(creditString);
+                    if (_failLicenseUpdates)
+                    {
+                        throw new InvalidOperationException("synthetic license update failure");
+                    }
+
+                    return Task.CompletedTask;
+                }
+
+                public Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken)
+                {
+                    _ = cancellationToken;
+                    _currentProgressParentSlotId = parentSlotId;
+                    _currentProgress01 = progress01;
+                    _currentProgressText = progressText;
+                    ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
+                    if (_failProgressUpdates)
+                    {
+                        throw new InvalidOperationException("synthetic progress update failure");
+                    }
+
+                    return Task.CompletedTask;
+                }
+
+                public Task SetProgressValueAsync(string? parentSlotId, float progress01, CancellationToken cancellationToken)
+                {
+                    _ = cancellationToken;
+                    _currentProgressParentSlotId = parentSlotId;
+                    _currentProgress01 = progress01;
+                    ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
+                    if (_failProgressUpdates)
+                    {
+                        throw new InvalidOperationException("synthetic progress update failure");
+                    }
+
+                    return Task.CompletedTask;
+                }
+
+                public Task SetProgressTextAsync(string? parentSlotId, string progressText, CancellationToken cancellationToken)
+                {
+                    _ = cancellationToken;
+                    _currentProgressParentSlotId = parentSlotId;
+                    _currentProgressText = progressText;
+                    ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
+                    if (_failProgressUpdates)
+                    {
+                        throw new InvalidOperationException("synthetic progress update failure");
+                    }
+
+                    return Task.CompletedTask;
+                }
+            }
+        }
+
+        private sealed class FakeMetadataPort(
+            bool failProgressUpdates = false,
+            bool failLicenseUpdates = false) : IResoniteSessionMetadataPort
+        {
+            private readonly bool _failProgressUpdates = failProgressUpdates;
+            private readonly bool _failLicenseUpdates = failLicenseUpdates;
+            private string? _currentProgressParentSlotId;
+            private float _currentProgress01;
+            private string _currentProgressText = string.Empty;
+
+            public List<string> LicenseCredits { get; } = [];
+            public List<(string? ParentSlotId, float Progress01, string ProgressText)> ProgressUpdates { get; } = [];
+
+            public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
+            {
+                _ = cancellationToken;
+                LicenseCredits.Add(creditString);
+                if (_failLicenseUpdates)
+                {
+                    throw new InvalidOperationException("synthetic license update failure");
+                }
+
+                return Task.CompletedTask;
+            }
+
+            public Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken)
+            {
+                _ = cancellationToken;
+                _currentProgressParentSlotId = parentSlotId;
+                _currentProgress01 = progress01;
+                _currentProgressText = progressText;
+                ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
+                if (_failProgressUpdates)
+                {
+                    throw new InvalidOperationException("synthetic progress update failure");
+                }
+
+                return Task.CompletedTask;
+            }
+
+            public Task SetProgressValueAsync(string? parentSlotId, float progress01, CancellationToken cancellationToken)
+            {
+                _ = cancellationToken;
+                _currentProgressParentSlotId = parentSlotId;
+                _currentProgress01 = progress01;
+                ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
+                if (_failProgressUpdates)
+                {
+                    throw new InvalidOperationException("synthetic progress update failure");
+                }
+
+                return Task.CompletedTask;
+            }
+
+            public Task SetProgressTextAsync(string? parentSlotId, string progressText, CancellationToken cancellationToken)
+            {
+                _ = cancellationToken;
+                _currentProgressParentSlotId = parentSlotId;
+                _currentProgressText = progressText;
+                ProgressUpdates.Add((_currentProgressParentSlotId, _currentProgress01, _currentProgressText));
+                if (_failProgressUpdates)
+                {
+                    throw new InvalidOperationException("synthetic progress update failure");
+                }
+
+                return Task.CompletedTask;
             }
         }
     }
