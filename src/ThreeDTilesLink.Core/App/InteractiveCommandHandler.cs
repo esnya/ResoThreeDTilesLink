@@ -20,7 +20,7 @@ namespace ThreeDTilesLink.Core.App
                     options.DetailTargetM),
                 options.DryRun,
                 apiKey,
-                options.RemoveOutOfRange,
+                true,
                 new WatchOptions(
                     TimeSpan.FromMilliseconds(options.PollIntervalMs),
                     TimeSpan.FromMilliseconds(options.DebounceMs),
