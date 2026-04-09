@@ -13,7 +13,7 @@ namespace ThreeDTilesLink.Core.Pipeline
     internal sealed class InteractiveActionApplier(
         ITileSelectionService tileRunCoordinator,
         IResoniteSession resoniteSession,
-        IWatchStore watchStore,
+        IInteractiveInputStore interactiveInputStore,
         ISearchResolver searchResolver,
         ICoordinateTransformer coordinateTransformer,
         IClock clock,
@@ -27,7 +27,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         private readonly ITileSelectionService _tileRunCoordinator = tileRunCoordinator;
         private readonly IResoniteSession _resoniteSession = resoniteSession;
-        private readonly IWatchStore _watchStore = watchStore;
+        private readonly IInteractiveInputStore _interactiveInputStore = interactiveInputStore;
         private readonly ISearchResolver _searchResolver = searchResolver;
         private readonly ICoordinateTransformer _coordinateTransformer = coordinateTransformer;
         private readonly IClock _clock = clock;
@@ -151,7 +151,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 try
                 {
-                    await _watchStore.UpdateWatchCoordinatesAsync(state.WatchBinding!, result.Latitude, result.Longitude, cancellationToken).ConfigureAwait(false);
+                    await _interactiveInputStore.UpdateInteractiveInputCoordinatesAsync(state.InputBinding!, result.Latitude, result.Longitude, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {

@@ -7,24 +7,24 @@ using ThreeDTilesLink.Core.Resonite;
 namespace ThreeDTilesLink.Core.Pipeline
 {
     internal sealed partial class SelectionInputReader(
-        IWatchStore watchStore,
+        IInteractiveInputStore interactiveInputStore,
         ILogger<SelectionInputReader> logger)
     {
-        private readonly IWatchStore _watchStore = watchStore;
+        private readonly IInteractiveInputStore _interactiveInputStore = interactiveInputStore;
         private readonly ILogger<SelectionInputReader> _logger = logger;
 
-        internal async Task<SelectionInputSnapshot> ReadAsync(WatchBinding watchBinding, CancellationToken cancellationToken)
+        internal async Task<SelectionInputSnapshot> ReadAsync(InteractiveInputBinding inputBinding, CancellationToken cancellationToken)
         {
-            SelectionInputValues? values = await TryReadSelectionInputValuesAsync(watchBinding, cancellationToken).ConfigureAwait(false);
-            string? searchText = await TryReadWatchSearchAsync(watchBinding, cancellationToken).ConfigureAwait(false);
+            SelectionInputValues? values = await TryReadInteractiveInputValuesAsync(inputBinding, cancellationToken).ConfigureAwait(false);
+            string? searchText = await TryReadInteractiveInputSearchAsync(inputBinding, cancellationToken).ConfigureAwait(false);
             return new SelectionInputSnapshot(searchText, values);
         }
 
-        internal async Task<string?> TryReadWatchSearchAsync(WatchBinding watchBinding, CancellationToken cancellationToken)
+        internal async Task<string?> TryReadInteractiveInputSearchAsync(InteractiveInputBinding inputBinding, CancellationToken cancellationToken)
         {
             try
             {
-                return NormalizeSearchText(await _watchStore.ReadWatchSearchAsync(watchBinding, cancellationToken).ConfigureAwait(false));
+                return NormalizeSearchText(await _interactiveInputStore.ReadInteractiveInputSearchAsync(inputBinding, cancellationToken).ConfigureAwait(false));
             }
             catch (OperationCanceledException)
             {
@@ -61,11 +61,11 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        internal async Task<SelectionInputValues?> TryReadSelectionInputValuesAsync(WatchBinding watchBinding, CancellationToken cancellationToken)
+        internal async Task<SelectionInputValues?> TryReadInteractiveInputValuesAsync(InteractiveInputBinding inputBinding, CancellationToken cancellationToken)
         {
             try
             {
-                SelectionInputValues? values = await _watchStore.ReadSelectionInputValuesAsync(watchBinding, cancellationToken).ConfigureAwait(false);
+                SelectionInputValues? values = await _interactiveInputStore.ReadInteractiveInputValuesAsync(inputBinding, cancellationToken).ConfigureAwait(false);
                 if (values is null || !IsValidRange(values.RangeM))
                 {
                     return null;
@@ -153,10 +153,10 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         private static partial class Log
         {
-            [LoggerMessage(EventId = 1, Level = LogLevel.Debug, Message = "Watch search query read returned no response.")]
+            [LoggerMessage(EventId = 1, Level = LogLevel.Debug, Message = "Interactive input search read returned no response.")]
             public static partial void SearchReadNoResponse(ILogger logger, Exception exception);
 
-            [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Failed to read watch search query.")]
+            [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Failed to read interactive input search.")]
             public static partial void SearchReadWarning(ILogger logger, Exception exception);
 
             [LoggerMessage(EventId = 3, Level = LogLevel.Debug, Message = "Selection input read returned no response.")]

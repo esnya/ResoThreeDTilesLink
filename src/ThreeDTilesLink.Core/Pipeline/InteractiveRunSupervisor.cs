@@ -7,7 +7,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 {
     internal sealed partial class InteractiveRunSupervisor
     {
-        private readonly IWatchStore _watchStore;
+        private readonly IInteractiveInputStore _interactiveInputStore;
         private readonly ICoordinateTransformer _coordinateTransformer;
         private readonly IGeoReferenceResolver _geoReferenceResolver;
         private readonly IClock _clock;
@@ -18,7 +18,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         internal InteractiveRunSupervisor(
             ITileSelectionService tileRunCoordinator,
             IResoniteSession resoniteSession,
-            IWatchStore watchStore,
+            IInteractiveInputStore interactiveInputStore,
             ISearchResolver searchResolver,
             ICoordinateTransformer coordinateTransformer,
             IGeoReferenceResolver geoReferenceResolver,
@@ -26,7 +26,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             SelectionInputReader selectionInputReader,
             ILogger<InteractiveRunSupervisor> logger)
         {
-            _watchStore = watchStore;
+            _interactiveInputStore = interactiveInputStore;
             _coordinateTransformer = coordinateTransformer;
             _geoReferenceResolver = geoReferenceResolver;
             _clock = clock;
@@ -35,7 +35,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             _actionApplier = new InteractiveActionApplier(
                 tileRunCoordinator,
                 resoniteSession,
-                watchStore,
+                interactiveInputStore,
                 searchResolver,
                 coordinateTransformer,
                 clock,
@@ -55,15 +55,15 @@ namespace ThreeDTilesLink.Core.Pipeline
                 await _actionApplier.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
                 state = state with { Connected = true };
 
-                WatchBinding watchBinding = await _watchStore.CreateWatchAsync(cancellationToken).ConfigureAwait(false);
-                state = state with { WatchBinding = watchBinding };
-                Log.WatchBindingAttached(_logger);
+                InteractiveInputBinding inputBinding = await _interactiveInputStore.CreateInteractiveInputBindingAsync(cancellationToken).ConfigureAwait(false);
+                state = state with { InputBinding = inputBinding };
+                Log.InteractiveInputAttached(_logger);
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     state = await _actionApplier.FinalizeCompletedRunAsync(state, cancellationToken).ConfigureAwait(false);
 
-                    SelectionInputSnapshot snapshot = await _selectionInputReader.ReadAsync(state.WatchBinding!, cancellationToken).ConfigureAwait(false);
+                    SelectionInputSnapshot snapshot = await _selectionInputReader.ReadAsync(state.InputBinding!, cancellationToken).ConfigureAwait(false);
                     DateTimeOffset now = _clock.UtcNow;
                     InteractiveLoopState previousState = state;
                     InteractiveDecisionResult decision = InteractiveDecisionEngine.Evaluate(
@@ -127,7 +127,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 EventId = 2,
                 Level = LogLevel.Information,
                 Message = "Interactive input bindings attached on the session root slot: Latitude, Longitude, Range, Search.")]
-            public static partial void WatchBindingAttached(ILogger logger);
+            public static partial void InteractiveInputAttached(ILogger logger);
 
             [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Search query changed: {Query}")]
             public static partial void SearchQueryChanged(ILogger logger, string query);

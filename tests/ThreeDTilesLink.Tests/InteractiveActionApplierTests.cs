@@ -18,14 +18,14 @@ namespace ThreeDTilesLink.Tests
             var applier = new InteractiveActionApplier(
                 new StubTileSelectionService(),
                 new StubResoniteSession(),
-                new ThrowingWatchStore(new InvalidOperationException("synthetic watch write failure")),
+                new ThrowingInteractiveInputStore(new InvalidOperationException("synthetic input write failure")),
                 new FixedSearchResolver(new LocationSearchResult("Shibuya", 35.65858d, 139.745433d)),
                 new PassThroughTransformer(),
                 clock,
                 NullLogger<InteractiveRunSupervisor>.Instance);
             InteractiveLoopState state = InteractiveLoopState.CreateInitial() with
             {
-                WatchBinding = CreateWatchBinding(),
+                InputBinding = CreateInputBinding(),
                 PendingValues = new SelectionInputValues(10f, 20f, 30f),
                 PendingValuesChangedAt = DateTimeOffset.UnixEpoch
             };
@@ -58,9 +58,9 @@ namespace ThreeDTilesLink.Tests
                     TimeSpan.FromSeconds(1)));
         }
 
-        private static WatchBinding CreateWatchBinding()
+        private static InteractiveInputBinding CreateInputBinding()
         {
-            return new WatchBinding(
+            return new InteractiveInputBinding(
                 "lat", "Value", "latAlias", "Value",
                 "lon", "Value", "lonAlias", "Value",
                 "range", "Value", "rangeAlias", "Value",
@@ -105,26 +105,26 @@ namespace ThreeDTilesLink.Tests
             public Task DisconnectAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         }
 
-        private sealed class ThrowingWatchStore(Exception exception) : IWatchStore
+        private sealed class ThrowingInteractiveInputStore(Exception exception) : IInteractiveInputStore
         {
             private readonly Exception _exception = exception;
 
-            public Task<WatchBinding> CreateWatchAsync(CancellationToken cancellationToken)
+            public Task<InteractiveInputBinding> CreateInteractiveInputBindingAsync(CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }
 
-            public Task<SelectionInputValues?> ReadSelectionInputValuesAsync(WatchBinding binding, CancellationToken cancellationToken)
+            public Task<SelectionInputValues?> ReadInteractiveInputValuesAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }
 
-            public Task<string?> ReadWatchSearchAsync(WatchBinding binding, CancellationToken cancellationToken)
+            public Task<string?> ReadInteractiveInputSearchAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }
 
-            public Task UpdateWatchCoordinatesAsync(WatchBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
+            public Task UpdateInteractiveInputCoordinatesAsync(InteractiveInputBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
             {
                 return Task.FromException(_exception);
             }

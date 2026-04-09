@@ -10,30 +10,30 @@ namespace ThreeDTilesLink.Tests
     public sealed class SelectionInputReaderTests
     {
         [Fact]
-        public async Task TryReadWatchSearchAsync_ReturnsNull_AndDoesNotWarn_WhenResponseIsMissing()
+        public async Task TryReadInteractiveInputSearchAsync_ReturnsNull_AndDoesNotWarn_WhenResponseIsMissing()
         {
             var logger = new ListLogger<SelectionInputReader>();
             var monitor = new SelectionInputReader(
-                new ThrowingWatchStore(new ResoniteLinkNoResponseException(), null),
+                new ThrowingInteractiveInputStore(new ResoniteLinkNoResponseException(), null),
                 logger);
 
-            string? result = await monitor.TryReadWatchSearchAsync(CreateBinding(), CancellationToken.None);
+            string? result = await monitor.TryReadInteractiveInputSearchAsync(CreateInputBinding(), CancellationToken.None);
 
             _ = result.Should().BeNull();
             _ = logger.Entries.Should().ContainSingle();
             _ = logger.Entries[0].Level.Should().Be(LogLevel.Debug);
-            _ = logger.Entries[0].Message.Should().Be("Watch search query read returned no response.");
+            _ = logger.Entries[0].Message.Should().Contain("read returned no response");
         }
 
         [Fact]
-        public async Task TryReadSelectionInputValuesAsync_ReturnsNull_AndDoesNotWarn_WhenResponseIsMissing()
+        public async Task TryReadInteractiveInputValuesAsync_ReturnsNull_AndDoesNotWarn_WhenResponseIsMissing()
         {
             var logger = new ListLogger<SelectionInputReader>();
             var monitor = new SelectionInputReader(
-                new ThrowingWatchStore(null, new ResoniteLinkNoResponseException()),
+                new ThrowingInteractiveInputStore(null, new ResoniteLinkNoResponseException()),
                 logger);
 
-            SelectionInputValues? result = await monitor.TryReadSelectionInputValuesAsync(CreateBinding(), CancellationToken.None);
+            SelectionInputValues? result = await monitor.TryReadInteractiveInputValuesAsync(CreateInputBinding(), CancellationToken.None);
 
             _ = result.Should().BeNull();
             _ = logger.Entries.Should().ContainSingle();
@@ -42,14 +42,14 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task TryReadSelectionInputValuesAsync_ReturnsNull_WhenRangeIsZero()
+        public async Task TryReadInteractiveInputValuesAsync_ReturnsNull_WhenRangeIsZero()
         {
             var logger = new ListLogger<SelectionInputReader>();
             var monitor = new SelectionInputReader(
-                new ValueWatchStore(new SelectionInputValues(35.0f, 139.0f, 0f)),
+                new ValueInteractiveInputStore(new SelectionInputValues(35.0f, 139.0f, 0f)),
                 logger);
 
-            SelectionInputValues? result = await monitor.TryReadSelectionInputValuesAsync(CreateBinding(), CancellationToken.None);
+            SelectionInputValues? result = await monitor.TryReadInteractiveInputValuesAsync(CreateInputBinding(), CancellationToken.None);
 
             _ = result.Should().BeNull();
             _ = logger.Entries.Should().BeEmpty();
@@ -60,14 +60,14 @@ namespace ThreeDTilesLink.Tests
         [InlineData(float.PositiveInfinity)]
         [InlineData(float.NegativeInfinity)]
         [InlineData(-10f)]
-        public async Task TryReadSelectionInputValuesAsync_ReturnsNull_WhenRangeIsInvalid(float rangeM)
+        public async Task TryReadInteractiveInputValuesAsync_ReturnsNull_WhenRangeIsInvalid(float rangeM)
         {
             var logger = new ListLogger<SelectionInputReader>();
             var monitor = new SelectionInputReader(
-                new ValueWatchStore(new SelectionInputValues(35.0f, 139.0f, rangeM)),
+                new ValueInteractiveInputStore(new SelectionInputValues(35.0f, 139.0f, rangeM)),
                 logger);
 
-            SelectionInputValues? result = await monitor.TryReadSelectionInputValuesAsync(CreateBinding(), CancellationToken.None);
+            SelectionInputValues? result = await monitor.TryReadInteractiveInputValuesAsync(CreateInputBinding(), CancellationToken.None);
 
             _ = result.Should().BeNull();
             _ = logger.Entries.Should().BeEmpty();
@@ -98,9 +98,9 @@ namespace ThreeDTilesLink.Tests
             _ = range.Max.Should().Be(50d);
         }
 
-        private static WatchBinding CreateBinding()
+        private static InteractiveInputBinding CreateInputBinding()
         {
-            return new WatchBinding(
+            return new InteractiveInputBinding(
                 "lat",
                 "Value",
                 "lat_alias",
@@ -119,54 +119,54 @@ namespace ThreeDTilesLink.Tests
                 "Value");
         }
 
-        private sealed class ThrowingWatchStore(Exception? searchException, Exception? valuesException) : IWatchStore
+        private sealed class ThrowingInteractiveInputStore(Exception? searchException, Exception? valuesException) : IInteractiveInputStore
         {
             private readonly Exception? _searchException = searchException;
             private readonly Exception? _valuesException = valuesException;
 
-            public Task<WatchBinding> CreateWatchAsync(CancellationToken cancellationToken)
+            public Task<InteractiveInputBinding> CreateInteractiveInputBindingAsync(CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }
 
-            public Task<SelectionInputValues?> ReadSelectionInputValuesAsync(WatchBinding binding, CancellationToken cancellationToken)
+            public Task<SelectionInputValues?> ReadInteractiveInputValuesAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
             {
                 return _valuesException is null
                     ? Task.FromResult<SelectionInputValues?>(null)
                     : Task.FromException<SelectionInputValues?>(_valuesException);
             }
 
-            public Task<string?> ReadWatchSearchAsync(WatchBinding binding, CancellationToken cancellationToken)
+            public Task<string?> ReadInteractiveInputSearchAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
             {
                 return _searchException is null
                     ? Task.FromResult<string?>(null)
                     : Task.FromException<string?>(_searchException);
             }
 
-            public Task UpdateWatchCoordinatesAsync(WatchBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
+            public Task UpdateInteractiveInputCoordinatesAsync(InteractiveInputBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }
         }
 
-        private sealed class ValueWatchStore(SelectionInputValues values) : IWatchStore
+        private sealed class ValueInteractiveInputStore(SelectionInputValues values) : IInteractiveInputStore
         {
-            public Task<WatchBinding> CreateWatchAsync(CancellationToken cancellationToken)
+            public Task<InteractiveInputBinding> CreateInteractiveInputBindingAsync(CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }
 
-            public Task<SelectionInputValues?> ReadSelectionInputValuesAsync(WatchBinding binding, CancellationToken cancellationToken)
+            public Task<SelectionInputValues?> ReadInteractiveInputValuesAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
             {
                 return Task.FromResult<SelectionInputValues?>(values);
             }
 
-            public Task<string?> ReadWatchSearchAsync(WatchBinding binding, CancellationToken cancellationToken)
+            public Task<string?> ReadInteractiveInputSearchAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
             {
                 return Task.FromResult<string?>(null);
             }
 
-            public Task UpdateWatchCoordinatesAsync(WatchBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
+            public Task UpdateInteractiveInputCoordinatesAsync(InteractiveInputBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }

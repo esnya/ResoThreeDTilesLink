@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    internal sealed record WatchBinding(
+    internal sealed record InteractiveInputBinding(
         string LatitudeComponentId,
         string LatitudeValueMemberName,
         string LatitudeAliasComponentId,
