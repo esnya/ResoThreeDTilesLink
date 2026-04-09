@@ -11,11 +11,10 @@
 - そのため、Google 3D Tiles 向けの永続 file cache は、レスポンスヘッダ上は cacheable でも、無駄な複雑さとして運用目標にしない
 - タイル取得の HTTP キャッシュは、ヘッダ準拠の process-local reuse に限定し、user ごとの disk 永続化は前提にしない
 - Google タイルを表示している間は、Google Maps attribution を常に可視に保つ
-- 現在の統合では、その要件を固定 alias 群 `World/ThreeDTilesLink.License`、`World/ThreeDTilesLink.AttributionRequirements`、`World/ThreeDTilesLink.AttributionLogoAsset` で扱う
+- 現在の統合では、その要件を固定 alias 群 `World/ThreeDTilesLink.License` と `World/ThreeDTilesLink.AttributionRequirements` で扱う
 - `World/ThreeDTilesLink.License` は常に `Google Maps` と、その時点で必要な provider attribution を含む
-- `World/ThreeDTilesLink.AttributionLogoAsset` はアプリ出力ディレクトリ基準の bundled logo asset path を公開する
-- session root では、renderer 側の compliance guidance 用に `World/ThreeDTilesLink.AttributionRequirements` を、同梱した公式 logo asset のファイル名用に `World/ThreeDTilesLink.AttributionLogoAsset` も公開する
-- streamed scene の周囲に、より豊かな visible UI を追加する場合は、その UI が画像を描画できる限り公式 Google Maps logo を優先し、Resonite や他社の branding と混ぜたり restyle したりしない
+- session root では、renderer 側の compliance guidance 用に `World/ThreeDTilesLink.AttributionRequirements` を公開する
+- streamed scene の周囲に、より豊かな visible UI を追加する場合は、必要な Google Maps logo の扱いは renderer または overlay layer 側の責務にする。Resonite や他社の branding と混ぜたり restyle したりしない
 - 正式リリースのバージョン起点は `v1.2.3` 形式の `git tag` に統一する
 - 正式リリースは `v1.2.3` 形式の Git tag と対応する GitHub Release の組で扱う
 - タグなしコミットのビルドはプレリリース扱いにし、正式版とは区別する
@@ -54,9 +53,7 @@
 - Target 側からの上書きは `ValueCopy.WriteBack` で制御し、`World/` から session-side へ戻す必要がある Interactive 入力パラメーターにだけ有効化する。観測専用 alias では無効のままにする
 - session の license credit は session-side の `DynamicValueVariable<string>` から固定 alias `World/ThreeDTilesLink.License` へ公開する
 - `World/ThreeDTilesLink.License` は現在表示中の Google tiles 向けの必須 compliance 出力として扱い、任意の metadata としては扱わない
-- renderer 向けの guidance は固定 alias `World/ThreeDTilesLink.AttributionRequirements` と `World/ThreeDTilesLink.AttributionLogoAsset` へ公開する
 - renderer 側の compliance ガイダンスは固定 alias `World/ThreeDTilesLink.AttributionRequirements` へ公開する
-- 同梱した Google Maps logo asset のファイル名は固定 alias `World/ThreeDTilesLink.AttributionLogoAsset` へ公開する
 - Progress は親スロットに置いた session-side の `DynamicValueVariable<float>` から `ValueCopy<float>` 経由で `World/ThreeDTilesLink.Progress` へ `0.0..1.0` の float として公開する
 - 人間向けの進捗文字列は親スロットに置いた session-side の `DynamicValueVariable<string>` から `ValueCopy<string>` 経由で `World/ThreeDTilesLink.ProgressText` へ公開する
 

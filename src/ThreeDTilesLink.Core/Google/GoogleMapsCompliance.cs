@@ -3,9 +3,8 @@ namespace ThreeDTilesLink.Core.Google
     internal static class GoogleMapsCompliance
     {
         internal const string BasemapAttribution = "Google Maps";
-        internal const string BundledLogoRelativePath = "GoogleMaps/GoogleMaps_Logo_WithLightOutline_2x.png";
         internal const string AttributionRequirements =
-            "Keep Google Maps attribution visible for displayed tiles. If your renderer can show a logo, use the official Google Maps logo, keep it separate from renderer or overlay logos, and keep third-party data providers in the attribution line. If you cannot place the logo in the visible surface, keep the Google Maps text attribution visible instead.";
+            "Keep Google Maps attribution visible for displayed tiles. If your renderer requires a Google Maps logo for compliance, handle that logo in the renderer or overlay layer, keep it separate from renderer branding, and keep third-party data providers in the attribution line.";
 
         internal static string? NormalizeAttributionOwner(string? value)
         {
