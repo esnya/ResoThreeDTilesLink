@@ -83,6 +83,7 @@ This document contains only current operational information that is difficult to
 - When the requested range is large, expect coarse coverage ancestors to be streamed before finer descendants. Treat that ordering as intentional bootstrap behavior, not as a regression by itself.
 - In stream verification logs, review the ordering of `Streamed tile ...` and `Removed tile ...` carefully. Removal must not get ahead of the additions required to preserve coverage.
 - A single `stream` run can still emit `Removed tile ...` during refinement. Do not assume removal only happens in `interactive`.
+- In the Tokyo Tower live case, streamed tile IDs can reach length 26. Treat that as evidence that the traversal is reaching leaf-level tiles rather than stopping too early.
 
 Example:
 

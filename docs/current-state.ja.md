@@ -83,6 +83,7 @@
 - 要求した `range` が大きい場合、細かい descendant より先に粗い coverage ancestor が送られることがある。この順序は bootstrap の意図した挙動であり、それだけで退行とはみなさない
 - `stream` のログでは `Streamed tile ...` と `Removed tile ...` の順序を重点確認する。可視範囲を保つために必要な追加より remove が先行してはいけない
 - 単発の `stream` でも refinement 中に `Removed tile ...` は出る。remove は `interactive` だけの現象だと決めつけない
+- 東京タワー live ケースでは streamed tile ID の長さが 26 まで到達する。これは探索が早く止まりすぎず、葉レベルの tile まで進んでいる目安として扱う
 
 例:
 
