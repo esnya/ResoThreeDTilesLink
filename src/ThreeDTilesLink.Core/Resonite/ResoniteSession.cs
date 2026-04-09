@@ -8,6 +8,7 @@ using ResoniteLink;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using ThreeDTilesLink.Core.Contracts;
+using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Resonite
@@ -108,12 +109,16 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string InteractiveRangeAliasPath = "World/ThreeDTilesLink.Range";
         private const string InteractiveSearchAliasPath = "World/ThreeDTilesLink.Search";
         private const string LicenseDynamicVariablePath = "World/ThreeDTilesLink.License";
+        private const string AttributionRequirementsVariableLocalName = "AttributionRequirements";
+        private const string AttributionRequirementsDynamicVariablePath = "World/ThreeDTilesLink.AttributionRequirements";
+        private const string AttributionLogoAssetVariableLocalName = "AttributionLogoAsset";
+        private const string AttributionLogoAssetDynamicVariablePath = "World/ThreeDTilesLink.AttributionLogoAsset";
         private const string ProgressValueVariableLocalName = "Progress";
         private const string ProgressTextVariableLocalName = "ProgressText";
         private const string ProgressDynamicVariablePath = "World/ThreeDTilesLink.Progress";
         private const string ProgressTextDynamicVariablePath = "World/ThreeDTilesLink.ProgressText";
         private const string ParentDynamicSpaceNamePrefix = "ThreeDTilesLink.Parent";
-        private const string DefaultGoogleMapsCreditText = "Google Maps";
+        private const string DefaultGoogleMapsCreditText = GoogleMapsCompliance.BasemapAttribution;
         private const string PackageExportWarningSlotName = "EXPORT PROHIBITED: STREAMED GOOGLE 3D TILES";
         private const string MeshAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Mesh>";
         private const string MaterialAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Material>";
@@ -1434,6 +1439,36 @@ namespace ThreeDTilesLink.Core.Resonite
                 writeBack: false,
                 cancellationToken).ConfigureAwait(false);
             _sessionLicenseAliasComponentId = licenseAliasBinding?.ComponentId;
+
+            DynamicVariableBinding? attributionRequirementsBinding = await TryAddDynamicStringValueVariableAsync(
+                sessionRootSlotId,
+                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, AttributionRequirementsVariableLocalName),
+                GoogleMapsCompliance.AttributionRequirements,
+                cancellationToken).ConfigureAwait(false);
+            if (attributionRequirementsBinding is not null)
+            {
+                _ = await TryAddWorldStringAliasAsync(
+                    sessionRootSlotId,
+                    AttributionRequirementsDynamicVariablePath,
+                    attributionRequirementsBinding.ValueFieldId,
+                    writeBack: false,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            DynamicVariableBinding? attributionLogoAssetBinding = await TryAddDynamicStringValueVariableAsync(
+                sessionRootSlotId,
+                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, AttributionLogoAssetVariableLocalName),
+                GoogleMapsCompliance.BundledLogoFileName,
+                cancellationToken).ConfigureAwait(false);
+            if (attributionLogoAssetBinding is not null)
+            {
+                _ = await TryAddWorldStringAliasAsync(
+                    sessionRootSlotId,
+                    AttributionLogoAssetDynamicVariablePath,
+                    attributionLogoAssetBinding.ValueFieldId,
+                    writeBack: false,
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
 
         private async Task EnsureSessionDynamicSpaceAsync(string sessionRootSlotId, CancellationToken cancellationToken = default)

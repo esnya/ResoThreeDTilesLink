@@ -33,6 +33,7 @@
 13. 東京タワーの live 標準ケースは、`--depth-limit` などの制限引数を足さない形を既定にし、制限引数はその制限自体を検証したい場合だけ追加する
 14. アプリ本体の entry point がまだ `--resonite-port` を要求する場合も、実行直前に discover して、その値をその場限りの入力として扱う
 15. 実機確認ができない場合は、その前提を差分説明に明記する
+16. Google タイルの表示や metadata に触れる変更では、公開する attribution に `Google Maps` と必要な provider attribution が含まれ続けることを確認し、logo と third-party renderer の扱いに関する README の利用者向け説明も再確認する
 
 ## ドキュメント更新ルール
 

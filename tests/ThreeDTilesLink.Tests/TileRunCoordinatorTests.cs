@@ -887,7 +887,7 @@ namespace ThreeDTilesLink.Tests
 
             _ = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 8), CancellationToken.None);
 
-            _ = client.LicenseCredits.Should().ContainInOrder("Google Maps", "Google; Maxar Technologies");
+            _ = client.LicenseCredits.Should().ContainInOrder("Google Maps", "Google Maps; Maxar Technologies");
         }
 
         [Fact]
@@ -932,7 +932,7 @@ namespace ThreeDTilesLink.Tests
 
             _ = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
-            _ = client.LicenseCredits.Should().ContainInOrder("Google Maps", "Google; Airbus");
+            _ = client.LicenseCredits.Should().ContainInOrder("Google Maps", "Google Maps; Airbus");
         }
 
         [Fact]
@@ -993,7 +993,7 @@ namespace ThreeDTilesLink.Tests
 
             _ = client.LicenseCredits.Should().ContainInOrder(
                 "Google Maps",
-                "Google; NestedProvider");
+                "Google Maps; NestedProvider");
         }
 
         [Fact]
@@ -1026,7 +1026,7 @@ namespace ThreeDTilesLink.Tests
 
             _ = client.LicenseCredits.Should().ContainInOrder(
                 "Google Maps",
-                "Data SIO, NOAA, U.S. Navy, NGA, GEBCO; Landsat / Copernicus");
+                "Google Maps; Data SIO, NOAA, U.S. Navy, NGA, GEBCO; Landsat / Copernicus");
         }
 
         [Fact]

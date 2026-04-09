@@ -933,7 +933,7 @@ namespace ThreeDTilesLink.Tests
                 CreatePreparedContent("g", parentTileId: "c", stableId: StableId("g"), parentStableId: StableId("c")),
                 order: 0,
                 stableId: StableId("g"));
-            writerState.AppliedLicenseCredit = "Google; Parent";
+            writerState.AppliedLicenseCredit = "Google Maps; Parent";
             writerState.AppliedProgressValue = 0f;
             writerState.AppliedProgressText = "stale";
 
@@ -966,7 +966,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
             });
             ResoniteReconcilerCore reconciler = CreateReconciler(core);
-            writerState.AppliedLicenseCredit = "Google; Parent 0, Parent 1";
+            writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
             writerState.AppliedProgressValue = 0f;
             writerState.AppliedProgressText = "stale";
             writerState.LastMetadataSyncStartedAt = DateTimeOffset.UtcNow - TimeSpan.FromMilliseconds(500);
@@ -1002,7 +1002,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
             });
             ResoniteReconcilerCore reconciler = CreateReconciler(core);
-            writerState.AppliedLicenseCredit = "Google; Parent 0; Parent 1";
+            writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
             writerState.AppliedProgressValue = 0.42f;
             writerState.AppliedProgressText = "Running:";
             DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -1042,7 +1042,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
             });
             ResoniteReconcilerCore reconciler = CreateReconciler(core);
-            writerState.AppliedLicenseCredit = "Google; Parent 0; Parent 1";
+            writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
             writerState.AppliedProgressValue = 0.62f;
             writerState.AppliedProgressText = "Running:";
             DateTimeOffset now = DateTimeOffset.UtcNow;
