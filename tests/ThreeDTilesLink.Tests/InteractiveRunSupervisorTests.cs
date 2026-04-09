@@ -525,6 +525,28 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task RunAsync_Disconnects_WhenInputBindingInitializationFailsAfterConnect()
+        {
+            var session = new FakeSession();
+            var watchStore = new FakeInteractiveInputStore
+            {
+                CreateBindingException = new InvalidOperationException("binding failed")
+            };
+            var supervisor = CreateSupervisor(
+                new FakeTileRunCoordinator(static _ => { }),
+                session,
+                watchStore,
+                new FakeSearchResolver(),
+                new FakeClock());
+
+            Func<Task> act = () => supervisor.RunAsync(CreateRequest(apiKey: string.Empty), CancellationToken.None);
+
+            _ = await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("binding failed");
+            _ = session.DisconnectCalls.Should().Be(1);
+        }
+
+        [Fact]
         public async Task RunAsync_PropagatesCancellation_WhenSearchResolutionIsCanceled()
         {
             var session = new FakeSession();
@@ -756,11 +778,17 @@ namespace ThreeDTilesLink.Tests
             public Queue<string?> SearchValues { get; init; } = new();
             public Queue<Exception?> UpdateCoordinateFailures { get; init; } = new();
             public List<(double Latitude, double Longitude)> UpdatedCoordinates { get; } = [];
+            public Exception? CreateBindingException { get; init; }
             public Exception? SelectionInputValuesReadException { get; init; }
             public Exception? SearchReadException { get; init; }
 
             public Task<InteractiveInputBinding> CreateInteractiveInputBindingAsync(CancellationToken cancellationToken)
             {
+                if (CreateBindingException is not null)
+                {
+                    throw CreateBindingException;
+                }
+
                 return Task.FromResult(new InteractiveInputBinding(
                     "lat",
                     "Value",

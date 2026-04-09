@@ -51,7 +51,10 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                state = await InitializeSessionAsync(state, options, cancellationToken).ConfigureAwait(false);
+                Log.ConnectingToResonite(_logger, options.ResoniteHost, options.ResonitePort);
+                await _actionApplier.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
+                state = state with { Connected = true };
+                state = await InitializeInputBindingAsync(state, cancellationToken).ConfigureAwait(false);
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
@@ -65,15 +68,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        private async Task<InteractiveLoopState> InitializeSessionAsync(
+        private async Task<InteractiveLoopState> InitializeInputBindingAsync(
             InteractiveLoopState state,
-            InteractiveRunRequest options,
             CancellationToken cancellationToken)
         {
-            Log.ConnectingToResonite(_logger, options.ResoniteHost, options.ResonitePort);
-            await _actionApplier.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
-            state = state with { Connected = true };
-
             InteractiveInputBinding inputBinding = await _interactiveInputStore.CreateInteractiveInputBindingAsync(cancellationToken).ConfigureAwait(false);
             Log.InteractiveInputAttached(_logger);
             return state with { InputBinding = inputBinding };
