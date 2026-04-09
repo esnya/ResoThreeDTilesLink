@@ -52,7 +52,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return new InteractiveDecisionResult(next, actions);
             }
 
-            if (next.PendingValues is not null &&
+            if (next.PendingSearch is null &&
+                next.PendingValues is not null &&
                 next.PendingValuesChangedAt is not null)
             {
                 bool debounceElapsed = now - next.PendingValuesChangedAt.Value >= options.Debounce;

@@ -300,9 +300,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             return state with
             {
                 PendingSearch = searchText,
-                PendingSearchChangedAt = _clock.UtcNow,
-                PendingValues = null,
-                PendingValuesChangedAt = null
+                PendingSearchChangedAt = _clock.UtcNow
             };
         }
 

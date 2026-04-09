@@ -11,7 +11,7 @@ namespace ThreeDTilesLink.Tests
     public sealed class InteractiveActionApplierTests
     {
         [Fact]
-        public async Task ApplyAsync_RequeuesSearchFromFailureTime()
+        public async Task ApplyAsync_RequeuesSearchFromFailureTime_WithoutDroppingPendingValues()
         {
             DateTimeOffset failureTime = DateTimeOffset.UnixEpoch.AddSeconds(42);
             var clock = new FakeClock(failureTime);
@@ -38,8 +38,8 @@ namespace ThreeDTilesLink.Tests
 
             _ = next.PendingSearch.Should().Be("Shibuya");
             _ = next.PendingSearchChangedAt.Should().Be(failureTime);
-            _ = next.PendingValues.Should().BeNull();
-            _ = next.PendingValuesChangedAt.Should().BeNull();
+            _ = next.PendingValues.Should().Be(new SelectionInputValues(10f, 20f, 30f));
+            _ = next.PendingValuesChangedAt.Should().Be(DateTimeOffset.UnixEpoch);
         }
 
         private static InteractiveRunRequest CreateOptions()
