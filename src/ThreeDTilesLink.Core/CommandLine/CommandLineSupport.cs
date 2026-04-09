@@ -325,6 +325,11 @@ namespace ThreeDTilesLink.Core.CommandLine
             return TryGetValue(parsed, key, out value) && value > 0;
         }
 
+        internal static bool TryGetPort(ParsedCommand parsed, string key, out int value)
+        {
+            return TryGetValue(parsed, key, out value) && value is >= 1 and <= 65535;
+        }
+
         internal static bool TryGetNonNegativeInt(ParsedCommand parsed, string key, out int value)
         {
             return TryGetValue(parsed, key, out value) && value >= 0;

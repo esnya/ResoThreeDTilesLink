@@ -42,7 +42,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 new("--debounce", CommandOptionValueKind.WholeNumber, "Delay after watch changes before starting a run.", DefaultValue: 800, Unit: "ms", RenamedFrom: ["--debounce-ms"]),
                 new("--throttle", CommandOptionValueKind.WholeNumber, "Minimum time between run starts.", DefaultValue: 3000, Unit: "ms", RenamedFrom: ["--throttle-ms"]),
                 new("--remove-out-of-range", CommandOptionValueKind.Switch, "During overlapping updates, remove retained tiles that fall outside the latest range.", DefaultValue: false),
-                new("--watch-path", CommandOptionValueKind.Text, "Watch variable path prefix.", DefaultValue: "World/ThreeDTilesLink", ValueName: "path"),
+                new("--watch-path", CommandOptionValueKind.Text, "Watch variable path prefix. Must start with World/; segments are normalized to alphanumeric names.", DefaultValue: "World/ThreeDTilesLink", ValueName: "path"),
                 CommonCommandOptions.DryRun(),
                 CommonCommandOptions.LogLevelOption()
             ],
@@ -80,7 +80,7 @@ namespace ThreeDTilesLink.Core.CommandLine
 
             if (!CommandInvocationBuilder.TryGetValue(parsed, "--height-offset", out double heightOffset) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--resonite-host", out string? resoniteHost) ||
-                !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--resonite-port", out int resonitePort) ||
+                !CommandInvocationBuilder.TryGetPort(parsed, "--resonite-port", out int resonitePort) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--tile-limit", out int tileLimit) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--depth-limit", out int depthLimit) ||
                 !CommandInvocationBuilder.TryGetPositiveDouble(parsed, "--detail", out double detailTargetM) ||

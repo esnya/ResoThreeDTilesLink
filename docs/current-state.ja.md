@@ -37,8 +37,11 @@
 - live 環境によっては `SimpleAvatarProtection` が公開されていないことがある。その場合でも接続とメッシュ送信は継続できる前提で扱う
 - Session root や親スロットに付ける常設の書き込み元は、まず session-side の `DynamicValueVariable<T>` として置く
 - `DynamicVariableSpace.OnlyDirectBinding` が有効な場合、session-side の source DV 名には `SpaceName/` を明示して含める
+- Interactive の入力パラメーターでは watch path を `--watch-path` から派生させ、その base path は `World/` で始まる必要がある。アプリは残りの各 path segment を英数字の member 名に正規化してから `Latitude` / `Longitude` / `Range` / `Search` の watch を作る
 - `World/` alias は `DynamicField` ではなく、session-side の値を `ValueCopy<T>` で Drive する別の `DynamicValueVariable<T>` として公開する
-- Target 側からの上書きは `ValueCopy.WriteBack` で制御し、`World/` から session-side へ戻す必要がある Interactive 入力パラメーターにだけ有効化する
+- 可変の Interactive 入力 watch と観測用 alias は分けて扱う。`--watch-path` が効くのは入力 watch だけで、観測用 alias は `World/ThreeDTilesLink.*` 配下に固定する
+- Target 側からの上書きは `ValueCopy.WriteBack` で制御し、`World/` から session-side へ戻す必要がある Interactive 入力パラメーターにだけ有効化する。観測専用 alias では無効のままにする
+- session の license credit は session-side の `DynamicValueVariable<string>` から固定 alias `World/ThreeDTilesLink.License` へ公開する
 - Progress は親スロットに置いた session-side の `DynamicValueVariable<float>` から `ValueCopy<float>` 経由で `World/ThreeDTilesLink.Progress` へ `0.0..1.0` の float として公開する
 - 人間向けの進捗文字列は親スロットに置いた session-side の `DynamicValueVariable<string>` から `ValueCopy<string>` 経由で `World/ThreeDTilesLink.ProgressText` へ公開する
 

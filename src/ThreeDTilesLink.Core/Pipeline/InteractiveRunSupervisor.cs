@@ -87,7 +87,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
             finally
             {
-                state = await _actionApplier.DisconnectAsync(state, cancellationToken).ConfigureAwait(false);
+                state = await _actionApplier.DisconnectAsync(state, CancellationToken.None).ConfigureAwait(false);
             }
         }
 

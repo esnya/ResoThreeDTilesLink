@@ -119,6 +119,31 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task RunAsync_DisconnectsEvenWhenCallerTokenIsCanceled()
+        {
+            var session = new FakeSession
+            {
+                ThrowOnCanceledDisconnect = true
+            };
+            var watchStore = new FakeWatchStore
+            {
+                SelectionInputValues = new Queue<SelectionInputValues?>([new SelectionInputValues(35f, 139f, 400f), new SelectionInputValues(35f, 139f, 400f)])
+            };
+            var clock = new FakeClock { CancelAfterDelayCalls = 3 };
+            var coordinator = new FakeTileRunCoordinator(_ => clock.RequestCancellation());
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock);
+
+            using var cts = new CancellationTokenSource();
+            clock.CancellationSource = cts;
+
+            await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
+
+            _ = session.DisconnectCalls.Should().Be(1);
+            _ = session.DisconnectCancellationTokens.Should().ContainSingle()
+                .Which.Should().BeFalse();
+        }
+
+        [Fact]
         public async Task RunAsync_SupersededOverlapRun_CarriesPartialVisibleTilesIntoNextRun()
         {
             var session = new FakeSession();
@@ -368,8 +393,12 @@ namespace ThreeDTilesLink.Tests
             var session = new FakeSession();
             var watchStore = new FakeWatchStore
             {
-                SearchValues = new Queue<string?>(["Asakusa", "Asakusa", "Asakusa", "Asakusa", "Asakusa"]),
-                SelectionInputValues = new Queue<SelectionInputValues?>([null, null, null, null, null])
+                SearchValues = new Queue<string?>(
+                [
+                    "Asakusa", "Asakusa", "Asakusa", "Asakusa", "Asakusa", "Asakusa",
+                    "Asakusa", "Asakusa", "Asakusa", "Asakusa"
+                ]),
+                SelectionInputValues = new Queue<SelectionInputValues?>([null, null, null, null, null, null, null, null, null, null])
             };
             var clock = new FakeClock { CancelAfterDelayCalls = 5 };
             var searchResolver = new FakeSearchResolver(
@@ -393,6 +422,34 @@ namespace ThreeDTilesLink.Tests
             _ = searchResolver.CallCount.Should().BeGreaterThanOrEqualTo(2);
             _ = watchStore.UpdatedCoordinates.Should().ContainSingle()
                 .Which.Should().Be((35.7147651d, 139.7966553d));
+        }
+
+        [Fact]
+        public async Task RunAsync_RequeuesSearch_WhenWatchCoordinateWritebackFails()
+        {
+            var session = new FakeSession();
+            var watchStore = new FakeWatchStore
+            {
+                SearchValues = new Queue<string?>(["Asakusa", "Asakusa", "Asakusa"]),
+                SelectionInputValues = new Queue<SelectionInputValues?>([null, null, null]),
+                UpdateCoordinateFailures = new Queue<Exception?>([new InvalidOperationException("writeback failed")])
+            };
+            var clock = new FakeClock { CancelAfterDelayCalls = 2 };
+            var searchResolver = new FakeSearchResolver(new LocationSearchResult("Asakusa", 35.7147651d, 139.7966553d));
+            var supervisor = CreateSupervisor(
+                new FakeTileRunCoordinator(static _ => { }),
+                session,
+                watchStore,
+                searchResolver,
+                clock);
+
+            using var cts = new CancellationTokenSource();
+            clock.CancellationSource = cts;
+
+            await supervisor.RunAsync(CreateRequest(apiKey: "key"), cts.Token);
+
+            _ = searchResolver.CallCount.Should().Be(1);
+            _ = watchStore.UpdatedCoordinates.Should().BeEmpty();
         }
 
         private static InteractiveRunSupervisor CreateSupervisor(
@@ -505,7 +562,9 @@ namespace ThreeDTilesLink.Tests
         private sealed class FakeSession : IResoniteSession
         {
             public List<string> RemovedSlotIds { get; } = [];
+            public List<bool> DisconnectCancellationTokens { get; } = [];
             public int DisconnectCalls { get; private set; }
+            public bool ThrowOnCanceledDisconnect { get; init; }
 
             public Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
             {
@@ -546,6 +605,12 @@ namespace ThreeDTilesLink.Tests
             public Task DisconnectAsync(CancellationToken cancellationToken)
             {
                 DisconnectCalls++;
+                DisconnectCancellationTokens.Add(cancellationToken.IsCancellationRequested);
+                if (ThrowOnCanceledDisconnect && cancellationToken.IsCancellationRequested)
+                {
+                    throw new InvalidOperationException("Disconnect should not receive a canceled token.");
+                }
+
                 return Task.CompletedTask;
             }
         }
@@ -554,6 +619,7 @@ namespace ThreeDTilesLink.Tests
         {
             public Queue<SelectionInputValues?> SelectionInputValues { get; init; } = new();
             public Queue<string?> SearchValues { get; init; } = new();
+            public Queue<Exception?> UpdateCoordinateFailures { get; init; } = new();
             public List<(double Latitude, double Longitude)> UpdatedCoordinates { get; } = [];
             public Exception? SelectionInputValuesReadException { get; init; }
             public Exception? SearchReadException { get; init; }
@@ -601,6 +667,15 @@ namespace ThreeDTilesLink.Tests
 
             public Task UpdateWatchCoordinatesAsync(WatchBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
             {
+                if (UpdateCoordinateFailures.Count > 0)
+                {
+                    Exception? failure = UpdateCoordinateFailures.Dequeue();
+                    if (failure is not null)
+                    {
+                        return Task.FromException(failure);
+                    }
+                }
+
                 UpdatedCoordinates.Add((latitude, longitude));
                 return Task.CompletedTask;
             }
