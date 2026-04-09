@@ -2,12 +2,14 @@ using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
+using System.Numerics;
 using System.Reflection;
 using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using ResoniteLink;
 using ThreeDTilesLink.Core.Contracts;
+using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Resonite;
 
 namespace ThreeDTilesLink.Tests
@@ -327,6 +329,179 @@ namespace ThreeDTilesLink.Tests
             _ = target.TargetType.Should().Be("[FrooxEngine]FrooxEngine.IField<float>");
 
             _ = members["WriteBack"].Should().BeOfType<Field_bool>().Which.Value.Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task StreamPlacedMeshAsync_UsesBatchOperationsAndReturnsCreatedSlotId()
+        {
+            await using var session = CreateStreamPlacedMeshSession();
+            List<DataModelOperation>? capturedOperations = null;
+            List<string> removedSlotIds = [];
+
+            session.Hooks = new ResoniteSession.TestHooks
+            {
+                ImportMeshAssetAsync = static (_, _) => Task.FromResult(new AssetData
+                {
+                    Success = true,
+                    AssetURL = new Uri("resdb:///mesh")
+                }),
+                RunDataModelOperationBatchAsync = (operations, _) =>
+                {
+                    capturedOperations = [.. operations];
+                    return Task.FromResult(new BatchResponse
+                    {
+                        Success = true,
+                        Responses = operations.Select(static _ => new Response { Success = true }).ToList()
+                    });
+                },
+                RemoveSlotAsync = (slotId, _) =>
+                {
+                    removedSlotIds.Add(slotId);
+                    return Task.FromResult(new Response { Success = true });
+                }
+            };
+
+            string? slotId = await session.StreamPlacedMeshAsync(CreatePlacedMeshPayload(), CancellationToken.None);
+
+            _ = slotId.Should().NotBeNullOrWhiteSpace();
+            _ = removedSlotIds.Should().BeEmpty();
+            _ = capturedOperations.Should().NotBeNull();
+            _ = capturedOperations.Should().HaveCount(6);
+            AddSlot addSlot = capturedOperations![0].Should().BeOfType<AddSlot>().Subject;
+            _ = addSlot.Data.ID.Should().Be(slotId);
+            _ = addSlot.Data.Name.Should().BeOfType<Field_string>().Which.Value.Should().Be("tile_a");
+            _ = addSlot.Data.Parent.Should().NotBeNull();
+            _ = addSlot.Data.Parent!.TargetID.Should().Be("slot_parent");
+
+            AddComponent staticMesh = capturedOperations[1].Should().BeOfType<AddComponent>().Subject;
+            _ = staticMesh.ContainerSlotId.Should().Be(slotId);
+            _ = staticMesh.Data.ComponentType.Should().Be("[FrooxEngine]FrooxEngine.StaticMesh");
+
+            AddComponent meshCollider = capturedOperations[2].Should().BeOfType<AddComponent>().Subject;
+            _ = meshCollider.ContainerSlotId.Should().Be(slotId);
+            _ = meshCollider.Data.ComponentType.Should().Be("[FrooxEngine]FrooxEngine.MeshCollider");
+
+            AddComponent packageExportable = capturedOperations[3].Should().BeOfType<AddComponent>().Subject;
+            _ = packageExportable.Data.ComponentType.Should().Be("[FrooxEngine]FrooxEngine.PackageExportable");
+
+            AddComponent material = capturedOperations[4].Should().BeOfType<AddComponent>().Subject;
+            _ = material.Data.ComponentType.Should().Be("[FrooxEngine]FrooxEngine.PBS_Metallic");
+
+            AddComponent meshRenderer = capturedOperations[5].Should().BeOfType<AddComponent>().Subject;
+            _ = meshRenderer.Data.ComponentType.Should().Be("[FrooxEngine]FrooxEngine.MeshRenderer");
+        }
+
+        [Fact]
+        public async Task StreamPlacedMeshAsync_RemovesCreatedSlot_WhenBatchOperationFails()
+        {
+            await using var session = CreateStreamPlacedMeshSession();
+            List<string> removedSlotIds = [];
+
+            session.Hooks = new ResoniteSession.TestHooks
+            {
+                ImportMeshAssetAsync = static (_, _) => Task.FromResult(new AssetData
+                {
+                    Success = true,
+                    AssetURL = new Uri("resdb:///mesh")
+                }),
+                RunDataModelOperationBatchAsync = (operations, _) => Task.FromResult(new BatchResponse
+                {
+                    Success = true,
+                    Responses =
+                    [
+                        new Response { Success = true },
+                        new Response { Success = false, ErrorInfo = "mesh renderer failed" },
+                        .. operations.Skip(2).Select(static _ => new Response { Success = true })
+                    ]
+                }),
+                RemoveSlotAsync = (slotId, _) =>
+                {
+                    removedSlotIds.Add(slotId);
+                    return Task.FromResult(new Response { Success = true });
+                }
+            };
+
+            Func<Task> act = () => session.StreamPlacedMeshAsync(CreatePlacedMeshPayload(), CancellationToken.None);
+
+            InvalidOperationException exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+            _ = exception.Message.Should().Contain("batch operation failed at index 1");
+            _ = removedSlotIds.Should().ContainSingle();
+            _ = removedSlotIds[0].Should().StartWith("t3dtile_slot_");
+        }
+
+        [Fact]
+        public async Task StreamPlacedMeshAsync_PreservesBatchFailure_WhenCleanupRemoveFails()
+        {
+            await using var session = CreateStreamPlacedMeshSession();
+            List<string> removedSlotIds = [];
+
+            session.Hooks = new ResoniteSession.TestHooks
+            {
+                ImportMeshAssetAsync = static (_, _) => Task.FromResult(new AssetData
+                {
+                    Success = true,
+                    AssetURL = new Uri("resdb:///mesh")
+                }),
+                RunDataModelOperationBatchAsync = (operations, _) => Task.FromResult(new BatchResponse
+                {
+                    Success = true,
+                    Responses = operations.Select(static _ => new Response { Success = true }).ToList()
+                        .Select((response, index) => index == 3
+                            ? new Response { Success = false, ErrorInfo = "package export failed" }
+                            : response)
+                        .ToList()
+                }),
+                RemoveSlotAsync = (slotId, _) =>
+                {
+                    removedSlotIds.Add(slotId);
+                    return Task.FromResult(new Response
+                    {
+                        Success = false,
+                        ErrorInfo = "remove failed"
+                    });
+                }
+            };
+
+            Func<Task> act = () => session.StreamPlacedMeshAsync(CreatePlacedMeshPayload(), CancellationToken.None);
+
+            InvalidOperationException exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+            _ = exception.Message.Should().Contain("batch operation failed at index 3");
+            _ = removedSlotIds.Should().ContainSingle();
+        }
+
+        private static ResoniteSession CreateStreamPlacedMeshSession()
+        {
+            var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
+            SetPrivateField(session, "_sessionRootSlotId", "slot_session_root");
+            SetPrivateField(session, "_packageExportWarningSlotId", "slot_warning");
+            SetPrivateField(session, "_avatarProtectionUnavailable", true);
+            SetPrivateField(session, "_materialMemberDefinitions", new Dictionary<string, MemberDefinition>(StringComparer.Ordinal));
+            SetPrivateField(session, "_materialTextureFieldResolved", true);
+            SetPrivateField(session, "_materialTextureFieldName", null);
+            return session;
+        }
+
+        private static PlacedMeshPayload CreatePlacedMeshPayload()
+        {
+            return new PlacedMeshPayload(
+                "tile_a",
+                [Vector3.Zero, Vector3.UnitX, Vector3.UnitY],
+                [0, 1, 2],
+                [],
+                false,
+                new Vector3(1f, 2f, 3f),
+                Quaternion.Identity,
+                Vector3.One,
+                null,
+                null,
+                "slot_parent");
+        }
+
+        private static void SetPrivateField(object target, string fieldName, object? value)
+        {
+            FieldInfo? field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+            _ = field.Should().NotBeNull();
+            field!.SetValue(target, value);
         }
 
         private static byte[] CreateSolidPngBytes(int width, int height, byte r, byte g, byte b, byte a)

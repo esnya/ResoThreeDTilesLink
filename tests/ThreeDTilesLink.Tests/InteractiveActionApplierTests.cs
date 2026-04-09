@@ -48,8 +48,7 @@ namespace ThreeDTilesLink.Tests
                 "localhost",
                 12345,
                 0d,
-                new TraversalOptions(400d, 64, 16, 30d),
-                DryRun: false,
+                new TraversalOptions(400d, 30d),
                 ApiKey: "k",
                 RemoveOutOfRange: false,
                 new WatchOptions(

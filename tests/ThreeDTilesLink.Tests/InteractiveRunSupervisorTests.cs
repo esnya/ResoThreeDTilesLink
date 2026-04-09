@@ -68,17 +68,17 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task RunAsync_ResetsPlacementReference_WhenRangesDoNotOverlap()
+        public async Task RunAsync_ResetsPlacementReference_WhenLocationsDoNotOverlap()
         {
             var session = new FakeSession();
             var watchStore = new FakeInteractiveInputStore
             {
                 SelectionInputValues = new Queue<SelectionInputValues?>(
                 [
-                    new SelectionInputValues(35f, 139f, 400f),
-                    new SelectionInputValues(35f, 139f, 400f),
-                    new SelectionInputValues(2000f, 2000f, 400f),
-                    new SelectionInputValues(2000f, 2000f, 400f)
+                    new SelectionInputValues(35f, 139f, 10f),
+                    new SelectionInputValues(35f, 139f, 10f),
+                    new SelectionInputValues(40f, 100f, 10f),
+                    new SelectionInputValues(40f, 100f, 10f)
                 ])
             };
             var clock = new FakeClock { CancelAfterDelayCalls = 4 };
@@ -94,8 +94,10 @@ namespace ThreeDTilesLink.Tests
             _ = session.RemovedSlotIds.Should().BeEmpty();
             _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().BeNull();
             _ = coordinator.Requests[1].Output.MeshParentSlotId.Should().BeNull();
-            _ = coordinator.Requests[1].PlacementReference.Latitude.Should().Be(2000d);
-            _ = coordinator.Requests[1].PlacementReference.Longitude.Should().Be(2000d);
+            _ = coordinator.Requests[1].SelectionReference.Latitude.Should().Be(40d);
+            _ = coordinator.Requests[1].SelectionReference.Longitude.Should().Be(100d);
+            _ = coordinator.Requests[1].PlacementReference.Latitude.Should().Be(40d);
+            _ = coordinator.Requests[1].PlacementReference.Longitude.Should().Be(100d);
         }
 
         [Fact]
@@ -133,7 +135,7 @@ namespace ThreeDTilesLink.Tests
                             new Dictionary<string, RetainedTileState>(interactive.RetainedTiles, StringComparer.Ordinal),
                             new HashSet<string>(interactive.RetainedTiles.Keys, StringComparer.Ordinal),
                             interactive.Checkpoint)));
-            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock);
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock, new MeterScaledTransformer());
 
             using var cts = new CancellationTokenSource();
             clock.CancellationSource = cts;
@@ -166,6 +168,54 @@ namespace ThreeDTilesLink.Tests
 
             await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
 
+            _ = session.RemovedSlotIds.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task RunAsync_InvalidInput_StopsByCancelingActiveRun_WithoutStartingReplacementRun()
+        {
+            var session = new FakeSession();
+            var watchStore = new FakeInteractiveInputStore
+            {
+                SelectionInputValues = new Queue<SelectionInputValues?>(
+                [
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(float.NaN, 139f, 400f),
+                    new SelectionInputValues(float.NaN, 139f, 400f)
+                ])
+            };
+            var clock = new FakeClock { CancelAfterDelayCalls = 4 };
+            int canceledRuns = 0;
+            var coordinator = new FakeTileRunCoordinator(
+                onRunStarted: _ => { },
+                interactiveHandler: async (_, _, _, cancellationToken) =>
+                {
+                    try
+                    {
+                        await WaitForCancellationAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        _ = Interlocked.Increment(ref canceledRuns);
+                        clock.RequestCancellation();
+                    }
+
+                    return new InteractiveTileRunResult(
+                        new RunSummary(0, 0, 0, 0),
+                        new Dictionary<string, RetainedTileState>(StringComparer.Ordinal),
+                        new HashSet<string>(StringComparer.Ordinal),
+                        null);
+                });
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock);
+
+            using var cts = new CancellationTokenSource();
+            clock.CancellationSource = cts;
+
+            await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
+
+            _ = coordinator.Requests.Should().ContainSingle();
+            _ = canceledRuns.Should().Be(1);
             _ = session.RemovedSlotIds.Should().BeEmpty();
         }
 
@@ -293,8 +343,7 @@ namespace ThreeDTilesLink.Tests
                 "127.0.0.1",
                 12000,
                 0d,
-                new TraversalOptions(500d, 16, 16, 40d),
-                false,
+                new TraversalOptions(500d, 40d),
                 string.Empty,
                 false,
                 new WatchOptions(
@@ -311,17 +360,17 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task RunAsync_DropsRetainedTilesAndCheckpoint_WhenRangesDoNotOverlap()
+        public async Task RunAsync_DropsRetainedTilesAndCheckpoint_WhenLocationsDoNotOverlap()
         {
             var session = new FakeSession();
             var watchStore = new FakeInteractiveInputStore
             {
                 SelectionInputValues = new Queue<SelectionInputValues?>(
                 [
-                    new SelectionInputValues(35f, 139f, 400f),
-                    new SelectionInputValues(35f, 139f, 400f),
-                    new SelectionInputValues(2000f, 2000f, 400f),
-                    new SelectionInputValues(2000f, 2000f, 400f)
+                    new SelectionInputValues(35f, 139f, 10f),
+                    new SelectionInputValues(35f, 139f, 10f),
+                    new SelectionInputValues(40f, 100f, 10f),
+                    new SelectionInputValues(40f, 100f, 10f)
                 ])
             };
             string partialStableId = "partial";
@@ -639,14 +688,15 @@ namespace ThreeDTilesLink.Tests
             FakeSession session,
             FakeInteractiveInputStore watchStore,
             FakeSearchResolver searchResolver,
-            FakeClock clock)
+            FakeClock clock,
+            ICoordinateTransformer? coordinateTransformer = null)
         {
             return new InteractiveRunSupervisor(
                 coordinator,
                 session,
                 watchStore,
                 searchResolver,
-                new FakeTransformer(),
+                coordinateTransformer ?? new FakeTransformer(),
                 new FakeGeoReferenceResolver(),
                 clock,
                 new SelectionInputReader(watchStore, NullLogger<SelectionInputReader>.Instance),
@@ -659,8 +709,7 @@ namespace ThreeDTilesLink.Tests
                 "127.0.0.1",
                 12000,
                 0d,
-                new TraversalOptions(500d, 16, 16, 40d),
-                false,
+                new TraversalOptions(500d, 40d),
                 apiKey,
                 false,
                 new WatchOptions(
@@ -889,6 +938,29 @@ namespace ThreeDTilesLink.Tests
             public Vector3d EcefToEnu(Vector3d ecef, GeoReference reference)
             {
                 return new Vector3d(ecef.X - reference.Latitude, ecef.Y - reference.Longitude, ecef.Z - reference.Height);
+            }
+
+            public Vector3d EnuToEun(Vector3d enu)
+            {
+                return enu;
+            }
+        }
+
+        private sealed class MeterScaledTransformer : ICoordinateTransformer
+        {
+            private const double DegreesToMeters = 111_000d;
+
+            public Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double height)
+            {
+                return new Vector3d(latitudeDeg, longitudeDeg, height);
+            }
+
+            public Vector3d EcefToEnu(Vector3d ecef, GeoReference reference)
+            {
+                return new Vector3d(
+                    (ecef.X - reference.Latitude) * DegreesToMeters,
+                    (ecef.Y - reference.Longitude) * DegreesToMeters,
+                    ecef.Z - reference.Height);
             }
 
             public Vector3d EnuToEun(Vector3d enu)

@@ -51,12 +51,14 @@ This document contains only current operational information that is difficult to
 - Expose `World/` aliases as separate `DynamicValueVariable<T>` members driven from the session-side source by `ValueCopy<T>`, instead of `DynamicField`.
 - Keep the Interactive input source values and the observation aliases distinct: the input source values live on the session root slot, while the observation aliases remain fixed under `World/ThreeDTilesLink.*`.
 - Control target-side overwrite through `ValueCopy.WriteBack`; enable it only for Interactive input parameters that must flow from `World/` back into the session-side values, and keep it disabled for observation-only aliases.
-- In interactive mode, overlapping reruns remove retained tiles that fall outside the latest `Range` by default so visible coverage tracks the current selection.
+- In interactive mode, overlapping reruns remove retained tiles that fall outside the latest `Range` so visible coverage tracks the current selection.
+- In interactive mode, invalid `Range`, `Latitude`, or `Longitude` values stop new streaming runs. Removing already streamed content remains an explicit Resonite-side action.
 - Publish the session license credit from a session-side `DynamicValueVariable<string>` to the fixed alias `World/ThreeDTilesLink.License`.
 - Treat `World/ThreeDTilesLink.License` as mandatory compliance output for the current Google tiles, not as optional metadata.
 - Publish the renderer-side compliance guidance through the fixed alias `World/ThreeDTilesLink.AttributionRequirements`.
 - Publish progress as a float in the range `0.0..1.0` from a session-side `DynamicValueVariable<float>` on the parent slot to `World/ThreeDTilesLink.Progress` through `ValueCopy<float>`.
 - Publish the human-readable progress string from a session-side `DynamicValueVariable<string>` on the parent slot to `World/ThreeDTilesLink.ProgressText` through `ValueCopy<string>`.
+- When a run fails after the progress surface is available, publish the error summary through `World/ThreeDTilesLink.ProgressText`.
 
 ## One-Off Verification from WSL
 
@@ -86,7 +88,7 @@ This document contains only current operational information that is difficult to
 ## Live Verification Focus
 
 - For stream verification, prefer a small area around Tokyo Tower, for example `--latitude 35.65858 --longitude 139.745433 --range 60`.
-- Treat the standard Tokyo Tower live case as the same command without extra limiting arguments such as `--depth-limit`. Add those only when you are intentionally testing a limit.
+- Treat the standard Tokyo Tower live case as the same command with the normal defaults.
 - In stream verification, check that refinement preserves visible coverage while converging from coarse to fine tiles.
 - `--range` is an approximate square local coverage half-width (X/Z extent), not a spherical radius.
 - When the requested range is large, expect coarse coverage ancestors to be streamed before finer descendants. Treat that ordering as intentional bootstrap behavior, not as a regression by itself.

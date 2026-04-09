@@ -15,9 +15,7 @@ namespace ThreeDTilesLink.Core.Tiles
             Tileset tileset,
             GeoReference reference,
             QueryRange range,
-            int maxDepth,
             double detailTargetM,
-            int maxTiles,
             Matrix4x4d rootParentWorld,
             string idPrefix,
             int depthOffset,
@@ -27,8 +25,7 @@ namespace ThreeDTilesLink.Core.Tiles
             ArgumentNullException.ThrowIfNull(tileset);
             ArgumentNullException.ThrowIfNull(reference);
             ArgumentNullException.ThrowIfNull(range);
-            int selectionLimit = maxTiles <= 0 ? int.MaxValue : maxTiles;
-            var selected = new List<TileSelectionResult>(capacity: SMath.Max(1, SMath.Min(selectionLimit, 4096)));
+            var selected = new List<TileSelectionResult>(capacity: 4096);
 
             _ = CollectSelections(
                 tileset.Root,
@@ -39,10 +36,8 @@ namespace ThreeDTilesLink.Core.Tiles
                 idPrefix,
                 reference,
                 range,
-                maxDepth,
                 detailTargetM,
-                selected,
-                selectionLimit);
+                selected);
 
             return selected;
         }
@@ -56,16 +51,9 @@ namespace ThreeDTilesLink.Core.Tiles
             string idPrefix,
             GeoReference reference,
             QueryRange range,
-            int maxDepth,
             double detailTargetM,
-            List<TileSelectionResult> selected,
-            int selectionLimit)
+            List<TileSelectionResult> selected)
         {
-            if (selected.Count >= selectionLimit)
-            {
-                return new SelectionOutcome(false, HasAnyContent(tile));
-            }
-
             Matrix4x4d local = tile.Transform is { Count: 16 }
                 ? Matrix4x4d.FromCesiumColumnMajor(tile.Transform)
                 : Matrix4x4d.Identity;
@@ -79,7 +67,7 @@ namespace ThreeDTilesLink.Core.Tiles
             TileSelectionResult? current = null;
             string? nextParentContentId = parentContentId;
             string? nextParentContentStableKey = parentContentStableKey;
-            bool stopDescending = depth >= maxDepth || ShouldStopDescendingByDetail(tile, detailTargetM, horizontalSpanM);
+            bool stopDescending = ShouldStopDescendingByDetail(tile, detailTargetM, horizontalSpanM);
 
             if (tile.ContentUri is not null)
             {
@@ -118,10 +106,8 @@ namespace ThreeDTilesLink.Core.Tiles
                         idPrefix,
                         reference,
                         range,
-                        maxDepth,
                         detailTargetM,
-                        selected,
-                        selectionLimit);
+                        selected);
                     hasSelectedDescendant |= childOutcome.HasSelectedContent;
                     hasContentDescendant |= childOutcome.HasAnyContent;
                 }
@@ -138,7 +124,7 @@ namespace ThreeDTilesLink.Core.Tiles
                 hasSelectedDescendant ||
                 !hasContentDescendant;
 
-            if (keepCurrent && selected.Count < selectionLimit)
+            if (keepCurrent)
             {
                 selected.Add(current);
                 return new SelectionOutcome(true, true);

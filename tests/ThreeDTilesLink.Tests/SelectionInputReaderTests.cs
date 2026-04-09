@@ -74,6 +74,28 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Theory]
+        [InlineData(float.NaN, 139f)]
+        [InlineData(float.PositiveInfinity, 139f)]
+        [InlineData(-91f, 139f)]
+        [InlineData(91f, 139f)]
+        [InlineData(35f, float.NaN)]
+        [InlineData(35f, float.NegativeInfinity)]
+        [InlineData(35f, -181f)]
+        [InlineData(35f, 181f)]
+        public async Task TryReadInteractiveInputValuesAsync_ReturnsNull_WhenCoordinatesAreInvalid(float latitude, float longitude)
+        {
+            var logger = new ListLogger<SelectionInputReader>();
+            var monitor = new SelectionInputReader(
+                new ValueInteractiveInputStore(new SelectionInputValues(latitude, longitude, 100f)),
+                logger);
+
+            SelectionInputValues? result = await monitor.TryReadInteractiveInputValuesAsync(CreateInputBinding(), CancellationToken.None);
+
+            _ = result.Should().BeNull();
+            _ = logger.Entries.Should().BeEmpty();
+        }
+
+        [Theory]
         [InlineData(float.NaN)]
         [InlineData(float.PositiveInfinity)]
         [InlineData(float.NegativeInfinity)]

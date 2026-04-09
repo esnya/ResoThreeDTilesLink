@@ -15,9 +15,13 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         internal async Task<SelectionInputSnapshot> ReadAsync(InteractiveInputBinding inputBinding, CancellationToken cancellationToken)
         {
-            SelectionInputValues? values = await TryReadInteractiveInputValuesAsync(inputBinding, cancellationToken).ConfigureAwait(false);
+            SelectionInputValues? rawValues = await TryReadRawInteractiveInputValuesAsync(inputBinding, cancellationToken).ConfigureAwait(false);
+            SelectionInputValues? values = NormalizeInteractiveInputValues(rawValues);
             string? searchText = await TryReadInteractiveInputSearchAsync(inputBinding, cancellationToken).ConfigureAwait(false);
-            return new SelectionInputSnapshot(searchText, values);
+            return new SelectionInputSnapshot(
+                searchText,
+                values,
+                StopRequested: rawValues is not null && values is null);
         }
 
         internal async Task<string?> TryReadInteractiveInputSearchAsync(InteractiveInputBinding inputBinding, CancellationToken cancellationToken)
@@ -63,15 +67,15 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         internal async Task<SelectionInputValues?> TryReadInteractiveInputValuesAsync(InteractiveInputBinding inputBinding, CancellationToken cancellationToken)
         {
+            SelectionInputValues? values = await TryReadRawInteractiveInputValuesAsync(inputBinding, cancellationToken).ConfigureAwait(false);
+            return NormalizeInteractiveInputValues(values);
+        }
+
+        private async Task<SelectionInputValues?> TryReadRawInteractiveInputValuesAsync(InteractiveInputBinding inputBinding, CancellationToken cancellationToken)
+        {
             try
             {
-                SelectionInputValues? values = await _interactiveInputStore.ReadInteractiveInputValuesAsync(inputBinding, cancellationToken).ConfigureAwait(false);
-                if (values is null || !IsValidRange(values.RangeM))
-                {
-                    return null;
-                }
-
-                return values;
+                return await _interactiveInputStore.ReadInteractiveInputValuesAsync(inputBinding, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -111,6 +115,29 @@ namespace ThreeDTilesLink.Core.Pipeline
         private static bool IsValidRange(double rangeM)
         {
             return double.IsFinite(rangeM) && rangeM > 0d;
+        }
+
+        private static bool IsValidLatitude(double latitude)
+        {
+            return double.IsFinite(latitude) && latitude >= -90d && latitude <= 90d;
+        }
+
+        private static bool IsValidLongitude(double longitude)
+        {
+            return double.IsFinite(longitude) && longitude >= -180d && longitude <= 180d;
+        }
+
+        private static SelectionInputValues? NormalizeInteractiveInputValues(SelectionInputValues? values)
+        {
+            if (values is null ||
+                !IsValidLatitude(values.Latitude) ||
+                !IsValidLongitude(values.Longitude) ||
+                !IsValidRange(values.RangeM))
+            {
+                return null;
+            }
+
+            return values;
         }
 
         internal static bool HasMeaningfulChange(SelectionInputValues? previous, SelectionInputValues current)

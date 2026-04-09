@@ -14,7 +14,7 @@ These notes are based on live measurements at the time they were written. They a
 ## What Usually Does Not Help
 
 - Persistent cross-run file caching for Google Photorealistic 3D Tiles is usually ineffective here because observed response URLs and `datasets/.../files/...` paths are session-scoped.
-- Tuning by shrinking `range` or `tile-limit` improves runtime mainly by reducing requested work, not by making the same workload more efficient.
+- Tuning by shrinking `range` improves runtime mainly by reducing requested work, not by making the same workload more efficient.
 - Increasing one stage in isolation often stops helping once another stage becomes dominant.
 
 ## What Usually Makes It Worse

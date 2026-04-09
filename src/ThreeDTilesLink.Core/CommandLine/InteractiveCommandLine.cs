@@ -7,8 +7,6 @@ namespace ThreeDTilesLink.Core.CommandLine
         double HeightOffset,
         string ResoniteHost,
         int ResonitePort,
-        int TileLimit,
-        int DepthLimit,
         double DetailTargetM,
         int ContentWorkers,
         int ResoniteSendWorkers,
@@ -17,7 +15,6 @@ namespace ThreeDTilesLink.Core.CommandLine
         int PollIntervalMs,
         int DebounceMs,
         int ThrottleMs,
-        bool DryRun,
         LogLevel LogLevel) : ICommandRuntimeOptions;
 
     internal static class InteractiveCommandLine
@@ -29,8 +26,6 @@ namespace ThreeDTilesLink.Core.CommandLine
                 CommonCommandOptions.HeightOffset(),
                 CommonCommandOptions.ResoniteHost(),
                 CommonCommandOptions.ResonitePort(),
-                CommonCommandOptions.TileLimit("Maximum number of tiles to stream per run."),
-                CommonCommandOptions.DepthLimit("Maximum traversal depth per run."),
                 CommonCommandOptions.DetailTarget(),
                 CommonCommandOptions.ContentWorkers("Maximum number of tile content fetch/decode workers per run."),
                 CommonCommandOptions.ResoniteSendWorkers("Maximum number of parallel Resonite send workers."),
@@ -39,7 +34,6 @@ namespace ThreeDTilesLink.Core.CommandLine
                 new("--poll-interval", CommandOptionValueKind.WholeNumber, "Interactive input polling interval.", DefaultValue: 250, Unit: "ms", RenamedFrom: ["--poll-ms"]),
                 new("--debounce", CommandOptionValueKind.WholeNumber, "Delay after interactive input changes before starting a run.", DefaultValue: 800, Unit: "ms", RenamedFrom: ["--debounce-ms"]),
                 new("--throttle", CommandOptionValueKind.WholeNumber, "Minimum time between run starts.", DefaultValue: 3000, Unit: "ms", RenamedFrom: ["--throttle-ms"]),
-                CommonCommandOptions.DryRun(),
                 CommonCommandOptions.LogLevelOption()
             ],
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -48,6 +42,11 @@ namespace ThreeDTilesLink.Core.CommandLine
                 ["--lon"] = "--lon is no longer supported in interactive mode.",
                 ["--range"] = "--range is no longer supported in interactive mode. Set the Interactive Range value in Resonite instead.",
                 ["--half-width-m"] = "--half-width-m is no longer supported in interactive mode. Set the Interactive Range value in Resonite instead.",
+                ["--tile-limit"] = "--tile-limit is no longer supported in interactive mode.",
+                ["--max-tiles"] = "--max-tiles is no longer supported in interactive mode.",
+                ["--depth-limit"] = "--depth-limit is no longer supported in interactive mode.",
+                ["--max-depth"] = "--max-depth is no longer supported in interactive mode.",
+                ["--dry-run"] = "--dry-run is no longer supported in interactive mode.",
                 ["--render-start-span-ratio"] = "--render-start-span-ratio is no longer supported."
             });
 
@@ -77,15 +76,12 @@ namespace ThreeDTilesLink.Core.CommandLine
             if (!CommandInvocationBuilder.TryGetValue(parsed, "--height-offset", out double heightOffset) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--resonite-host", out string? resoniteHost) ||
                 !CommandInvocationBuilder.TryGetPort(parsed, "--resonite-port", out int resonitePort) ||
-                !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--tile-limit", out int tileLimit) ||
-                !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--depth-limit", out int depthLimit) ||
                 !CommandInvocationBuilder.TryGetPositiveDouble(parsed, "--detail", out double detailTargetM) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--timeout", out int timeoutSec) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--measure-performance", out bool measurePerformance) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--poll-interval", out int pollIntervalMs) ||
                 !CommandInvocationBuilder.TryGetNonNegativeInt(parsed, "--debounce", out int debounceMs) ||
-                !CommandInvocationBuilder.TryGetNonNegativeInt(parsed, "--throttle", out int throttleMs) ||
-                !CommandInvocationBuilder.TryGetValue(parsed, "--dry-run", out bool dryRun))
+                !CommandInvocationBuilder.TryGetNonNegativeInt(parsed, "--throttle", out int throttleMs))
             {
                 return CommandInvocationBuilder.Error<InteractiveCommandOptions>("Invalid command values.", RenderHelp);
             }
@@ -101,8 +97,6 @@ namespace ThreeDTilesLink.Core.CommandLine
                     heightOffset,
                     resoniteHost,
                     resonitePort,
-                    tileLimit,
-                    depthLimit,
                     detailTargetM,
                     contentWorkers,
                     resoniteSendWorkers,
@@ -111,7 +105,6 @@ namespace ThreeDTilesLink.Core.CommandLine
                     pollIntervalMs,
                     debounceMs,
                     throttleMs,
-                    dryRun,
                     logLevel),
                 0,
                 string.Empty,

@@ -65,6 +65,28 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task Run_WithoutApiKey_UpdatesProgressText_WhenMetadataSurfaceExists()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+
+            Func<Task> act = () => coordinator.RunAsync(CreateRequest(dryRun: false, manageConnection: false, apiKey: null), CancellationToken.None);
+
+            _ = await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("GOOGLE_MAPS_API_KEY is required*");
+            _ = client.ProgressUpdates.Should().Contain(update => update.ProgressText.StartsWith("Failed: GOOGLE_MAPS_API_KEY is required", StringComparison.Ordinal));
+        }
+
+        [Fact]
         public async Task Run_SendFailureOnOneTile_ContinuesNextTile()
         {
             var tileset = new Tileset(new Tile
@@ -219,7 +241,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteSession();
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 8), CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(1);
             _ = client.Payloads.Should().HaveCount(1);
@@ -242,7 +264,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteSession();
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 8), CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(1);
             _ = client.Payloads.Should().HaveCount(1);
@@ -268,7 +290,7 @@ namespace ThreeDTilesLink.Tests
             var extractor = new FakeExtractor(includeNormalsAndTangents: true);
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client, extractor);
 
-            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 8), CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(1);
             _ = client.Payloads.Should().HaveCount(1);
@@ -300,7 +322,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteSession();
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 8), CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = summary.CandidateTiles.Should().Be(2);
             _ = summary.ProcessedTiles.Should().Be(2);
@@ -901,7 +923,7 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task Run_TileLimitReached_WithoutCoverageHints_KeepsAncestorUntilReplacementProgresses()
+        public async Task Run_WithoutCoverageHints_KeepsAncestorUntilReplacementProgresses()
         {
             var tileset = new Tileset(new Tile
             {
@@ -935,7 +957,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteSession();
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 2), CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(2);
             _ = client.Payloads.Should().HaveCount(2);
@@ -944,7 +966,7 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task Run_TileLimitReached_StopsAtIntermediateReplacementFrontier()
+        public async Task Run_WithoutTileLimit_StreamsFullReplacementFrontier()
         {
             var tileset = new Tileset(new Tile
             {
@@ -982,13 +1004,14 @@ namespace ThreeDTilesLink.Tests
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(
-                CreateRequest(dryRun: false, maxTiles: 2, maxDepth: 16, bootstrapRangeMultiplier: 0.5d),
+                CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d),
                 CancellationToken.None).ConfigureAwait(true);
 
-            _ = summary.StreamedMeshes.Should().Be(2);
-            _ = client.Payloads.Should().HaveCount(2);
+            _ = summary.StreamedMeshes.Should().Be(3);
+            _ = client.Payloads.Should().HaveCount(3);
             _ = client.Payloads[0].Name.Should().Contain("tile_p_");
             _ = client.Payloads[1].Name.Should().Contain("tile_c_");
+            _ = client.Payloads[2].Name.Should().Contain("tile_g_");
         }
 
         [Fact]
@@ -1017,7 +1040,7 @@ namespace ThreeDTilesLink.Tests
                     [1] = "Google; Maxar Technologies"
                 }));
 
-            _ = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 8), CancellationToken.None);
+            _ = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = client.LicenseCredits.Should().ContainInOrder("Google Maps", "Google Maps; Maxar Technologies");
         }
@@ -1154,7 +1177,7 @@ namespace ThreeDTilesLink.Tests
                     [3] = "Data SIO, NOAA, U.S. Navy, NGA, GEBCO;Landsat / Copernicus"
                 }));
 
-            _ = await coordinator.RunAsync(CreateRequest(dryRun: false, maxTiles: 8), CancellationToken.None);
+            _ = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = client.LicenseCredits.Should().ContainInOrder(
                 "Google Maps",
@@ -1190,7 +1213,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteSession();
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxDepth: 16, bootstrapRangeMultiplier: 0.5d), CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d), CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(2);
             _ = client.Payloads.Should().HaveCount(2);
@@ -1229,7 +1252,7 @@ namespace ThreeDTilesLink.Tests
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(
-                CreateRequest(dryRun: false, maxDepth: 16, bootstrapRangeMultiplier: 0.5d),
+                CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d),
                 CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(1);
@@ -1278,7 +1301,7 @@ namespace ThreeDTilesLink.Tests
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(
-                CreateRequest(dryRun: false, maxDepth: 16, bootstrapRangeMultiplier: 0.5d),
+                CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d),
                 CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(3);
@@ -1362,7 +1385,7 @@ namespace ThreeDTilesLink.Tests
             TileRunCoordinator coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 2);
 
             RunSummary summary = await coordinator.RunAsync(
-                CreateRequest(dryRun: false, maxDepth: 16, bootstrapRangeMultiplier: 0.5d),
+                CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d),
                 CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(3);
@@ -1403,7 +1426,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteSession();
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, maxDepth: 16, bootstrapRangeMultiplier: 0.5d), CancellationToken.None);
+            RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d), CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(0);
             _ = client.Payloads.Should().BeEmpty();
@@ -1735,7 +1758,7 @@ namespace ThreeDTilesLink.Tests
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             InteractiveTileRunResult result = await coordinator.RunInteractiveAsync(
-                CreateRequest(dryRun: false, manageConnection: false, maxDepth: 16, bootstrapRangeMultiplier: 0.5d),
+                CreateRequest(dryRun: false, manageConnection: false, bootstrapRangeMultiplier: 0.5d),
                 new InteractiveRunInput(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal), RemoveOutOfRangeTiles: false),
                 CancellationToken.None);
 
@@ -1817,8 +1840,6 @@ namespace ThreeDTilesLink.Tests
 
         private static TileRunRequest CreateRequest(
             bool dryRun,
-            int maxTiles = 16,
-            int maxDepth = 8,
             double bootstrapRangeMultiplier = 4d,
             double rangeM = 500d,
             bool manageConnection = true,
@@ -1827,7 +1848,7 @@ namespace ThreeDTilesLink.Tests
             return new TileRunRequest(
                 new GeoReference(0d, 0d, 0d),
                 new GeoReference(0d, 0d, 0d),
-                new TraversalOptions(rangeM, maxTiles, maxDepth, 40d, bootstrapRangeMultiplier),
+                new TraversalOptions(rangeM, 40d, bootstrapRangeMultiplier),
                 new ResoniteOutputOptions("127.0.0.1", 12345, dryRun, manageConnection),
                 apiKey);
         }

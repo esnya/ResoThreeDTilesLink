@@ -15,10 +15,7 @@ namespace ThreeDTilesLink.Core.App
                 options.HeightOffset,
                 new TraversalOptions(
                     RangeM: 0d,
-                    options.TileLimit,
-                    options.DepthLimit,
                     options.DetailTargetM),
-                options.DryRun,
                 apiKey,
                 true,
                 new WatchOptions(
