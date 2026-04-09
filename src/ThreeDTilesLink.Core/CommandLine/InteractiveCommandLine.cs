@@ -53,7 +53,7 @@ namespace ThreeDTilesLink.Core.CommandLine
 
         internal static CommandInvocation<InteractiveCommandOptions> Parse(IReadOnlyList<string> args)
         {
-            ParsedCommand parsed = CommandLineParser.Parse(Specification, NormalizeLegacyArguments(args));
+            ParsedCommand parsed = CommandLineParser.Parse(Specification, args);
             if (CommandInvocationBuilder.TryHandleParseResult(parsed, out CommandInvocation<InteractiveCommandOptions> handled))
             {
                 return handled;
@@ -121,20 +121,6 @@ namespace ThreeDTilesLink.Core.CommandLine
         internal static string RenderHelp()
         {
             return CommandLineParser.RenderHelp(Specification);
-        }
-
-        private static IReadOnlyList<string> NormalizeLegacyArguments(IReadOnlyList<string> args)
-        {
-            ArgumentNullException.ThrowIfNull(args);
-
-            if (!args.Any(static arg => string.Equals(arg, "--remove-out-of-range", StringComparison.OrdinalIgnoreCase)))
-            {
-                return args;
-            }
-
-            return args
-                .Where(static arg => !string.Equals(arg, "--remove-out-of-range", StringComparison.OrdinalIgnoreCase))
-                .ToArray();
         }
     }
 }
