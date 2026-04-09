@@ -80,15 +80,15 @@ Required Google APIs by operation:
 - Tile streaming from `Latitude` / `Longitude` / `Range`: Google Map Tiles API
 - Free-text search from `Search`: Google Geocoding API
 
-At connection time, the app attaches session-root writable `DynamicValueVariable<T>` values and derives the Interactive input watches from `--watch-path` (default: `World/ThreeDTilesLink`):
+At connection time, the app attaches session-root writable `DynamicValueVariable<T>` values for the Interactive input parameters:
 
-- `World/ThreeDTilesLink.Latitude`
-- `World/ThreeDTilesLink.Longitude`
-- `World/ThreeDTilesLink.Range`
-- `World/ThreeDTilesLink.Search`
+- `Latitude`
+- `Longitude`
+- `Range`
+- `Search`
 
-The session-root writable values are kept as separate `DynamicValueVariable<T>` members.
-The `World/` paths are exposed as alias `DynamicValueVariable<T>` members driven through `ValueCopy<T>`.
+The Interactive loop reads those session-root values directly.
+For convenience, the same input values are also exposed through fixed `World/ThreeDTilesLink.*` alias `DynamicValueVariable<T>` members driven through `ValueCopy<T>`.
 For the Interactive input parameters (`Latitude` / `Longitude` / `Range` / `Search`), `ValueCopy.WriteBack` is enabled so changes from `World/` flow back into the session-side values.
 For observation-only aliases, `ValueCopy.WriteBack` stays disabled so changes on the alias side do not overwrite the source values.
 Those observation aliases stay fixed at:
@@ -115,9 +115,8 @@ Run `dotnet run --project src/ThreeDTilesLink -- interactive --help` for units a
 - If `--resonite-host` is omitted, `localhost` is used.
 - When running from WSL against a Windows-hosted Resonite session, prefer host-side execution such as `cmd.exe /c dotnet.exe run ...` or `pwsh.exe`, because Linux-side `localhost` does not reliably mean the Windows host.
 - The anchor height is sea level at the current latitude/longitude, and `--height-offset` is applied relative to that anchor.
-- `--watch-path` affects only the Interactive input watches (`Latitude`, `Longitude`, `Range`, `Search`); the observation aliases remain fixed under `World/ThreeDTilesLink.*`.
-- `--watch-path` must start with `World/`; each remaining path segment is normalized into a valid alphanumeric member name before the app creates the derived input watches.
-- Useful tuning flags include `--watch-path`, `--poll-interval`, `--debounce`, `--throttle`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
+- The Interactive input values are fixed session-root members; the observation aliases remain fixed under `World/ThreeDTilesLink.*`.
+- Useful tuning flags include `--poll-interval`, `--debounce`, `--throttle`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
 
 ## Documentation
 

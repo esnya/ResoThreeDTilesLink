@@ -99,6 +99,14 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string StringFieldType = "[FrooxEngine]FrooxEngine.IField<string>";
         private const string FloatFieldType = "[FrooxEngine]FrooxEngine.IField<float>";
         private const string GoogleTilesDynamicSpaceName = "Google3DTiles";
+        private const string InteractiveLatitudeVariableLocalName = "Latitude";
+        private const string InteractiveLongitudeVariableLocalName = "Longitude";
+        private const string InteractiveRangeVariableLocalName = "Range";
+        private const string InteractiveSearchVariableLocalName = "Search";
+        private const string InteractiveLatitudeAliasPath = "World/ThreeDTilesLink.Latitude";
+        private const string InteractiveLongitudeAliasPath = "World/ThreeDTilesLink.Longitude";
+        private const string InteractiveRangeAliasPath = "World/ThreeDTilesLink.Range";
+        private const string InteractiveSearchAliasPath = "World/ThreeDTilesLink.Search";
         private const string LicenseDynamicVariablePath = "World/ThreeDTilesLink.License";
         private const string ProgressValueVariableLocalName = "Progress";
         private const string ProgressTextVariableLocalName = "ProgressText";
@@ -302,9 +310,8 @@ namespace ThreeDTilesLink.Core.Resonite
             return await CreateSlotAsync(name, _sessionRootSlotId, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task<WatchBinding> CreateWatchAsync(WatchConfiguration configuration, CancellationToken cancellationToken)
+        public async Task<WatchBinding> CreateWatchAsync(CancellationToken cancellationToken)
         {
-            ArgumentNullException.ThrowIfNull(configuration);
             cancellationToken.ThrowIfCancellationRequested();
 
             if (string.IsNullOrWhiteSpace(_sessionRootSlotId))
@@ -314,46 +321,46 @@ namespace ThreeDTilesLink.Core.Resonite
 
             DynamicVariableBinding latBinding = await AddDynamicFloatValueVariableAsync(
                 _sessionRootSlotId,
-                BuildSessionVariablePath(GoogleTilesDynamicSpaceName, configuration.LatitudeVariablePath),
+                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveLatitudeVariableLocalName),
                 0f,
                 cancellationToken).ConfigureAwait(false);
             DynamicVariableBinding lonBinding = await AddDynamicFloatValueVariableAsync(
                 _sessionRootSlotId,
-                BuildSessionVariablePath(GoogleTilesDynamicSpaceName, configuration.LongitudeVariablePath),
+                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveLongitudeVariableLocalName),
                 0f,
                 cancellationToken).ConfigureAwait(false);
             DynamicVariableBinding rangeBinding = await AddDynamicFloatValueVariableAsync(
                 _sessionRootSlotId,
-                BuildSessionVariablePath(GoogleTilesDynamicSpaceName, configuration.RangeVariablePath),
+                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveRangeVariableLocalName),
                 0f,
                 cancellationToken).ConfigureAwait(false);
             DynamicVariableBinding searchBinding = await AddDynamicStringValueVariableAsync(
                 _sessionRootSlotId,
-                BuildSessionVariablePath(GoogleTilesDynamicSpaceName, configuration.SearchVariablePath),
+                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveSearchVariableLocalName),
                 string.Empty,
                 cancellationToken).ConfigureAwait(false);
 
             DynamicVariableBinding latAliasBinding = await AddWorldFloatAliasAsync(
                 _sessionRootSlotId,
-                configuration.LatitudeVariablePath,
+                InteractiveLatitudeAliasPath,
                 latBinding.ValueFieldId,
                 writeBack: true,
                 cancellationToken).ConfigureAwait(false);
             DynamicVariableBinding lonAliasBinding = await AddWorldFloatAliasAsync(
                 _sessionRootSlotId,
-                configuration.LongitudeVariablePath,
+                InteractiveLongitudeAliasPath,
                 lonBinding.ValueFieldId,
                 writeBack: true,
                 cancellationToken).ConfigureAwait(false);
             DynamicVariableBinding rangeAliasBinding = await AddWorldFloatAliasAsync(
                 _sessionRootSlotId,
-                configuration.RangeVariablePath,
+                InteractiveRangeAliasPath,
                 rangeBinding.ValueFieldId,
                 writeBack: true,
                 cancellationToken).ConfigureAwait(false);
             DynamicVariableBinding searchAliasBinding = await AddWorldStringAliasAsync(
                 _sessionRootSlotId,
-                configuration.SearchVariablePath,
+                InteractiveSearchAliasPath,
                 searchBinding.ValueFieldId,
                 writeBack: true,
                 cancellationToken).ConfigureAwait(false);
@@ -1758,15 +1765,6 @@ namespace ThreeDTilesLink.Core.Resonite
         private static string BuildWorldProgressTextPath()
         {
             return ProgressTextDynamicVariablePath;
-        }
-
-        private static string BuildSessionVariablePath(string spaceName, string worldVariablePath)
-        {
-            const string worldPrefix = "World/";
-            string localPath = worldVariablePath.StartsWith(worldPrefix, StringComparison.Ordinal)
-                ? worldVariablePath[worldPrefix.Length..]
-                : worldVariablePath;
-            return BuildScopedVariablePath(spaceName, localPath);
         }
 
         private static string BuildScopedVariablePath(string spaceName, string variableName)

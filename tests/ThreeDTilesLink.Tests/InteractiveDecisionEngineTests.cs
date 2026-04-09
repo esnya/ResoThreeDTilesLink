@@ -200,8 +200,7 @@ namespace ThreeDTilesLink.Tests
                 new WatchOptions(
                     TimeSpan.FromMilliseconds(250),
                     debounce,
-                    throttle,
-                    new WatchConfiguration("lat", "lon", "range", "search")),
+                    throttle),
                 heightOffset: 123d,
                 now,
                 static (lat, lon, height) => new GeoReference(lat, lon, height),
