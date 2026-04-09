@@ -54,6 +54,7 @@ dotnet run --project src/ThreeDTilesLink -- stream \
 - `--range` defines the approximate square coverage half-width around the center point (X/Z local extent), not a strict spherical radius.
 - Large ranges prioritize coarse ancestor tiles first so the requested coverage is established before finer descendants arrive.
 - Add `--dry-run` to verify only the fetch and conversion path without sending anything to Resonite.
+- Useful tuning flags include `--tile-limit`, `--depth-limit`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
 - If `--resonite-host` is omitted, `localhost` is used.
 - When running from WSL against a Windows-hosted Resonite session, prefer host-side execution such as `cmd.exe /c dotnet.exe run ...` or `pwsh.exe`, because Linux-side `localhost` does not reliably mean the Windows host.
 - For live verification, clear old `3DTilesLink Session ...` roots before the case by running `tools/Invoke-ResoniteLinkCommand.ps1 cleanup-sessions`.
@@ -100,6 +101,8 @@ Run `dotnet run --project src/ThreeDTilesLink -- interactive --help` for units a
 - If `--resonite-host` is omitted, `localhost` is used.
 - When running from WSL against a Windows-hosted Resonite session, prefer host-side execution such as `cmd.exe /c dotnet.exe run ...` or `pwsh.exe`, because Linux-side `localhost` does not reliably mean the Windows host.
 - The anchor height is sea level at the current latitude/longitude, and `--height-offset` is applied relative to that anchor.
+- `--watch-path` must start with `World/`; each remaining path segment is normalized into a valid alphanumeric member name before the app creates the `Latitude`, `Longitude`, `Range`, and `Search` watches.
+- Useful tuning flags include `--watch-path`, `--poll-interval`, `--debounce`, `--throttle`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
 
 ## Documentation
 

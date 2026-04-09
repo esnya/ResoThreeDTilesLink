@@ -9,7 +9,7 @@ namespace ThreeDTilesLink.Core.CommandLine
             new("--resonite-host", CommandOptionValueKind.Text, "Resonite Link host name or IP address.", DefaultValue: "localhost", ValueName: "host", RenamedFrom: ["--link-host"]);
 
         internal static CommandOptionDefinition ResonitePort(bool required = true) =>
-            new("--resonite-port", CommandOptionValueKind.WholeNumber, "Resonite Link port.", Required: required, ValueName: "port", RenamedFrom: ["--link-port"]);
+            new("--resonite-port", CommandOptionValueKind.WholeNumber, "Resonite Link port (1-65535).", Required: required, ValueName: "port", RenamedFrom: ["--link-port"]);
 
         internal static CommandOptionDefinition TileLimit(string description) =>
             new("--tile-limit", CommandOptionValueKind.WholeNumber, description, DefaultValue: 2048, RenamedFrom: ["--max-tiles"]);

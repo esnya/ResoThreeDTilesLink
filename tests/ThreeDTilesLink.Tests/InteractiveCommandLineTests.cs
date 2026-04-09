@@ -26,6 +26,17 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void Parse_ShortHelp_IncludesHelpOutput()
+        {
+            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(["-h"]);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(0);
+            _ = invocation.WriteToError.Should().BeFalse();
+            _ = invocation.Output.Should().Contain("Usage:");
+        }
+
+        [Fact]
         public void Parse_AcceptsNewVocabulary()
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
@@ -59,6 +70,19 @@ namespace ThreeDTilesLink.Tests
             _ = parsed.RemoveOutOfRange.Should().BeTrue();
             _ = parsed.WatchPath.Should().Be("World/ThreeDTilesLink.Watch");
             _ = parsed.LogLevel.Should().Be(LogLevel.Trace);
+        }
+
+        [Fact]
+        public void Parse_NormalizesWatchPathSegments()
+        {
+            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
+            [
+                "--resonite-port", "12000",
+                "--watch-path", "World/123 tiles/@foo"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeTrue();
+            _ = invocation.Options!.WatchPath.Should().Be("World/Three123tiles.foo");
         }
 
         [Fact]
@@ -129,8 +153,23 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.Output.Should().Contain("Invalid value for --resonite-send-workers: 0");
         }
 
+        [Fact]
+        public void Parse_RejectsInvalidLogLevel()
+        {
+            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
+            [
+                "--resonite-port", "12000",
+                "--log-level", "Verbose"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(1);
+            _ = invocation.Output.Should().Contain("Invalid value for --log-level: Verbose");
+        }
+
         [Theory]
         [InlineData("--resonite-port", "0")]
+        [InlineData("--resonite-port", "65536")]
         [InlineData("--tile-limit", "0")]
         [InlineData("--depth-limit", "0")]
         [InlineData("--detail", "0")]

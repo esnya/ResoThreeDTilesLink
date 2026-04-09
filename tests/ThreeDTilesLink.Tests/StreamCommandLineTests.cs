@@ -26,6 +26,17 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void Parse_ShortHelp_IncludesHelpOutput()
+        {
+            CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(["-h"]);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(0);
+            _ = invocation.WriteToError.Should().BeFalse();
+            _ = invocation.Output.Should().Contain("Usage:");
+        }
+
+        [Fact]
         public void Parse_AcceptsSeparatedAndEqualsForms()
         {
             CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
@@ -147,10 +158,28 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.Output.Should().Contain("Invalid value for --resonite-send-workers: 0");
         }
 
+        [Fact]
+        public void Parse_RejectsInvalidLogLevel()
+        {
+            CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
+            [
+                "--latitude", "35.0",
+                "--longitude", "139.0",
+                "--range", "400",
+                "--resonite-port", "12000",
+                "--log-level", "Verbose"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(1);
+            _ = invocation.Output.Should().Contain("Invalid value for --log-level: Verbose");
+        }
+
         [Theory]
         [InlineData("--range", "0")]
         [InlineData("--range", "-1")]
         [InlineData("--resonite-port", "0")]
+        [InlineData("--resonite-port", "65536")]
         [InlineData("--tile-limit", "0")]
         [InlineData("--depth-limit", "0")]
         [InlineData("--detail", "0")]

@@ -1312,6 +1312,7 @@ namespace ThreeDTilesLink.Core.Resonite
 
         private async Task<string?> ResolveMaterialTextureMemberNameAsync(CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (_materialTextureFieldResolved)
             {
                 return _materialTextureFieldName;
@@ -1502,6 +1503,7 @@ namespace ThreeDTilesLink.Core.Resonite
 
         private async Task ResolveAvatarProtectionContextAsync(CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (_avatarProtectionUnavailable)
             {
                 return;
@@ -1549,6 +1551,7 @@ namespace ThreeDTilesLink.Core.Resonite
 
         private async Task AttachAvatarProtectionAsync(string slotId, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(slotId))
             {
                 throw new InvalidOperationException("Target slot is not initialized.");
@@ -1565,7 +1568,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 slotId,
                 _avatarProtectionComponentType,
                 BuildAvatarProtectionMembers(),
-                CancellationToken.None).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
         }
 
         private static Dictionary<string, Member> BuildAvatarProtectionMembers()
@@ -1631,8 +1634,10 @@ namespace ThreeDTilesLink.Core.Resonite
             IEnumerable<string> componentTypeCandidates,
             CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             foreach (string componentType in componentTypeCandidates)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
                     ComponentDefinitionData definition = EnsureSuccess(await ExecuteLinkRequestAsync(
@@ -1669,6 +1674,7 @@ namespace ThreeDTilesLink.Core.Resonite
 
         private async Task<Dictionary<string, MemberDefinition>> ResolveMaterialMemberDefinitionsAsync(CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (_materialMemberDefinitions is not null)
             {
                 return _materialMemberDefinitions;
