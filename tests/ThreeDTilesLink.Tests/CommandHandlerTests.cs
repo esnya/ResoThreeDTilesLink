@@ -63,7 +63,6 @@ namespace ThreeDTilesLink.Tests
                 800,
                 3000,
                 true,
-                true,
                 LogLevel.Trace);
 
             var request = InteractiveCommandHandler.CreateRequest(options, "key");

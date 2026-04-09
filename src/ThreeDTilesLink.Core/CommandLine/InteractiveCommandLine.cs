@@ -17,7 +17,6 @@ namespace ThreeDTilesLink.Core.CommandLine
         int PollIntervalMs,
         int DebounceMs,
         int ThrottleMs,
-        bool RemoveOutOfRange,
         bool DryRun,
         LogLevel LogLevel) : ICommandRuntimeOptions;
 
@@ -25,7 +24,7 @@ namespace ThreeDTilesLink.Core.CommandLine
     {
         private static readonly CommandSpecification Specification = new(
             "dotnet run --project src/ThreeDTilesLink -- interactive [options]",
-            "Attach watch variables in Resonite and keep streaming tiles as the watch latitude/longitude/range values change.",
+            "Attach interactive input variables in Resonite and keep streaming tiles as the session-root Latitude/Longitude/Range/Search values change.",
             [
                 CommonCommandOptions.HeightOffset(),
                 CommonCommandOptions.ResoniteHost(),
@@ -37,10 +36,9 @@ namespace ThreeDTilesLink.Core.CommandLine
                 CommonCommandOptions.ResoniteSendWorkers("Maximum number of parallel Resonite send workers."),
                 CommonCommandOptions.MeasurePerformance(),
                 CommonCommandOptions.Timeout(),
-                new("--poll-interval", CommandOptionValueKind.WholeNumber, "Watch polling interval.", DefaultValue: 250, Unit: "ms", RenamedFrom: ["--poll-ms"]),
-                new("--debounce", CommandOptionValueKind.WholeNumber, "Delay after watch changes before starting a run.", DefaultValue: 800, Unit: "ms", RenamedFrom: ["--debounce-ms"]),
+                new("--poll-interval", CommandOptionValueKind.WholeNumber, "Interactive input polling interval.", DefaultValue: 250, Unit: "ms", RenamedFrom: ["--poll-ms"]),
+                new("--debounce", CommandOptionValueKind.WholeNumber, "Delay after interactive input changes before starting a run.", DefaultValue: 800, Unit: "ms", RenamedFrom: ["--debounce-ms"]),
                 new("--throttle", CommandOptionValueKind.WholeNumber, "Minimum time between run starts.", DefaultValue: 3000, Unit: "ms", RenamedFrom: ["--throttle-ms"]),
-                new("--remove-out-of-range", CommandOptionValueKind.Switch, "Keep enabled for compatibility. Interactive mode removes retained tiles that fall outside the latest range during overlapping updates.", DefaultValue: true),
                 CommonCommandOptions.DryRun(),
                 CommonCommandOptions.LogLevelOption()
             ],
@@ -48,8 +46,8 @@ namespace ThreeDTilesLink.Core.CommandLine
             {
                 ["--lat"] = "--lat is no longer supported in interactive mode.",
                 ["--lon"] = "--lon is no longer supported in interactive mode.",
-                ["--range"] = "--range is no longer supported in interactive mode. Set the watch Range value in Resonite instead.",
-                ["--half-width-m"] = "--half-width-m is no longer supported in interactive mode. Set the watch Range value in Resonite instead.",
+                ["--range"] = "--range is no longer supported in interactive mode. Set the Interactive Range value in Resonite instead.",
+                ["--half-width-m"] = "--half-width-m is no longer supported in interactive mode. Set the Interactive Range value in Resonite instead.",
                 ["--render-start-span-ratio"] = "--render-start-span-ratio is no longer supported."
             });
 
@@ -87,7 +85,6 @@ namespace ThreeDTilesLink.Core.CommandLine
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--poll-interval", out int pollIntervalMs) ||
                 !CommandInvocationBuilder.TryGetNonNegativeInt(parsed, "--debounce", out int debounceMs) ||
                 !CommandInvocationBuilder.TryGetNonNegativeInt(parsed, "--throttle", out int throttleMs) ||
-                !CommandInvocationBuilder.TryGetValue(parsed, "--remove-out-of-range", out bool removeOutOfRange) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--dry-run", out bool dryRun))
             {
                 return CommandInvocationBuilder.Error<InteractiveCommandOptions>("Invalid command values.", RenderHelp);
@@ -114,7 +111,6 @@ namespace ThreeDTilesLink.Core.CommandLine
                     pollIntervalMs,
                     debounceMs,
                     throttleMs,
-                    removeOutOfRange,
                     dryRun,
                     logLevel),
                 0,

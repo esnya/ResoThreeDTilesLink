@@ -7,7 +7,7 @@ namespace ThreeDTilesLink.Tests
     public sealed class InteractiveCommandLineTests
     {
         [Fact]
-        public void Parse_Help_IncludesWatchAndTimingOptions()
+        public void Parse_Help_IncludesInteractiveInputAndTimingOptions()
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(["--help"]);
 
@@ -17,10 +17,10 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.Output.Should().Contain("--poll-interval <value>");
             _ = invocation.Output.Should().Contain("--content-workers <value>");
             _ = invocation.Output.Should().Contain("--resonite-send-workers <value>");
-            _ = invocation.Output.Should().Contain("--remove-out-of-range");
             _ = invocation.Output.Should().Contain("dotnet run --project src/ThreeDTilesLink -- interactive [options]");
             _ = invocation.Output.Should().Contain("Default: localhost.");
             _ = invocation.Output.Should().Contain("Unit: ms.");
+            _ = invocation.Output.Should().Contain("session-root Latitude/Longitude/Range/Search values change");
         }
 
         [Fact]
@@ -35,7 +35,7 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public void Parse_AcceptsNewVocabulary()
+        public void Parse_AcceptsInteractiveTimingVocabulary()
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
             [
@@ -51,7 +51,6 @@ namespace ThreeDTilesLink.Tests
                 "--poll-interval", "250",
                 "--debounce=800",
                 "--throttle", "3000",
-                "--remove-out-of-range",
                 "--dry-run",
                 "--log-level", "Trace"
             ]);
@@ -64,7 +63,6 @@ namespace ThreeDTilesLink.Tests
             _ = parsed.PollIntervalMs.Should().Be(250);
             _ = parsed.DebounceMs.Should().Be(800);
             _ = parsed.ThrottleMs.Should().Be(3000);
-            _ = parsed.RemoveOutOfRange.Should().BeTrue();
             _ = parsed.LogLevel.Should().Be(LogLevel.Trace);
         }
 
@@ -95,19 +93,6 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public void Parse_DefaultsRemoveOutOfRangeToTrue()
-        {
-            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
-            [
-                "--resonite-port", "12000"
-            ]);
-
-            _ = invocation.ShouldRun.Should().BeTrue();
-            InteractiveCommandOptions parsed = invocation.Options!;
-            _ = parsed.RemoveOutOfRange.Should().BeTrue();
-        }
-
-        [Fact]
         public void Parse_RejectsInteractiveRangeArgument()
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
@@ -119,6 +104,20 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.ShouldRun.Should().BeFalse();
             _ = invocation.ExitCode.Should().Be(1);
             _ = invocation.Output.Should().Contain("--range is no longer supported in interactive mode.");
+        }
+
+        [Fact]
+        public void Parse_RejectsUnknownRemoveOutOfRangeArgument()
+        {
+            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
+            [
+                "--remove-out-of-range",
+                "--resonite-port", "12000"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(1);
+            _ = invocation.Output.Should().Contain("Unknown argument: --remove-out-of-range");
         }
 
         [Fact]
