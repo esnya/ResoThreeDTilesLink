@@ -119,6 +119,31 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task RunAsync_DisconnectsEvenWhenCallerTokenIsCanceled()
+        {
+            var session = new FakeSession
+            {
+                ThrowOnCanceledDisconnect = true
+            };
+            var watchStore = new FakeWatchStore
+            {
+                SelectionInputValues = new Queue<SelectionInputValues?>([new SelectionInputValues(35f, 139f, 400f), new SelectionInputValues(35f, 139f, 400f)])
+            };
+            var clock = new FakeClock { CancelAfterDelayCalls = 3 };
+            var coordinator = new FakeTileRunCoordinator(_ => clock.RequestCancellation());
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock);
+
+            using var cts = new CancellationTokenSource();
+            clock.CancellationSource = cts;
+
+            await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
+
+            _ = session.DisconnectCalls.Should().Be(1);
+            _ = session.DisconnectCancellationTokens.Should().ContainSingle()
+                .Which.Should().BeFalse();
+        }
+
+        [Fact]
         public async Task RunAsync_SupersededOverlapRun_CarriesPartialVisibleTilesIntoNextRun()
         {
             var session = new FakeSession();
@@ -505,7 +530,9 @@ namespace ThreeDTilesLink.Tests
         private sealed class FakeSession : IResoniteSession
         {
             public List<string> RemovedSlotIds { get; } = [];
+            public List<bool> DisconnectCancellationTokens { get; } = [];
             public int DisconnectCalls { get; private set; }
+            public bool ThrowOnCanceledDisconnect { get; init; }
 
             public Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
             {
@@ -546,6 +573,12 @@ namespace ThreeDTilesLink.Tests
             public Task DisconnectAsync(CancellationToken cancellationToken)
             {
                 DisconnectCalls++;
+                DisconnectCancellationTokens.Add(cancellationToken.IsCancellationRequested);
+                if (ThrowOnCanceledDisconnect && cancellationToken.IsCancellationRequested)
+                {
+                    throw new InvalidOperationException("Disconnect should not receive a canceled token.");
+                }
+
                 return Task.CompletedTask;
             }
         }
