@@ -40,7 +40,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 new("--poll-interval", CommandOptionValueKind.WholeNumber, "Watch polling interval.", DefaultValue: 250, Unit: "ms", RenamedFrom: ["--poll-ms"]),
                 new("--debounce", CommandOptionValueKind.WholeNumber, "Delay after watch changes before starting a run.", DefaultValue: 800, Unit: "ms", RenamedFrom: ["--debounce-ms"]),
                 new("--throttle", CommandOptionValueKind.WholeNumber, "Minimum time between run starts.", DefaultValue: 3000, Unit: "ms", RenamedFrom: ["--throttle-ms"]),
-                new("--remove-out-of-range", CommandOptionValueKind.Switch, "During overlapping updates, remove retained tiles that fall outside the latest range.", DefaultValue: false),
+                new("--remove-out-of-range", CommandOptionValueKind.Switch, "Keep enabled for compatibility. Interactive mode removes retained tiles that fall outside the latest range during overlapping updates.", DefaultValue: true),
                 CommonCommandOptions.DryRun(),
                 CommonCommandOptions.LogLevelOption()
             ],

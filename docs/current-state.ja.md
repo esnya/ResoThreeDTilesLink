@@ -45,6 +45,7 @@
 - `World/` alias は `DynamicField` ではなく、session-side の値を `ValueCopy<T>` で Drive する別の `DynamicValueVariable<T>` として公開する
 - Interactive の入力 source 値と観測用 alias は分けて扱う。入力 source 値は session root slot 上に置き、観測用 alias は `World/ThreeDTilesLink.*` 配下に固定する
 - Target 側からの上書きは `ValueCopy.WriteBack` で制御し、`World/` から session-side へ戻す必要がある Interactive 入力パラメーターにだけ有効化する。観測専用 alias では無効のままにする
+- interactive では、overlap する再実行時でも最新の `Range` から外れた retained tile を既定で除去し、可視 coverage が古い範囲に張り付かないようにする
 - session の license credit は session-side の `DynamicValueVariable<string>` から固定 alias `World/ThreeDTilesLink.License` へ公開する
 - Progress は親スロットに置いた session-side の `DynamicValueVariable<float>` から `ValueCopy<float>` 経由で `World/ThreeDTilesLink.Progress` へ `0.0..1.0` の float として公開する
 - 人間向けの進捗文字列は親スロットに置いた session-side の `DynamicValueVariable<string>` から `ValueCopy<string>` 経由で `World/ThreeDTilesLink.ProgressText` へ公開する

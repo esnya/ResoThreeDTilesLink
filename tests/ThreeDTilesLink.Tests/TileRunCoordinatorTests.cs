@@ -546,6 +546,111 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task RunInteractive_RangeExpansion_StreamsNewTilesDuringOverlapRerun()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "near",
+                        ContentUri = new Uri("https://example.com/near.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 10d)
+                    },
+                    new Tile
+                    {
+                        Id = "far",
+                        ContentUri = new Uri("https://example.com/far.glb"),
+                        BoundingVolume = CreateBox(300d, 0d, 0d, 10d)
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+
+            InteractiveTileRunResult initial = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false, rangeM: 100d),
+                new InteractiveRunInput(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal), RemoveOutOfRangeTiles: false),
+                CancellationToken.None);
+
+            int sendsAfterInitialRun = client.SendCount;
+            _ = initial.VisibleTiles.Should().ContainKey(StableId("near"));
+            _ = initial.VisibleTiles.Should().NotContainKey(StableId("far"));
+
+            InteractiveTileRunResult expanded = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false, rangeM: 400d),
+                new InteractiveRunInput(
+                    new Dictionary<string, RetainedTileState>(initial.VisibleTiles, StringComparer.Ordinal),
+                    RemoveOutOfRangeTiles: false,
+                    initial.Checkpoint,
+                    new Dictionary<string, RetainedTileState>(initial.CleanupDebtTiles, StringComparer.Ordinal)),
+                CancellationToken.None);
+
+            _ = client.SendCount.Should().BeGreaterThan(sendsAfterInitialRun);
+            _ = expanded.VisibleTiles.Should().ContainKey(StableId("near"));
+            _ = expanded.VisibleTiles.Should().ContainKey(StableId("far"));
+        }
+
+        [Fact]
+        public async Task RunInteractive_RangeExpansionAcrossSiblingBranches_StreamsAdditionalCoverage()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile
+                    {
+                        Id = "p",
+                        ContentUri = new Uri("https://example.com/p.glb"),
+                        BoundingVolume = CreateBox(0d, 0d, 0d, 3000d),
+                        Children =
+                        [
+                            new Tile
+                            {
+                                Id = "c0",
+                                ContentUri = new Uri("https://example.com/c0.glb"),
+                                BoundingVolume = CreateBox(0d, 0d, 0d, 40d)
+                            },
+                            new Tile
+                            {
+                                Id = "c1",
+                                ContentUri = new Uri("https://example.com/c1.glb"),
+                                BoundingVolume = CreateBox(350d, 0d, 0d, 40d)
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            var client = new FakeResoniteSession();
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+
+            InteractiveTileRunResult initial = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false, rangeM: 100d),
+                new InteractiveRunInput(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal), RemoveOutOfRangeTiles: true),
+                CancellationToken.None);
+
+            int sendsAfterInitialRun = client.SendCount;
+            _ = initial.VisibleTiles.Keys.Should().Equal(StableId("c0"));
+
+            InteractiveTileRunResult expanded = await coordinator.RunInteractiveAsync(
+                CreateRequest(dryRun: false, manageConnection: false, rangeM: 400d),
+                new InteractiveRunInput(
+                    new Dictionary<string, RetainedTileState>(initial.VisibleTiles, StringComparer.Ordinal),
+                    RemoveOutOfRangeTiles: true,
+                    initial.Checkpoint,
+                    new Dictionary<string, RetainedTileState>(initial.CleanupDebtTiles, StringComparer.Ordinal)),
+                CancellationToken.None);
+
+            _ = client.SendCount.Should().BeGreaterThan(sendsAfterInitialRun);
+            _ = expanded.VisibleTiles.Keys.Should().Contain(StableId("c1"));
+        }
+
+        [Fact]
         public async Task RunInteractive_CancelDuringOverlapUpdate_PreservesStreamedAndRetainedTiles()
         {
             var tileset = new Tileset(new Tile
@@ -1715,13 +1820,14 @@ namespace ThreeDTilesLink.Tests
             int maxTiles = 16,
             int maxDepth = 8,
             double bootstrapRangeMultiplier = 4d,
+            double rangeM = 500d,
             bool manageConnection = true,
             string? apiKey = "k")
         {
             return new TileRunRequest(
                 new GeoReference(0d, 0d, 0d),
                 new GeoReference(0d, 0d, 0d),
-                new TraversalOptions(500d, maxTiles, maxDepth, 40d, bootstrapRangeMultiplier),
+                new TraversalOptions(rangeM, maxTiles, maxDepth, 40d, bootstrapRangeMultiplier),
                 new ResoniteOutputOptions("127.0.0.1", 12345, dryRun, manageConnection),
                 apiKey);
         }

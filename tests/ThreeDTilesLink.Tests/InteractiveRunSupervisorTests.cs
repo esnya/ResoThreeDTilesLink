@@ -99,6 +99,57 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task RunAsync_RangeChange_KeepsRetainedTilesButDropsCheckpoint()
+        {
+            var session = new FakeSession();
+            var watchStore = new FakeInteractiveInputStore
+            {
+                SelectionInputValues = new Queue<SelectionInputValues?>(
+                [
+                    new SelectionInputValues(35f, 139f, 200f),
+                    new SelectionInputValues(35f, 139f, 200f),
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(35f, 139f, 400f)
+                ])
+            };
+            string partialStableId = "partial";
+            var partialVisibleTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [partialStableId] = new(partialStableId, "partial-tile", null, [], ["slot_partial"], "Google; Airbus")
+            };
+            var checkpoint = new InteractiveRunCheckpoint(new Dictionary<string, Tileset>(StringComparer.OrdinalIgnoreCase));
+            var clock = new FakeClock { CancelAfterDelayCalls = 4 };
+            var coordinator = new FakeTileRunCoordinator(
+                onRunStarted: _ => { },
+                interactiveHandler: (callIndex, _, interactive, _) => Task.FromResult(
+                    callIndex == 1
+                        ? new InteractiveTileRunResult(
+                            new RunSummary(1, 1, 1, 0),
+                            partialVisibleTiles,
+                            new HashSet<string>([partialStableId], StringComparer.Ordinal),
+                            checkpoint)
+                        : new InteractiveTileRunResult(
+                            new RunSummary(1, 1, 1, 0),
+                            new Dictionary<string, RetainedTileState>(interactive.RetainedTiles, StringComparer.Ordinal),
+                            new HashSet<string>(interactive.RetainedTiles.Keys, StringComparer.Ordinal),
+                            interactive.Checkpoint)));
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock);
+
+            using var cts = new CancellationTokenSource();
+            clock.CancellationSource = cts;
+
+            await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
+
+            _ = coordinator.Requests.Should().HaveCount(2);
+            _ = coordinator.RetainedTileInputs.Should().HaveCount(2);
+            _ = coordinator.RetainedTileInputs[1].Should().ContainKey(partialStableId);
+            _ = coordinator.CheckpointInputs[1].Should().BeNull();
+            _ = session.RemovedSlotIds.Should().BeEmpty();
+            _ = coordinator.Requests[1].PlacementReference.Latitude.Should().Be(35d);
+            _ = coordinator.Requests[1].PlacementReference.Longitude.Should().Be(139d);
+        }
+
+        [Fact]
         public async Task RunAsync_CancellationDoesNotRemoveAnySlots()
         {
             var session = new FakeSession();
@@ -204,6 +255,62 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task RunAsync_SupersedesActiveRun_WithoutWaitingForThrottleWindow()
+        {
+            var session = new FakeSession();
+            var watchStore = new FakeInteractiveInputStore
+            {
+                SelectionInputValues = new Queue<SelectionInputValues?>(
+                [
+                    new SelectionInputValues(35f, 139f, 200f),
+                    new SelectionInputValues(35f, 139f, 200f),
+                    new SelectionInputValues(35.1f, 139.1f, 200f),
+                    new SelectionInputValues(35.1f, 139.1f, 200f)
+                ])
+            };
+            var clock = new FakeClock { CancelAfterDelayCalls = 4 };
+            var coordinator = new FakeTileRunCoordinator(
+                onRunStarted: _ => { },
+                interactiveHandler: async (callIndex, _, interactive, cancellationToken) =>
+                {
+                    if (callIndex == 1)
+                    {
+                        await WaitForCancellationAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        clock.RequestCancellation();
+                    }
+
+                    return new InteractiveTileRunResult(
+                        new RunSummary(1, 1, 1, 0),
+                        new Dictionary<string, RetainedTileState>(interactive.RetainedTiles, StringComparer.Ordinal),
+                        new HashSet<string>(interactive.RetainedTiles.Keys, StringComparer.Ordinal),
+                        interactive.Checkpoint);
+                });
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock);
+            var options = new InteractiveRunRequest(
+                "127.0.0.1",
+                12000,
+                0d,
+                new TraversalOptions(500d, 16, 16, 40d),
+                false,
+                string.Empty,
+                false,
+                new WatchOptions(
+                    TimeSpan.FromMilliseconds(10),
+                    TimeSpan.FromMilliseconds(10),
+                    TimeSpan.FromMinutes(1)));
+
+            using var cts = new CancellationTokenSource();
+            clock.CancellationSource = cts;
+
+            await supervisor.RunAsync(options, cts.Token);
+
+            _ = coordinator.Requests.Should().HaveCount(2);
+        }
+
+        [Fact]
         public async Task RunAsync_DropsRetainedTilesAndCheckpoint_WhenRangesDoNotOverlap()
         {
             var session = new FakeSession();
@@ -250,6 +357,59 @@ namespace ThreeDTilesLink.Tests
             _ = coordinator.RetainedTileInputs[1].Should().BeEmpty();
             _ = coordinator.CheckpointInputs[1].Should().BeNull();
             _ = session.RemovedSlotIds.Should().Contain("slot_partial");
+        }
+
+        [Fact]
+        public async Task RunAsync_KeepsRetainedTilesButDropsCheckpoint_WhenRangeChangesAtSameLocation()
+        {
+            var session = new FakeSession();
+            var watchStore = new FakeInteractiveInputStore
+            {
+                SelectionInputValues = new Queue<SelectionInputValues?>(
+                [
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(35f, 139f, 400f),
+                    new SelectionInputValues(35f, 139f, 800f),
+                    new SelectionInputValues(35f, 139f, 800f)
+                ])
+            };
+            string partialStableId = "partial";
+            var partialVisibleTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [partialStableId] = new(partialStableId, "partial-tile", null, [], ["slot_partial"], "Google; Airbus")
+            };
+            var checkpoint = new InteractiveRunCheckpoint(new Dictionary<string, Tileset>(StringComparer.OrdinalIgnoreCase));
+            var coordinator = new FakeTileRunCoordinator(
+                onRunStarted: _ => { },
+                interactiveHandler: (callIndex, _, interactive, _) => Task.FromResult(
+                    callIndex == 1
+                        ? new InteractiveTileRunResult(
+                            new RunSummary(1, 1, 1, 0),
+                            partialVisibleTiles,
+                            new HashSet<string>([partialStableId], StringComparer.Ordinal),
+                            checkpoint)
+                        : new InteractiveTileRunResult(
+                            new RunSummary(1, 1, 1, 0),
+                            new Dictionary<string, RetainedTileState>(interactive.RetainedTiles, StringComparer.Ordinal),
+                            new HashSet<string>(interactive.RetainedTiles.Keys, StringComparer.Ordinal),
+                            interactive.Checkpoint)));
+            var clock = new FakeClock { CancelAfterDelayCalls = 4 };
+            var supervisor = CreateSupervisor(coordinator, session, watchStore, new FakeSearchResolver(), clock);
+
+            using var cts = new CancellationTokenSource();
+            clock.CancellationSource = cts;
+
+            await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
+
+            _ = coordinator.Requests.Should().HaveCount(2);
+            _ = coordinator.RetainedTileInputs.Should().HaveCount(2);
+            _ = coordinator.RetainedTileInputs[1].Should().ContainKey(partialStableId);
+            _ = coordinator.CheckpointInputs[1].Should().BeNull();
+            _ = coordinator.Requests[0].PlacementReference.Latitude.Should().Be(35d);
+            _ = coordinator.Requests[0].PlacementReference.Longitude.Should().Be(139d);
+            _ = coordinator.Requests[1].PlacementReference.Latitude.Should().Be(35d);
+            _ = coordinator.Requests[1].PlacementReference.Longitude.Should().Be(139d);
+            _ = session.RemovedSlotIds.Should().BeEmpty();
         }
 
         [Fact]

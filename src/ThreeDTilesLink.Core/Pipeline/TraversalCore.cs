@@ -451,9 +451,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             foreach (PlanningNode anchor in GetFrontierAnchors(tree))
             {
-                if (tree.PlanningVisibleStableIds.Contains(anchor.StableId) ||
-                    tree.AncestorsWithPlanningVisibleDescendants.Contains(anchor.StableId) ||
-                    HasVisibleAncestor(anchor.Parent, tree.PlanningVisibleStableIds))
+                if (tree.PlanningVisibleStableIds.Contains(anchor.StableId))
                 {
                     continue;
                 }

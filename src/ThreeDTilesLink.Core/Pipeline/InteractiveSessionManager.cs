@@ -138,7 +138,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             Dictionary<string, RetainedTileState> cleanupDebtTiles = action.Overlaps
                 ? state.CleanupDebtTiles
                 : new Dictionary<string, RetainedTileState>(StringComparer.Ordinal);
-            InteractiveRunCheckpoint? checkpoint = action.Overlaps ? state.Checkpoint : null;
+            InteractiveRunCheckpoint? checkpoint = action.ReuseCheckpoint ? state.Checkpoint : null;
             TileRunRequest runRequest = BuildRunRequest(
                 options,
                 selectionReference,

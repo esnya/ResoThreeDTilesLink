@@ -98,6 +98,7 @@ Those observation aliases stay fixed at:
 - `World/ThreeDTilesLink.ProgressText`
 
 Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and retained tiles are reconciled for the latest selection.
+During overlapping updates, retained tiles outside the latest `Range` are removed by default so the visible coverage follows the current selection instead of sticking to an older extent.
 If `Search` is updated to a non-empty string, the app resolves it with the Google Geocoding API and writes the resulting coordinates back into `Latitude` / `Longitude`.
 If watch `Range` is `0` or less, no streaming run is started.
 When `Range` is large, the run first secures visible coverage with coarse ancestor tiles before refining toward smaller descendants.
@@ -116,6 +117,7 @@ Run `dotnet run --project src/ThreeDTilesLink -- interactive --help` for units a
 - When running from WSL against a Windows-hosted Resonite session, prefer host-side execution such as `cmd.exe /c dotnet.exe run ...` or `pwsh.exe`, because Linux-side `localhost` does not reliably mean the Windows host.
 - The anchor height is sea level at the current latitude/longitude, and `--height-offset` is applied relative to that anchor.
 - The Interactive input values are fixed session-root members; the observation aliases remain fixed under `World/ThreeDTilesLink.*`.
+- `--remove-out-of-range` remains accepted for compatibility, but the latest-range cleanup behavior is already the default interactive behavior.
 - Useful tuning flags include `--poll-interval`, `--debounce`, `--throttle`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
 
 ## Documentation

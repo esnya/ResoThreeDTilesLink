@@ -45,6 +45,7 @@ This document contains only current operational information that is difficult to
 - Expose `World/` aliases as separate `DynamicValueVariable<T>` members driven from the session-side source by `ValueCopy<T>`, instead of `DynamicField`.
 - Keep the Interactive input source values and the observation aliases distinct: the input source values live on the session root slot, while the observation aliases remain fixed under `World/ThreeDTilesLink.*`.
 - Control target-side overwrite through `ValueCopy.WriteBack`; enable it only for Interactive input parameters that must flow from `World/` back into the session-side values, and keep it disabled for observation-only aliases.
+- In interactive mode, overlapping reruns remove retained tiles that fall outside the latest `Range` by default so visible coverage tracks the current selection.
 - Publish the session license credit from a session-side `DynamicValueVariable<string>` to the fixed alias `World/ThreeDTilesLink.License`.
 - Publish progress as a float in the range `0.0..1.0` from a session-side `DynamicValueVariable<float>` on the parent slot to `World/ThreeDTilesLink.Progress` through `ValueCopy<float>`.
 - Publish the human-readable progress string from a session-side `DynamicValueVariable<string>` on the parent slot to `World/ThreeDTilesLink.ProgressText` through `ValueCopy<string>`.
