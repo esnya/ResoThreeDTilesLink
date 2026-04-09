@@ -15,6 +15,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         IWatchStore watchStore,
         ISearchResolver searchResolver,
         ICoordinateTransformer coordinateTransformer,
+        IClock clock,
         ILogger<InteractiveRunSupervisor> logger)
     {
         private static readonly Action<ILogger, string, string, Exception?> s_retainedSlotClearFailed =
@@ -28,6 +29,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly IWatchStore _watchStore = watchStore;
         private readonly ISearchResolver _searchResolver = searchResolver;
         private readonly ICoordinateTransformer _coordinateTransformer = coordinateTransformer;
+        private readonly IClock _clock = clock;
         private readonly ILogger<InteractiveRunSupervisor> _logger = logger;
 
         internal Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
@@ -134,7 +136,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             if (string.IsNullOrWhiteSpace(options.ApiKey))
             {
                 InteractiveRunSupervisor.Log.SearchIgnored(_logger, action.SearchText);
-                return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                return MarkSearchHandled(state, action.SearchText);
             }
 
             try
@@ -143,7 +145,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 if (result is null)
                 {
                     InteractiveRunSupervisor.Log.SearchNoResult(_logger, action.SearchText);
-                    return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                    return MarkSearchHandled(state, action.SearchText);
                 }
 
                 try
@@ -155,6 +157,16 @@ namespace ThreeDTilesLink.Core.Pipeline
                     throw;
                 }
                 catch (ArgumentException ex)
+                {
+                    InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
+                    return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                }
+                catch (ResoniteLinkNoResponseException ex)
+                {
+                    InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
+                    return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                }
+                catch (ResoniteLinkDisconnectedException ex)
                 {
                     InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
                     return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
@@ -228,6 +240,16 @@ namespace ThreeDTilesLink.Core.Pipeline
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
                 return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
             }
+            catch (ResoniteLinkNoResponseException ex)
+            {
+                InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
+                return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+            }
+            catch (ResoniteLinkDisconnectedException ex)
+            {
+                InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
+                return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+            }
             catch (HttpRequestException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
@@ -276,11 +298,20 @@ namespace ThreeDTilesLink.Core.Pipeline
             DateTimeOffset requestedAt,
             WatchOptions watchOptions)
         {
-            TimeSpan retryDelay = watchOptions.Debounce + watchOptions.PollInterval;
             return state with
             {
                 PendingSearch = searchText,
-                PendingSearchChangedAt = requestedAt + retryDelay
+                PendingSearchChangedAt = requestedAt + watchOptions.Debounce + watchOptions.PollInterval
+            };
+        }
+
+        private static InteractiveLoopState MarkSearchHandled(InteractiveLoopState state, string searchText)
+        {
+            return state with
+            {
+                PendingSearch = null,
+                PendingSearchChangedAt = null,
+                LastResolvedSearch = searchText
             };
         }
 
