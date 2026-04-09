@@ -76,16 +76,17 @@ namespace ThreeDTilesLink.Core.Runtime
             var geocodingClient = new GoogleGeocodingClient(_httpClient);
             var searchResolver = new SearchResolver(geocodingClient);
             LinkInterface? linkInterface = null;
-            ResoniteSession resoniteSession;
+            RuntimeResonitePorts resonitePorts;
             try
             {
 #pragma warning disable CA2000
                 linkInterface = new LinkInterface();
-                resoniteSession = new ResoniteSession(
+                var resoniteSession = new ResoniteSession(
                     linkInterface,
                     loggerFactory.CreateLogger<ResoniteSession>(),
                     assetImportWorkers: resoniteSendWorkers);
 #pragma warning restore CA2000
+                resonitePorts = new RuntimeResonitePorts(resoniteSession);
             }
             catch
             {
@@ -94,9 +95,9 @@ namespace ThreeDTilesLink.Core.Runtime
             }
             try
             {
-                _session = resoniteSession;
+                _session = resonitePorts.Session;
                 var selectionInputReader = new SelectionInputReader(
-                    resoniteSession,
+                    resonitePorts.InteractiveInputStore,
                     loggerFactory.CreateLogger<SelectionInputReader>());
 
                 SelectionService = new TileSelectionService(
@@ -105,8 +106,8 @@ namespace ThreeDTilesLink.Core.Runtime
                     reconcilerCore,
                     contentProcessor,
                     meshPlacementService,
-                    resoniteSession,
-                    resoniteSession,
+                    resonitePorts.SessionControl,
+                    resonitePorts.SessionMetadata,
                     loggerFactory.CreateLogger<TileSelectionService>(),
                     maxConcurrentTileProcessing,
                     resoniteSendWorkers,
@@ -114,8 +115,8 @@ namespace ThreeDTilesLink.Core.Runtime
 
                 InteractiveSupervisor = new InteractiveRunSupervisor(
                     SelectionService,
-                    resoniteSession,
-                    resoniteSession,
+                    resonitePorts.InteractiveSession,
+                    resonitePorts.InteractiveInputStore,
                     searchResolver,
                     transformer,
                     _geoReferenceResolver,
@@ -125,7 +126,7 @@ namespace ThreeDTilesLink.Core.Runtime
             }
             catch
             {
-                resoniteSession.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                resonitePorts.Session.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 throw;
             }
         }

@@ -51,33 +51,11 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                Log.ConnectingToResonite(_logger, options.ResoniteHost, options.ResonitePort);
-                await _actionApplier.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
-                state = state with { Connected = true };
-
-                InteractiveInputBinding inputBinding = await _interactiveInputStore.CreateInteractiveInputBindingAsync(cancellationToken).ConfigureAwait(false);
-                state = state with { InputBinding = inputBinding };
-                Log.InteractiveInputAttached(_logger);
+                state = await InitializeSessionAsync(state, options, cancellationToken).ConfigureAwait(false);
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    state = await _actionApplier.FinalizeCompletedRunAsync(state, cancellationToken).ConfigureAwait(false);
-
-                    SelectionInputSnapshot snapshot = await _selectionInputReader.ReadAsync(state.InputBinding!, cancellationToken).ConfigureAwait(false);
-                    DateTimeOffset now = _clock.UtcNow;
-                    InteractiveLoopState previousState = state;
-                    InteractiveDecisionResult decision = InteractiveDecisionEngine.Evaluate(
-                        state,
-                        snapshot,
-                        options.Watch,
-                        options.HeightOffset,
-                        now,
-                        _geoReferenceResolver.Resolve,
-                        Overlaps);
-                    state = decision.State;
-                    LogInputChanges(previousState, state);
-                    state = await _actionApplier.ApplyAsync(state, decision.Actions, options, cancellationToken).ConfigureAwait(false);
-
+                    state = await RunLoopIterationAsync(state, options, cancellationToken).ConfigureAwait(false);
                     await _clock.Delay(options.Watch.PollInterval, cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -85,6 +63,43 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 state = await _actionApplier.DisconnectAsync(state, CancellationToken.None).ConfigureAwait(false);
             }
+        }
+
+        private async Task<InteractiveLoopState> InitializeSessionAsync(
+            InteractiveLoopState state,
+            InteractiveRunRequest options,
+            CancellationToken cancellationToken)
+        {
+            Log.ConnectingToResonite(_logger, options.ResoniteHost, options.ResonitePort);
+            await _actionApplier.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
+            state = state with { Connected = true };
+
+            InteractiveInputBinding inputBinding = await _interactiveInputStore.CreateInteractiveInputBindingAsync(cancellationToken).ConfigureAwait(false);
+            Log.InteractiveInputAttached(_logger);
+            return state with { InputBinding = inputBinding };
+        }
+
+        private async Task<InteractiveLoopState> RunLoopIterationAsync(
+            InteractiveLoopState state,
+            InteractiveRunRequest options,
+            CancellationToken cancellationToken)
+        {
+            state = await _actionApplier.FinalizeCompletedRunAsync(state, cancellationToken).ConfigureAwait(false);
+
+            SelectionInputSnapshot snapshot = await _selectionInputReader.ReadAsync(state.InputBinding!, cancellationToken).ConfigureAwait(false);
+            DateTimeOffset now = _clock.UtcNow;
+            InteractiveLoopState previousState = state;
+            InteractiveDecisionResult decision = InteractiveDecisionEngine.Evaluate(
+                state,
+                snapshot,
+                options.Watch,
+                options.HeightOffset,
+                now,
+                _geoReferenceResolver.Resolve,
+                Overlaps);
+            state = decision.State;
+            LogInputChanges(previousState, state);
+            return await _actionApplier.ApplyAsync(state, decision.Actions, options, cancellationToken).ConfigureAwait(false);
         }
 
         private void LogInputChanges(InteractiveLoopState previousState, InteractiveLoopState state)

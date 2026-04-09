@@ -39,11 +39,16 @@ namespace ThreeDTilesLink.Core.Pipeline
             ArgumentNullException.ThrowIfNull(facts);
             ArgumentNullException.ThrowIfNull(selectionState);
 
-            PlanningTree tree = BuildPlanningTree(facts, selectionState);
-            HashSet<string> candidateStableIds = GetCandidateStableIds(tree);
-            HashSet<string> desired = BuildDesiredVisibleSet(tree, selectionState, candidateStableIds);
+            TraversalPlanningState planningState = BuildTraversalPlanningState(facts, selectionState);
+            HashSet<string> desired = BuildDesiredVisibleSet(
+                planningState.Tree,
+                selectionState,
+                planningState.CandidateStableIds);
 
-            return new DesiredView(desired, tree.SelectedStableIds, candidateStableIds);
+            return new DesiredView(
+                desired,
+                planningState.Tree.SelectedStableIds,
+                planningState.CandidateStableIds);
         }
 
         internal List<DiscoveryWorkItem> PlanDiscovery(
@@ -70,11 +75,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return [];
             }
 
-            PlanningTree tree = BuildPlanningTree(facts, selectionState);
-            HashSet<string> candidateStableIds = GetCandidateStableIds(tree);
+            TraversalPlanningState planningState = BuildTraversalPlanningState(facts, selectionState);
             List<DiscoveryWorkItem> planned = [];
 
-            foreach (PlanningNode node in GetDiscoveryFrontierNodes(tree))
+            foreach (PlanningNode node in GetDiscoveryFrontierNodes(planningState.Tree))
             {
                 switch (node.Fact.Tile.ContentKind)
                 {
@@ -99,24 +103,24 @@ namespace ThreeDTilesLink.Core.Pipeline
                             break;
                         }
 
-                        if (!candidateStableIds.Contains(node.StableId))
+                        if (!planningState.CandidateStableIds.Contains(node.StableId))
                         {
                             break;
                         }
 
-                        if (tree.PlanningVisibleStableIds.Count == 0 &&
+                        if (planningState.Tree.PlanningVisibleStableIds.Count == 0 &&
                             HasNestedRelayDescendant(node) &&
                             !ShouldPrioritizeCoverage(facts.Request, node.Fact.Tile))
                         {
                             break;
                         }
 
-                        if (tree.PlanningVisibleStableIds.Contains(node.StableId))
+                        if (planningState.Tree.PlanningVisibleStableIds.Contains(node.StableId))
                         {
                             break;
                         }
 
-                        if (tree.AncestorsWithPlanningVisibleDescendants.Contains(node.StableId) &&
+                        if (planningState.Tree.AncestorsWithPlanningVisibleDescendants.Contains(node.StableId) &&
                             !ShouldPrioritizeCoverage(facts.Request, node.Fact.Tile))
                         {
                             break;
@@ -235,7 +239,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             ArgumentNullException.ThrowIfNull(facts);
             ArgumentNullException.ThrowIfNull(selectionState);
-            return GetCandidateStableIds(BuildPlanningTree(facts, selectionState)).Count;
+            return BuildTraversalPlanningState(facts, selectionState).CandidateStableIds.Count;
         }
 
         internal PlanningTree BuildPlanningTreeForSelection(DiscoveryFacts facts, SelectionState selectionState)
@@ -243,6 +247,14 @@ namespace ThreeDTilesLink.Core.Pipeline
             ArgumentNullException.ThrowIfNull(facts);
             ArgumentNullException.ThrowIfNull(selectionState);
             return BuildPlanningTree(facts, selectionState);
+        }
+
+        private static TraversalPlanningState BuildTraversalPlanningState(
+            DiscoveryFacts facts,
+            SelectionState selectionState)
+        {
+            PlanningTree tree = BuildPlanningTree(facts, selectionState);
+            return new TraversalPlanningState(tree, GetCandidateStableIds(tree));
         }
 
         private void ExpandDiscoveredTree(

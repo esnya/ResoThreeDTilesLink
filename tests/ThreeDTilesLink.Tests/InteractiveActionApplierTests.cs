@@ -93,13 +93,9 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
-        private sealed class StubResoniteSession : IResoniteSession, IResoniteSessionMetadataPort
+        private sealed class StubResoniteSession : IResoniteSession
         {
             public Task ConnectAsync(string host, int port, CancellationToken cancellationToken) => Task.CompletedTask;
-            public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken) => Task.CompletedTask;
-            public Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken) => Task.CompletedTask;
-            public Task SetProgressValueAsync(string? parentSlotId, float progress01, CancellationToken cancellationToken) => Task.CompletedTask;
-            public Task SetProgressTextAsync(string? parentSlotId, string progressText, CancellationToken cancellationToken) => Task.CompletedTask;
             public Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken) => Task.FromResult<string?>(null);
             public Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken) => Task.CompletedTask;
             public Task DisconnectAsync(CancellationToken cancellationToken) => Task.CompletedTask;

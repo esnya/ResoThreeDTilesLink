@@ -554,10 +554,8 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
-        private sealed class FakeSession : IResoniteSession, IResoniteSessionMetadataPort
+        private sealed class FakeSession : IResoniteSession
         {
-            private readonly FakeSessionMetadataPort _metadata = new();
-
             public List<string> RemovedSlotIds { get; } = [];
             public List<bool> DisconnectCancellationTokens { get; } = [];
             public int DisconnectCalls { get; private set; }
@@ -566,26 +564,6 @@ namespace ThreeDTilesLink.Tests
             public Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
             {
                 return Task.CompletedTask;
-            }
-
-            public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
-            {
-                return _metadata.SetSessionLicenseCreditAsync(creditString, cancellationToken);
-            }
-
-            public Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken)
-            {
-                return _metadata.SetProgressAsync(parentSlotId, progress01, progressText, cancellationToken);
-            }
-
-            public Task SetProgressValueAsync(string? parentSlotId, float progress01, CancellationToken cancellationToken)
-            {
-                return _metadata.SetProgressValueAsync(parentSlotId, progress01, cancellationToken);
-            }
-
-            public Task SetProgressTextAsync(string? parentSlotId, string progressText, CancellationToken cancellationToken)
-            {
-                return _metadata.SetProgressTextAsync(parentSlotId, progressText, cancellationToken);
             }
 
             public Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
@@ -609,51 +587,6 @@ namespace ThreeDTilesLink.Tests
                 }
 
                 return Task.CompletedTask;
-            }
-
-            [System.Diagnostics.CodeAnalysis.SuppressMessage(
-                "Performance",
-                "CA1822:Mark members as static",
-                Justification = "Test fake keeps instance-shaped metadata API to match the session port.")]
-            private sealed class FakeSessionMetadataPort
-            {
-                private int _callCount;
-
-                public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
-                {
-                    _ = creditString;
-                    _ = cancellationToken;
-                    _callCount++;
-                    return Task.CompletedTask;
-                }
-
-                public Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken)
-                {
-                    _ = parentSlotId;
-                    _ = progress01;
-                    _ = progressText;
-                    _ = cancellationToken;
-                    _callCount++;
-                    return Task.CompletedTask;
-                }
-
-                public Task SetProgressValueAsync(string? parentSlotId, float progress01, CancellationToken cancellationToken)
-                {
-                    _ = parentSlotId;
-                    _ = progress01;
-                    _ = cancellationToken;
-                    _callCount++;
-                    return Task.CompletedTask;
-                }
-
-                public Task SetProgressTextAsync(string? parentSlotId, string progressText, CancellationToken cancellationToken)
-                {
-                    _ = parentSlotId;
-                    _ = progressText;
-                    _ = cancellationToken;
-                    _callCount++;
-                    return Task.CompletedTask;
-                }
             }
         }
 
