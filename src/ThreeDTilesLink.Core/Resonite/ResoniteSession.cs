@@ -82,6 +82,12 @@ namespace ThreeDTilesLink.Core.Resonite
                 Level = LogLevel.Warning,
                 Message = "Bundled Google Maps attribution logo asset was not found at {BundledLogoPath}. Continuing with text attribution only.")]
             public static partial void AttributionLogoMissing(ILogger logger, string bundledLogoPath);
+
+            [LoggerMessage(
+                EventId = 2010,
+                Level = LogLevel.Warning,
+                Message = "Failed to attach the optional Google Maps attribution logo. Continuing with text attribution only.")]
+            public static partial void AttributionLogoAttachFailed(ILogger logger, Exception exception);
         }
 
         private const string SlotWorkerType = "[FrooxEngine]FrooxEngine.Slot";
@@ -1483,7 +1489,18 @@ namespace ThreeDTilesLink.Core.Resonite
 
             if (!string.IsNullOrWhiteSpace(bundledLogoRelativePath))
             {
-                await AttachGoogleMapsAttributionLogoAsync(sessionRootSlotId, bundledLogoRelativePath, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await AttachGoogleMapsAttributionLogoAsync(sessionRootSlotId, bundledLogoRelativePath, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (IsOptionalAttributionLogoFailure(ex))
+                {
+                    Log.AttributionLogoAttachFailed(_logger, ex);
+                }
             }
         }
 
@@ -1661,6 +1678,16 @@ namespace ThreeDTilesLink.Core.Resonite
             triangleSubmesh.Indices[10] = 2;
             triangleSubmesh.Indices[11] = 0;
             return importMesh;
+        }
+
+        private static bool IsOptionalAttributionLogoFailure(Exception ex)
+        {
+            return ex is InvalidOperationException
+                or TimeoutException
+                or ResoniteLinkNoResponseException
+                or ResoniteLinkDisconnectedException
+                or WebSocketException
+                or ObjectDisposedException;
         }
 
         private async Task EnsureSessionDynamicSpaceAsync(string sessionRootSlotId, CancellationToken cancellationToken = default)
