@@ -55,14 +55,9 @@ namespace ThreeDTilesLink.Core.Pipeline
                 await _actionApplier.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
                 state = state with { Connected = true };
 
-                WatchBinding watchBinding = await _watchStore.CreateWatchAsync(options.Watch.Configuration, cancellationToken).ConfigureAwait(false);
+                WatchBinding watchBinding = await _watchStore.CreateWatchAsync(cancellationToken).ConfigureAwait(false);
                 state = state with { WatchBinding = watchBinding };
-                Log.WatchBindingAttached(
-                    _logger,
-                    options.Watch.Configuration.LatitudeVariablePath,
-                    options.Watch.Configuration.LongitudeVariablePath,
-                    options.Watch.Configuration.RangeVariablePath,
-                    options.Watch.Configuration.SearchVariablePath);
+                Log.WatchBindingAttached(_logger);
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
@@ -131,8 +126,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             [LoggerMessage(
                 EventId = 2,
                 Level = LogLevel.Information,
-                Message = "Watch attached: lat={LatPath} lon={LonPath} range={RangePath} search={SearchPath}")]
-            public static partial void WatchBindingAttached(ILogger logger, string latPath, string lonPath, string rangePath, string searchPath);
+                Message = "Interactive input bindings attached on the session root slot: Latitude, Longitude, Range, Search.")]
+            public static partial void WatchBindingAttached(ILogger logger);
 
             [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Search query changed: {Query}")]
             public static partial void SearchQueryChanged(ILogger logger, string query);

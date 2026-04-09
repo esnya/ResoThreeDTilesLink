@@ -12,6 +12,11 @@ GitHub Releases are the canonical changelog for this project. We do not keep a s
 ## Constraints
 
 - To comply with Google Map Tiles API policy, streamed tiles must remain non-persistent.
+- Resonite is a third-party renderer for Google Map Tiles API content. Using this tool does not waive Google Maps Platform attribution, logo, or provider-credit requirements.
+- Keep the Google Maps attribution visible whenever streamed tiles are displayed.
+- This integration publishes a compact text attribution surface through `World/ThreeDTilesLink.License`; that line always includes `Google Maps` and any currently required third-party providers.
+- Logo handling is not implemented by this tool. If your visible UI requires a Google Maps logo for compliance, handle that logo in your renderer or overlay layer and keep it separate from renderer branding.
+- Keep third-party provider attributions visible in full alongside the Google Maps attribution while tiles are shown.
 - Saving streamed content into the Resonite inventory is not supported.
 - `SimpleAvatarProtection` is part of the Resonite-side mitigation for keeping the streamed content non-persistent.
 
@@ -80,22 +85,25 @@ Required Google APIs by operation:
 - Tile streaming from `Latitude` / `Longitude` / `Range`: Google Map Tiles API
 - Free-text search from `Search`: Google Geocoding API
 
-At connection time, the app attaches session-root writable `DynamicValueVariable<T>` values and derives the Interactive input watches from `--watch-path` (default: `World/ThreeDTilesLink`):
+At connection time, the app attaches session-root writable `DynamicValueVariable<T>` values for the Interactive input parameters:
 
-- `World/ThreeDTilesLink.Latitude`
-- `World/ThreeDTilesLink.Longitude`
-- `World/ThreeDTilesLink.Range`
-- `World/ThreeDTilesLink.Search`
+- `Latitude`
+- `Longitude`
+- `Range`
+- `Search`
 
-The session-root writable values are kept as separate `DynamicValueVariable<T>` members.
-The `World/` paths are exposed as alias `DynamicValueVariable<T>` members driven through `ValueCopy<T>`.
+The Interactive loop reads those session-root values directly.
+For convenience, the same input values are also exposed through fixed `World/ThreeDTilesLink.*` alias `DynamicValueVariable<T>` members driven through `ValueCopy<T>`.
 For the Interactive input parameters (`Latitude` / `Longitude` / `Range` / `Search`), `ValueCopy.WriteBack` is enabled so changes from `World/` flow back into the session-side values.
 For observation-only aliases, `ValueCopy.WriteBack` stays disabled so changes on the alias side do not overwrite the source values.
 Those observation aliases stay fixed at:
 
 - `World/ThreeDTilesLink.License`
+- `World/ThreeDTilesLink.AttributionRequirements`
 - `World/ThreeDTilesLink.Progress`
 - `World/ThreeDTilesLink.ProgressText`
+
+`World/ThreeDTilesLink.License` is the mandatory attribution surface for the currently visible Google tiles, not optional status text. `World/ThreeDTilesLink.AttributionRequirements` exposes the renderer-side compliance rule. If your renderer needs a Google Maps logo for compliance, implement that logo on the user side and keep it visually separate from Resonite or other third-party logos.
 
 Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and retained tiles are reconciled for the latest selection.
 If `Search` is updated to a non-empty string, the app resolves it with the Google Geocoding API and writes the resulting coordinates back into `Latitude` / `Longitude`.
@@ -115,9 +123,8 @@ Run `dotnet run --project src/ThreeDTilesLink -- interactive --help` for units a
 - If `--resonite-host` is omitted, `localhost` is used.
 - When running from WSL against a Windows-hosted Resonite session, prefer host-side execution such as `cmd.exe /c dotnet.exe run ...` or `pwsh.exe`, because Linux-side `localhost` does not reliably mean the Windows host.
 - The anchor height is sea level at the current latitude/longitude, and `--height-offset` is applied relative to that anchor.
-- `--watch-path` affects only the Interactive input watches (`Latitude`, `Longitude`, `Range`, `Search`); the observation aliases remain fixed under `World/ThreeDTilesLink.*`.
-- `--watch-path` must start with `World/`; each remaining path segment is normalized into a valid alphanumeric member name before the app creates the derived input watches.
-- Useful tuning flags include `--watch-path`, `--poll-interval`, `--debounce`, `--throttle`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
+- The Interactive input values are fixed session-root members; the observation aliases remain fixed under `World/ThreeDTilesLink.*`.
+- Useful tuning flags include `--poll-interval`, `--debounce`, `--throttle`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
 
 ## Documentation
 

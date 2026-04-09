@@ -5,10 +5,16 @@
 ## 運用上の前提
 
 - このプロジェクトは Google Photorealistic 3D Tiles を Resonite Link へ非永続に流し込む用途を前提にする
+- Google Map Tiles API の規約上、Resonite は third-party renderer として扱う
 - 永続保存、アセット化、設計資料の保守は目的にしない
 - live 検証で観測した Google 3D Tiles のレスポンスは、query string の `session` だけでなく `datasets/.../files/...` のパス自体も session ごとに変わるため、run をまたぐ file cache の再利用は実質的に起きない
 - そのため、Google 3D Tiles 向けの永続 file cache は、レスポンスヘッダ上は cacheable でも、無駄な複雑さとして運用目標にしない
 - タイル取得の HTTP キャッシュは、ヘッダ準拠の process-local reuse に限定し、user ごとの disk 永続化は前提にしない
+- Google タイルを表示している間は、Google Maps attribution を常に可視に保つ
+- 現在の統合では、その要件を固定 alias 群 `World/ThreeDTilesLink.License` と `World/ThreeDTilesLink.AttributionRequirements` で扱う
+- `World/ThreeDTilesLink.License` は常に `Google Maps` と、その時点で必要な provider attribution を含む
+- session root では、renderer 側の compliance guidance 用に `World/ThreeDTilesLink.AttributionRequirements` を公開する
+- streamed scene の周囲に、より豊かな visible UI を追加する場合は、必要な Google Maps logo の扱いは renderer または overlay layer 側の責務にする。Resonite や他社の branding と混ぜたり restyle したりしない
 - 正式リリースのバージョン起点は `v1.2.3` 形式の `git tag` に統一する
 - 正式リリースは `v1.2.3` 形式の Git tag と対応する GitHub Release の組で扱う
 - タグなしコミットのビルドはプレリリース扱いにし、正式版とは区別する
@@ -41,11 +47,13 @@
 - live 環境によっては `SimpleAvatarProtection` が公開されていないことがある。その場合でも接続とメッシュ送信は継続できる前提で扱う
 - Session root や親スロットに付ける常設の書き込み元は、まず session-side の `DynamicValueVariable<T>` として置く
 - `DynamicVariableSpace.OnlyDirectBinding` が有効な場合、session-side の source DV 名には `SpaceName/` を明示して含める
-- Interactive の入力パラメーターでは watch path を `--watch-path` から派生させ、その base path は `World/` で始まる必要がある。アプリは残りの各 path segment を英数字の member 名に正規化してから `Latitude` / `Longitude` / `Range` / `Search` の watch を作る
+- Interactive の入力パラメーターでは、session-side の dynamic space 内に `Latitude` / `Longitude` / `Range` / `Search` 用の固定 session root source 値を作り、その source 値を直接読む
 - `World/` alias は `DynamicField` ではなく、session-side の値を `ValueCopy<T>` で Drive する別の `DynamicValueVariable<T>` として公開する
-- 可変の Interactive 入力 watch と観測用 alias は分けて扱う。`--watch-path` が効くのは入力 watch だけで、観測用 alias は `World/ThreeDTilesLink.*` 配下に固定する
+- Interactive の入力 source 値と観測用 alias は分けて扱う。入力 source 値は session root slot 上に置き、観測用 alias は `World/ThreeDTilesLink.*` 配下に固定する
 - Target 側からの上書きは `ValueCopy.WriteBack` で制御し、`World/` から session-side へ戻す必要がある Interactive 入力パラメーターにだけ有効化する。観測専用 alias では無効のままにする
 - session の license credit は session-side の `DynamicValueVariable<string>` から固定 alias `World/ThreeDTilesLink.License` へ公開する
+- `World/ThreeDTilesLink.License` は現在表示中の Google tiles 向けの必須 compliance 出力として扱い、任意の metadata としては扱わない
+- renderer 側の compliance ガイダンスは固定 alias `World/ThreeDTilesLink.AttributionRequirements` へ公開する
 - Progress は親スロットに置いた session-side の `DynamicValueVariable<float>` から `ValueCopy<float>` 経由で `World/ThreeDTilesLink.Progress` へ `0.0..1.0` の float として公開する
 - 人間向けの進捗文字列は親スロットに置いた session-side の `DynamicValueVariable<string>` から `ValueCopy<string>` 経由で `World/ThreeDTilesLink.ProgressText` へ公開する
 

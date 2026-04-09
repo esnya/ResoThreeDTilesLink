@@ -33,6 +33,7 @@ This document contains procedures for AI and coding agents. It keeps only decisi
 13. Use the Tokyo Tower live case without extra limiting arguments such as `--depth-limit` as the default verification path unless the limit itself is under test.
 14. If application entry points still require `--resonite-port`, discover the current session immediately before running and treat that value as ephemeral input only.
 15. If real-environment verification was not possible, state that assumption explicitly in the change description.
+16. If the change affects Google tile display or metadata, verify that the published attribution still includes `Google Maps` plus the currently required provider attributions, and re-check whether README user guidance for logo and third-party renderer handling needs updates.
 
 ## Documentation Update Rules
 

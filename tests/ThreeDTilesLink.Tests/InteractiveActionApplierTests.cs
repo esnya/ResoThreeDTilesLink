@@ -55,8 +55,7 @@ namespace ThreeDTilesLink.Tests
                 new WatchOptions(
                     TimeSpan.FromMilliseconds(250),
                     TimeSpan.FromSeconds(5),
-                    TimeSpan.FromSeconds(1),
-                    new WatchConfiguration("World/Lat", "World/Lon", "World/Range", "World/Search")));
+                    TimeSpan.FromSeconds(1)));
         }
 
         private static WatchBinding CreateWatchBinding()
@@ -110,7 +109,7 @@ namespace ThreeDTilesLink.Tests
         {
             private readonly Exception _exception = exception;
 
-            public Task<WatchBinding> CreateWatchAsync(WatchConfiguration configuration, CancellationToken cancellationToken)
+            public Task<WatchBinding> CreateWatchAsync(CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }

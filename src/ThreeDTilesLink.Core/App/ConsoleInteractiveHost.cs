@@ -29,7 +29,7 @@ namespace ThreeDTilesLink.Core.App
                 Console.CancelKeyPress += cancelHandler;
 
                 await output.WriteLineAsync(
-                    $"Interactive mode started. Watch={InteractiveWatchPaths.BasePath} (lat/lon/range/search). Poll={options.PollIntervalMs}ms Debounce={options.DebounceMs}ms Throttle={options.ThrottleMs}ms. Press Ctrl+C to stop.")
+                    $"Interactive mode started. Input=session root slot values (Latitude/Longitude/Range/Search). Poll={options.PollIntervalMs}ms Debounce={options.DebounceMs}ms Throttle={options.ThrottleMs}ms. Press Ctrl+C to stop.")
                     .ConfigureAwait(false);
                 await runtime.InteractiveSupervisor.RunAsync(
                     InteractiveCommandHandler.CreateRequest(options, apiKey),

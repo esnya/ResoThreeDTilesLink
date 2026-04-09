@@ -8,6 +8,7 @@ using ResoniteLink;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using ThreeDTilesLink.Core.Contracts;
+using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Resonite
@@ -99,13 +100,23 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string StringFieldType = "[FrooxEngine]FrooxEngine.IField<string>";
         private const string FloatFieldType = "[FrooxEngine]FrooxEngine.IField<float>";
         private const string GoogleTilesDynamicSpaceName = "Google3DTiles";
+        private const string InteractiveLatitudeVariableLocalName = "Latitude";
+        private const string InteractiveLongitudeVariableLocalName = "Longitude";
+        private const string InteractiveRangeVariableLocalName = "Range";
+        private const string InteractiveSearchVariableLocalName = "Search";
+        private const string InteractiveLatitudeAliasPath = "World/ThreeDTilesLink.Latitude";
+        private const string InteractiveLongitudeAliasPath = "World/ThreeDTilesLink.Longitude";
+        private const string InteractiveRangeAliasPath = "World/ThreeDTilesLink.Range";
+        private const string InteractiveSearchAliasPath = "World/ThreeDTilesLink.Search";
         private const string LicenseDynamicVariablePath = "World/ThreeDTilesLink.License";
+        private const string AttributionRequirementsVariableLocalName = "AttributionRequirements";
+        private const string AttributionRequirementsDynamicVariablePath = "World/ThreeDTilesLink.AttributionRequirements";
         private const string ProgressValueVariableLocalName = "Progress";
         private const string ProgressTextVariableLocalName = "ProgressText";
         private const string ProgressDynamicVariablePath = "World/ThreeDTilesLink.Progress";
         private const string ProgressTextDynamicVariablePath = "World/ThreeDTilesLink.ProgressText";
         private const string ParentDynamicSpaceNamePrefix = "ThreeDTilesLink.Parent";
-        private const string DefaultGoogleMapsCreditText = "Google Maps";
+        private const string DefaultGoogleMapsCreditText = GoogleMapsCompliance.BasemapAttribution;
         private const string PackageExportWarningSlotName = "EXPORT PROHIBITED: STREAMED GOOGLE 3D TILES";
         private const string MeshAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Mesh>";
         private const string MaterialAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Material>";
@@ -302,9 +313,8 @@ namespace ThreeDTilesLink.Core.Resonite
             return await CreateSlotAsync(name, _sessionRootSlotId, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task<WatchBinding> CreateWatchAsync(WatchConfiguration configuration, CancellationToken cancellationToken)
+        public async Task<WatchBinding> CreateWatchAsync(CancellationToken cancellationToken)
         {
-            ArgumentNullException.ThrowIfNull(configuration);
             cancellationToken.ThrowIfCancellationRequested();
 
             if (string.IsNullOrWhiteSpace(_sessionRootSlotId))
@@ -314,46 +324,46 @@ namespace ThreeDTilesLink.Core.Resonite
 
             DynamicVariableBinding latBinding = await AddDynamicFloatValueVariableAsync(
                 _sessionRootSlotId,
-                BuildSessionVariablePath(GoogleTilesDynamicSpaceName, configuration.LatitudeVariablePath),
+                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveLatitudeVariableLocalName),
                 0f,
                 cancellationToken).ConfigureAwait(false);
             DynamicVariableBinding lonBinding = await AddDynamicFloatValueVariableAsync(
                 _sessionRootSlotId,
-                BuildSessionVariablePath(GoogleTilesDynamicSpaceName, configuration.LongitudeVariablePath),
+                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveLongitudeVariableLocalName),
                 0f,
                 cancellationToken).ConfigureAwait(false);
             DynamicVariableBinding rangeBinding = await AddDynamicFloatValueVariableAsync(
                 _sessionRootSlotId,
-                BuildSessionVariablePath(GoogleTilesDynamicSpaceName, configuration.RangeVariablePath),
+                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveRangeVariableLocalName),
                 0f,
                 cancellationToken).ConfigureAwait(false);
             DynamicVariableBinding searchBinding = await AddDynamicStringValueVariableAsync(
                 _sessionRootSlotId,
-                BuildSessionVariablePath(GoogleTilesDynamicSpaceName, configuration.SearchVariablePath),
+                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveSearchVariableLocalName),
                 string.Empty,
                 cancellationToken).ConfigureAwait(false);
 
             DynamicVariableBinding latAliasBinding = await AddWorldFloatAliasAsync(
                 _sessionRootSlotId,
-                configuration.LatitudeVariablePath,
+                InteractiveLatitudeAliasPath,
                 latBinding.ValueFieldId,
                 writeBack: true,
                 cancellationToken).ConfigureAwait(false);
             DynamicVariableBinding lonAliasBinding = await AddWorldFloatAliasAsync(
                 _sessionRootSlotId,
-                configuration.LongitudeVariablePath,
+                InteractiveLongitudeAliasPath,
                 lonBinding.ValueFieldId,
                 writeBack: true,
                 cancellationToken).ConfigureAwait(false);
             DynamicVariableBinding rangeAliasBinding = await AddWorldFloatAliasAsync(
                 _sessionRootSlotId,
-                configuration.RangeVariablePath,
+                InteractiveRangeAliasPath,
                 rangeBinding.ValueFieldId,
                 writeBack: true,
                 cancellationToken).ConfigureAwait(false);
             DynamicVariableBinding searchAliasBinding = await AddWorldStringAliasAsync(
                 _sessionRootSlotId,
-                configuration.SearchVariablePath,
+                InteractiveSearchAliasPath,
                 searchBinding.ValueFieldId,
                 writeBack: true,
                 cancellationToken).ConfigureAwait(false);
@@ -1427,6 +1437,21 @@ namespace ThreeDTilesLink.Core.Resonite
                 writeBack: false,
                 cancellationToken).ConfigureAwait(false);
             _sessionLicenseAliasComponentId = licenseAliasBinding?.ComponentId;
+
+            DynamicVariableBinding? attributionRequirementsBinding = await TryAddDynamicStringValueVariableAsync(
+                sessionRootSlotId,
+                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, AttributionRequirementsVariableLocalName),
+                GoogleMapsCompliance.AttributionRequirements,
+                cancellationToken).ConfigureAwait(false);
+            if (attributionRequirementsBinding is not null)
+            {
+                _ = await TryAddWorldStringAliasAsync(
+                    sessionRootSlotId,
+                    AttributionRequirementsDynamicVariablePath,
+                    attributionRequirementsBinding.ValueFieldId,
+                    writeBack: false,
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
 
         private async Task EnsureSessionDynamicSpaceAsync(string sessionRootSlotId, CancellationToken cancellationToken = default)
@@ -1758,15 +1783,6 @@ namespace ThreeDTilesLink.Core.Resonite
         private static string BuildWorldProgressTextPath()
         {
             return ProgressTextDynamicVariablePath;
-        }
-
-        private static string BuildSessionVariablePath(string spaceName, string worldVariablePath)
-        {
-            const string worldPrefix = "World/";
-            string localPath = worldVariablePath.StartsWith(worldPrefix, StringComparison.Ordinal)
-                ? worldVariablePath[worldPrefix.Length..]
-                : worldVariablePath;
-            return BuildScopedVariablePath(spaceName, localPath);
         }
 
         private static string BuildScopedVariablePath(string spaceName, string variableName)

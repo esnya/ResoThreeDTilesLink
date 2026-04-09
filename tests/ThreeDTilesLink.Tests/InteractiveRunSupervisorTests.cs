@@ -484,12 +484,7 @@ namespace ThreeDTilesLink.Tests
                 new WatchOptions(
                     TimeSpan.FromMilliseconds(10),
                     TimeSpan.FromMilliseconds(10),
-                    TimeSpan.Zero,
-                    new WatchConfiguration(
-                        "World/ThreeDTilesLink.Latitude",
-                        "World/ThreeDTilesLink.Longitude",
-                        "World/ThreeDTilesLink.Range",
-                        "World/ThreeDTilesLink.Search")));
+                    TimeSpan.Zero));
         }
 
         private static async Task WaitForCancellationAsync(CancellationToken cancellationToken)
@@ -624,7 +619,7 @@ namespace ThreeDTilesLink.Tests
             public Exception? SelectionInputValuesReadException { get; init; }
             public Exception? SearchReadException { get; init; }
 
-            public Task<WatchBinding> CreateWatchAsync(WatchConfiguration configuration, CancellationToken cancellationToken)
+            public Task<WatchBinding> CreateWatchAsync(CancellationToken cancellationToken)
             {
                 return Task.FromResult(new WatchBinding(
                     "lat",

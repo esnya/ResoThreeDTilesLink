@@ -24,12 +24,7 @@ namespace ThreeDTilesLink.Core.App
                 new WatchOptions(
                     TimeSpan.FromMilliseconds(options.PollIntervalMs),
                     TimeSpan.FromMilliseconds(options.DebounceMs),
-                    TimeSpan.FromMilliseconds(options.ThrottleMs),
-                    new WatchConfiguration(
-                        InteractiveWatchPaths.LatitudePath,
-                        InteractiveWatchPaths.LongitudePath,
-                        InteractiveWatchPaths.RangePath,
-                        InteractiveWatchPaths.SearchPath)));
+                    TimeSpan.FromMilliseconds(options.ThrottleMs)));
         }
     }
 }

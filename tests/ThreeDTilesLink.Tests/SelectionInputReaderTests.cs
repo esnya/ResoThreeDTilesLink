@@ -124,7 +124,7 @@ namespace ThreeDTilesLink.Tests
             private readonly Exception? _searchException = searchException;
             private readonly Exception? _valuesException = valuesException;
 
-            public Task<WatchBinding> CreateWatchAsync(WatchConfiguration configuration, CancellationToken cancellationToken)
+            public Task<WatchBinding> CreateWatchAsync(CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }
@@ -151,7 +151,7 @@ namespace ThreeDTilesLink.Tests
 
         private sealed class ValueWatchStore(SelectionInputValues values) : IWatchStore
         {
-            public Task<WatchBinding> CreateWatchAsync(WatchConfiguration configuration, CancellationToken cancellationToken)
+            public Task<WatchBinding> CreateWatchAsync(CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }

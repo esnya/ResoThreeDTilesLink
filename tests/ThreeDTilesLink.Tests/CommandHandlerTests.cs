@@ -81,10 +81,6 @@ namespace ThreeDTilesLink.Tests
             _ = request.Watch.PollInterval.Should().Be(TimeSpan.FromMilliseconds(250));
             _ = request.Watch.Debounce.Should().Be(TimeSpan.FromMilliseconds(800));
             _ = request.Watch.Throttle.Should().Be(TimeSpan.FromMilliseconds(3000));
-            _ = request.Watch.Configuration.LatitudeVariablePath.Should().Be("World/ThreeDTilesLink.Latitude");
-            _ = request.Watch.Configuration.LongitudeVariablePath.Should().Be("World/ThreeDTilesLink.Longitude");
-            _ = request.Watch.Configuration.RangeVariablePath.Should().Be("World/ThreeDTilesLink.Range");
-            _ = request.Watch.Configuration.SearchVariablePath.Should().Be("World/ThreeDTilesLink.Search");
         }
 
         private sealed class FakeGeoReferenceResolver : IGeoReferenceResolver

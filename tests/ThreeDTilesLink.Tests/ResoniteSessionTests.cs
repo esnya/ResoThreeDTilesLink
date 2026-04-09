@@ -316,19 +316,6 @@ namespace ThreeDTilesLink.Tests
             _ = members["WriteBack"].Should().BeOfType<Field_bool>().Which.Value.Should().BeTrue();
         }
 
-        [Fact]
-        public void BuildSessionVariablePath_AddsSpaceNameAndStripsWorldPrefix()
-        {
-            MethodInfo? buildPath = typeof(ResoniteSession)
-                .GetMethod("BuildSessionVariablePath", BindingFlags.NonPublic | BindingFlags.Static);
-            _ = buildPath.Should().NotBeNull();
-
-            string path = buildPath!.Invoke(null, ["Google3DTiles", "World/ThreeDTilesLink.Latitude"])
-                .Should().BeOfType<string>().Subject;
-
-            _ = path.Should().Be("Google3DTiles/ThreeDTilesLink.Latitude");
-        }
-
         private static byte[] CreateSolidPngBytes(int width, int height, byte r, byte g, byte b, byte a)
         {
             byte[] scanlineData = new byte[height * ((width * 4) + 1)];

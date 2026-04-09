@@ -1,3 +1,5 @@
+using ThreeDTilesLink.Core.Google;
+
 namespace ThreeDTilesLink.Core.Pipeline
 {
     internal sealed class LicenseCreditAggregator
@@ -97,7 +99,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             if (_activeAttributionCounts.Count == 0)
             {
-                return "Google Maps";
+                return GoogleMapsCompliance.BasemapAttribution;
             }
 
             var orderIndex = new Dictionary<string, int>(_attributionOrder.Count, StringComparer.Ordinal);
@@ -110,12 +112,24 @@ namespace ThreeDTilesLink.Core.Pipeline
                 .Where(value => _activeAttributionCounts.TryGetValue(value, out int count) && count > 0)
                 .OrderByDescending(value => _activeAttributionCounts[value])
                 .ThenBy(value => orderIndex[value]);
-            return string.Join("; ", ordered);
+
+            var credits = new List<string> { GoogleMapsCompliance.BasemapAttribution };
+            foreach (string attribution in ordered)
+            {
+                if (string.Equals(attribution, GoogleMapsCompliance.BasemapAttribution, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                credits.Add(attribution);
+            }
+
+            return string.Join("; ", credits);
         }
 
         private static string? NormalizeAttributionOwner(string? value)
         {
-            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+            return GoogleMapsCompliance.NormalizeAttributionOwner(value);
         }
     }
 }
