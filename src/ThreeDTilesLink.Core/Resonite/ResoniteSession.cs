@@ -129,6 +129,15 @@ namespace ThreeDTilesLink.Core.Resonite
         private static readonly TimeSpan ReadComponentMemberRetryDelay = TimeSpan.FromMilliseconds(25);
 
         private static readonly string[] PreferredTextureFieldNames = ["AlbedoTexture", "BaseColorTexture", "MainTexture", "Texture"];
+
+        internal sealed class TestHooks
+        {
+            public Func<ImportMeshRawData, CancellationToken, Task<AssetData>>? ImportMeshAssetAsync { get; set; }
+            public Func<byte[]?, string?, CancellationToken, Task<AssetData?>>? ImportTextureAssetAsync { get; set; }
+            public Func<List<DataModelOperation>, CancellationToken, Task<BatchResponse>>? RunDataModelOperationBatchAsync { get; set; }
+            public Func<string, CancellationToken, Task<Response>>? RemoveSlotAsync { get; set; }
+        }
+
         private LinkInterface _linkInterface = resoniteLink ?? throw new ArgumentNullException(nameof(resoniteLink));
         private readonly Func<LinkInterface> _linkInterfaceFactory = linkInterfaceFactory ?? (() => new LinkInterface());
         private readonly ILogger<ResoniteSession> _logger = logger;
@@ -155,6 +164,8 @@ namespace ThreeDTilesLink.Core.Resonite
         private bool _avatarProtectionUnavailable;
         private string? _packageExportWarningSlotId;
         private bool _sessionDynamicSpaceInitialized;
+
+        internal TestHooks? Hooks { get; set; }
 
         public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
@@ -692,6 +703,11 @@ namespace ThreeDTilesLink.Core.Resonite
 
         private async Task<AssetData> ImportMeshAssetAsync(ImportMeshRawData importMesh, CancellationToken cancellationToken)
         {
+            if (Hooks?.ImportMeshAssetAsync is { } importMeshOverride)
+            {
+                return await importMeshOverride(importMesh, cancellationToken).ConfigureAwait(false);
+            }
+
             if (_dumpMeshJson)
             {
                 _ = Directory.CreateDirectory(_meshDumpDir);
@@ -714,9 +730,11 @@ namespace ThreeDTilesLink.Core.Resonite
             }
 
             _ = _progressBindingsByParentSlotId.Remove(slotId);
-            Response response = await ExecuteLinkRequestAsync(
-                link => link.RemoveSlot(new RemoveSlot { SlotID = slotId }),
-                cancellationToken).ConfigureAwait(false);
+            Response response = Hooks?.RemoveSlotAsync is { } removeSlotOverride
+                ? await removeSlotOverride(slotId, cancellationToken).ConfigureAwait(false)
+                : await ExecuteLinkRequestAsync(
+                    link => link.RemoveSlot(new RemoveSlot { SlotID = slotId }),
+                    cancellationToken).ConfigureAwait(false);
             _ = EnsureSuccess(response);
         }
 
@@ -812,9 +830,11 @@ namespace ThreeDTilesLink.Core.Resonite
                 return;
             }
 
-            BatchResponse response = EnsureSuccess(await ExecuteLinkRequestAsync(
-                link => link.RunDataModelOperationBatch(operations),
-                cancellationToken).ConfigureAwait(false));
+            BatchResponse response = EnsureSuccess(Hooks?.RunDataModelOperationBatchAsync is { } batchOverride
+                ? await batchOverride(operations, cancellationToken).ConfigureAwait(false)
+                : await ExecuteLinkRequestAsync(
+                    link => link.RunDataModelOperationBatch(operations),
+                    cancellationToken).ConfigureAwait(false));
 
             if (response.Responses is null || response.Responses.Count != operations.Count)
             {
@@ -1354,6 +1374,11 @@ namespace ThreeDTilesLink.Core.Resonite
 
         private async Task<AssetData?> ImportTextureAssetAsync(byte[]? textureBytes, string? extension, CancellationToken cancellationToken)
         {
+            if (Hooks?.ImportTextureAssetAsync is { } importTextureOverride)
+            {
+                return await importTextureOverride(textureBytes, extension, cancellationToken).ConfigureAwait(false);
+            }
+
             if (textureBytes is null || textureBytes.Length == 0)
             {
                 return null;
