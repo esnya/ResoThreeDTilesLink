@@ -48,13 +48,12 @@ namespace ThreeDTilesLink.Core.CommandLine
                 ["--lon"] = "--lon is no longer supported in interactive mode.",
                 ["--range"] = "--range is no longer supported in interactive mode. Set the Interactive Range value in Resonite instead.",
                 ["--half-width-m"] = "--half-width-m is no longer supported in interactive mode. Set the Interactive Range value in Resonite instead.",
-                ["--remove-out-of-range"] = "--remove-out-of-range is no longer supported. Interactive mode always removes retained tiles that fall outside the latest range.",
                 ["--render-start-span-ratio"] = "--render-start-span-ratio is no longer supported."
             });
 
         internal static CommandInvocation<InteractiveCommandOptions> Parse(IReadOnlyList<string> args)
         {
-            ParsedCommand parsed = CommandLineParser.Parse(Specification, args);
+            ParsedCommand parsed = CommandLineParser.Parse(Specification, NormalizeLegacyArguments(args));
             if (CommandInvocationBuilder.TryHandleParseResult(parsed, out CommandInvocation<InteractiveCommandOptions> handled))
             {
                 return handled;
@@ -122,6 +121,20 @@ namespace ThreeDTilesLink.Core.CommandLine
         internal static string RenderHelp()
         {
             return CommandLineParser.RenderHelp(Specification);
+        }
+
+        private static IReadOnlyList<string> NormalizeLegacyArguments(IReadOnlyList<string> args)
+        {
+            ArgumentNullException.ThrowIfNull(args);
+
+            if (!args.Any(static arg => string.Equals(arg, "--remove-out-of-range", StringComparison.OrdinalIgnoreCase)))
+            {
+                return args;
+            }
+
+            return args
+                .Where(static arg => !string.Equals(arg, "--remove-out-of-range", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
         }
     }
 }

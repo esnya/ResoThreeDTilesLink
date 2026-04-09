@@ -107,17 +107,19 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public void Parse_RejectsRemovedRemoveOutOfRangeArgument()
+        public void Parse_AcceptsLegacyRemoveOutOfRangeArgument()
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
             [
                 "--remove-out-of-range",
-                "--resonite-port", "12000"
+                "--resonite-port", "12000",
+                "--dry-run"
             ]);
 
-            _ = invocation.ShouldRun.Should().BeFalse();
-            _ = invocation.ExitCode.Should().Be(1);
-            _ = invocation.Output.Should().Contain("--remove-out-of-range is no longer supported.");
+            _ = invocation.ShouldRun.Should().BeTrue();
+            InteractiveCommandOptions parsed = invocation.Options!;
+            _ = parsed.ResonitePort.Should().Be(12000);
+            _ = parsed.DryRun.Should().BeTrue();
         }
 
         [Fact]
