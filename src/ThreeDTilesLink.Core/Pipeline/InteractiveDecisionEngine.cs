@@ -52,6 +52,16 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return new InteractiveDecisionResult(next, actions);
             }
 
+            if (next.PendingSearch is not null &&
+                string.Equals(next.LastResolvedSearch, next.PendingSearch, StringComparison.Ordinal))
+            {
+                next = next with
+                {
+                    PendingSearch = null,
+                    PendingSearchChangedAt = null
+                };
+            }
+
             if (next.PendingSearch is null &&
                 next.PendingValues is not null &&
                 next.PendingValuesChangedAt is not null)

@@ -158,6 +158,35 @@ namespace ThreeDTilesLink.Tests
             _ = result.State.PendingValuesChangedAt.Should().Be(DateTimeOffset.UnixEpoch);
         }
 
+        [Fact]
+        public void Evaluate_ClearsResolvedPendingSearch_BeforeStartingRun()
+        {
+            SelectionInputValues values = new(35f, 139f, 400f);
+            InteractiveLoopState state = InteractiveLoopState.CreateInitial() with
+            {
+                PendingSearch = "Shibuya",
+                PendingSearchChangedAt = DateTimeOffset.UnixEpoch,
+                LastObservedSearch = "Shibuya",
+                LastResolvedSearch = "Shibuya",
+                LastObservedValues = values,
+                PendingValues = values,
+                PendingValuesChangedAt = DateTimeOffset.UnixEpoch,
+                LastRunStartedAt = DateTimeOffset.UnixEpoch.AddSeconds(-10)
+            };
+
+            InteractiveDecisionResult result = Evaluate(
+                state,
+                new SelectionInputSnapshot("Shibuya", values),
+                debounce: TimeSpan.FromSeconds(1),
+                throttle: TimeSpan.FromSeconds(1),
+                now: DateTimeOffset.UnixEpoch.AddSeconds(2));
+
+            _ = result.Actions.Should().ContainSingle();
+            _ = result.Actions[0].Should().BeOfType<StartRunAction>();
+            _ = result.State.PendingSearch.Should().BeNull();
+            _ = result.State.PendingSearchChangedAt.Should().BeNull();
+        }
+
         private static InteractiveDecisionResult Evaluate(
             InteractiveLoopState state,
             SelectionInputSnapshot snapshot,
