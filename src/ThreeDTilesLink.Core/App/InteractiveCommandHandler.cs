@@ -9,8 +9,6 @@ namespace ThreeDTilesLink.Core.App
         {
             ArgumentNullException.ThrowIfNull(options);
 
-            InteractiveWatchPath watchPath = InteractiveWatchPath.Parse(options.WatchPath);
-
             return new InteractiveRunRequest(
                 options.ResoniteHost,
                 options.ResonitePort,
@@ -28,10 +26,10 @@ namespace ThreeDTilesLink.Core.App
                     TimeSpan.FromMilliseconds(options.DebounceMs),
                     TimeSpan.FromMilliseconds(options.ThrottleMs),
                     new WatchConfiguration(
-                        watchPath.LatitudePath,
-                        watchPath.LongitudePath,
-                        watchPath.RangePath,
-                        watchPath.SearchPath)));
+                        InteractiveWatchPaths.LatitudePath,
+                        InteractiveWatchPaths.LongitudePath,
+                        InteractiveWatchPaths.RangePath,
+                        InteractiveWatchPaths.SearchPath)));
         }
     }
 }

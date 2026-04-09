@@ -70,7 +70,7 @@ Required Google APIs by operation:
 - Tile streaming from `Latitude` / `Longitude` / `Range`: Google Map Tiles API
 - Free-text search from `Search`: Google Geocoding API
 
-At connection time, the app attaches watch `DynamicValueVariable<T>` values to the session root and watches:
+At connection time, the app attaches watch `DynamicValueVariable<T>` values to the session root and uses the fixed `World/ThreeDTilesLink.*` paths:
 
 - `World/ThreeDTilesLink.Latitude`
 - `World/ThreeDTilesLink.Longitude`
@@ -92,8 +92,7 @@ dotnet run --project src/ThreeDTilesLink -- interactive \
   --resonite-port PLACEHOLDER \
   --poll-interval 250 \
   --debounce 800 \
-  --throttle 3000 \
-  --watch-path World/ThreeDTilesLink
+  --throttle 3000
 ```
 
 Run `dotnet run --project src/ThreeDTilesLink -- interactive --help` for units and defaults.
@@ -101,8 +100,8 @@ Run `dotnet run --project src/ThreeDTilesLink -- interactive --help` for units a
 - If `--resonite-host` is omitted, `localhost` is used.
 - When running from WSL against a Windows-hosted Resonite session, prefer host-side execution such as `cmd.exe /c dotnet.exe run ...` or `pwsh.exe`, because Linux-side `localhost` does not reliably mean the Windows host.
 - The anchor height is sea level at the current latitude/longitude, and `--height-offset` is applied relative to that anchor.
-- `--watch-path` must start with `World/`; each remaining path segment is normalized into a valid alphanumeric member name before the app creates the `Latitude`, `Longitude`, `Range`, and `Search` watches.
-- Useful tuning flags include `--watch-path`, `--poll-interval`, `--debounce`, `--throttle`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
+- The Interactive input watches (`Latitude`, `Longitude`, `Range`, `Search`) and the observation aliases all live under the fixed `World/ThreeDTilesLink.*` namespace.
+- Useful tuning flags include `--poll-interval`, `--debounce`, `--throttle`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
 
 ## Documentation
 
