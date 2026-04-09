@@ -1318,51 +1318,18 @@ namespace ThreeDTilesLink.Core.Resonite
                 return _materialTextureFieldName;
             }
 
-            _materialTextureFieldResolved = true;
-
             try
             {
                 Dictionary<string, MemberDefinition> members = await ResolveMaterialMemberDefinitionsAsync(cancellationToken).ConfigureAwait(false);
-                var textureFields = members
-                    .Where(x => x.Value is ReferenceDefinition refDef && IsTextureProvider(refDef.TargetType))
-                    .Select(x => x.Key)
-                    .ToHashSet(StringComparer.Ordinal);
-
-                if (textureFields.Count == 0)
-                {
-                    foreach (string preferred in PreferredTextureFieldNames)
-                    {
-                        if (members.ContainsKey(preferred))
-                        {
-                            _materialTextureFieldName = preferred;
-                            return _materialTextureFieldName;
-                        }
-                    }
-
-                    List<string> byName = members.Keys
-                        .Where(static key => key.Contains("Texture", StringComparison.OrdinalIgnoreCase))
-                        .ToList();
-
-                    if (byName.Count == 0)
-                    {
-                        return null;
-                    }
-
-                    _materialTextureFieldName = byName[0];
-                    return _materialTextureFieldName;
-                }
-
-                foreach (string preferred in PreferredTextureFieldNames)
-                {
-                    if (textureFields.Contains(preferred))
-                    {
-                        _materialTextureFieldName = preferred;
-                        return _materialTextureFieldName;
-                    }
-                }
-
-                _materialTextureFieldName = textureFields.First();
+                _materialTextureFieldName = SelectMaterialTextureMemberName(members);
+                _materialTextureFieldResolved = true;
                 return _materialTextureFieldName;
+            }
+            catch (OperationCanceledException)
+            {
+                _materialTextureFieldName = null;
+                _materialTextureFieldResolved = false;
+                throw;
             }
             catch (ObjectDisposedException)
             {
@@ -1388,6 +1355,41 @@ namespace ThreeDTilesLink.Core.Resonite
             {
                 return null;
             }
+        }
+
+        private static string? SelectMaterialTextureMemberName(Dictionary<string, MemberDefinition> members)
+        {
+            var textureFields = members
+                .Where(x => x.Value is ReferenceDefinition refDef && IsTextureProvider(refDef.TargetType))
+                .Select(x => x.Key)
+                .ToHashSet(StringComparer.Ordinal);
+
+            if (textureFields.Count == 0)
+            {
+                foreach (string preferred in PreferredTextureFieldNames)
+                {
+                    if (members.ContainsKey(preferred))
+                    {
+                        return preferred;
+                    }
+                }
+
+                List<string> byName = members.Keys
+                    .Where(static key => key.Contains("Texture", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                return byName.Count == 0 ? null : byName[0];
+            }
+
+            foreach (string preferred in PreferredTextureFieldNames)
+            {
+                if (textureFields.Contains(preferred))
+                {
+                    return preferred;
+                }
+            }
+
+            return textureFields.First();
         }
 
         private async Task AttachSessionMetadataAsync(string sessionRootSlotId, CancellationToken cancellationToken)
