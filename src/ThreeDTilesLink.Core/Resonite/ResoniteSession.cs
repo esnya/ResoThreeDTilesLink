@@ -554,42 +554,21 @@ namespace ThreeDTilesLink.Core.Resonite
                     throw new InvalidOperationException("Session root slot is not initialized.");
                 }
 
-                string tileSlotId = await CreateSlotAsync(
-                    payload.Name,
-                    parentSlotId,
-                    payload.SlotPosition,
-                    payload.SlotRotation,
-                    payload.SlotScale,
-                    cancellationToken).ConfigureAwait(false);
+                string warningSlotId = await EnsurePackageExportWarningSlotAsync(cancellationToken).ConfigureAwait(false);
+                await ResolveAvatarProtectionContextAsync(cancellationToken).ConfigureAwait(false);
 
-                await AttachAvatarProtectionAsync(tileSlotId, cancellationToken).ConfigureAwait(false);
-                await AttachPackageExportableAsync(tileSlotId, cancellationToken).ConfigureAwait(false);
+                string tileSlotId = $"t3dtile_slot_{Guid.NewGuid():N}";
+                string staticMeshId = $"t3dtile_comp_{Guid.NewGuid():N}";
+                string meshColliderId = $"t3dtile_comp_{Guid.NewGuid():N}";
+                string materialId = $"t3dtile_comp_{Guid.NewGuid():N}";
+                string meshRendererId = $"t3dtile_comp_{Guid.NewGuid():N}";
+                string? staticTextureId = textureAsset is null ? null : $"t3dtile_comp_{Guid.NewGuid():N}";
+                string? avatarProtectionId = !_avatarProtectionUnavailable &&
+                    !string.IsNullOrWhiteSpace(_avatarProtectionComponentType)
+                    ? $"t3dtile_comp_{Guid.NewGuid():N}"
+                    : null;
 
-                string staticMeshId = await AddComponentAsync(
-                    tileSlotId,
-                    StaticMeshComponentType,
-                    new Dictionary<string, Member>
-                    {
-                        ["URL"] = new Field_Uri { Value = meshAsset.AssetURL }
-                    },
-                    cancellationToken).ConfigureAwait(false);
-
-                _ = await AddComponentAsync(
-                    tileSlotId,
-                    MeshColliderComponentType,
-                    new Dictionary<string, Member>
-                    {
-                        ["Mesh"] = new Reference { TargetType = MeshAssetProviderType, TargetID = staticMeshId },
-                        ["CharacterCollider"] = new Field_bool { Value = true },
-                        ["Type"] = new Field_Enum
-                        {
-                            EnumType = ColliderTypeEnumType,
-                            Value = "Static"
-                        }
-                    },
-                    cancellationToken).ConfigureAwait(false);
-
-                var materialMembers = new Dictionary<string, Member>();
+                var materialMembers = new Dictionary<string, Member>(StringComparer.Ordinal);
                 Dictionary<string, MemberDefinition> materialMembersDefinition = await ResolveMaterialMemberDefinitionsAsync(cancellationToken).ConfigureAwait(false);
                 if (materialMembersDefinition.ContainsKey("Smoothness"))
                 {
@@ -597,17 +576,10 @@ namespace ThreeDTilesLink.Core.Resonite
                 }
 
                 string? textureMemberName = await ResolveMaterialTextureMemberNameAsync(cancellationToken).ConfigureAwait(false);
-                if (textureAsset is not null && !string.IsNullOrWhiteSpace(textureMemberName))
+                if (textureAsset is not null &&
+                    !string.IsNullOrWhiteSpace(textureMemberName) &&
+                    !string.IsNullOrWhiteSpace(staticTextureId))
                 {
-                    string staticTextureId = await AddComponentAsync(
-                        tileSlotId,
-                        StaticTextureComponentType,
-                        new Dictionary<string, Member>
-                        {
-                            ["URL"] = new Field_Uri { Value = textureAsset.AssetURL }
-                        },
-                        cancellationToken).ConfigureAwait(false);
-
                     materialMembers[textureMemberName] = new Reference
                     {
                         TargetType = TextureAssetProviderType,
@@ -615,20 +587,30 @@ namespace ThreeDTilesLink.Core.Resonite
                     };
                 }
 
-                string materialId = await AddComponentAsync(tileSlotId, MaterialComponentType, materialMembers, cancellationToken).ConfigureAwait(false);
-
-                _ = await AddComponentAsync(
+                List<DataModelOperation> operations = BuildMeshPlacementBatchOperations(
+                    payload,
+                    parentSlotId,
+                    warningSlotId,
+                    meshAsset.AssetURL,
+                    textureAsset?.AssetURL,
                     tileSlotId,
-                    MeshRendererComponentType,
-                    new Dictionary<string, Member>
-                    {
-                        ["Mesh"] = new Reference { TargetType = MeshAssetProviderType, TargetID = staticMeshId },
-                        ["Materials"] = new SyncList
-                        {
-                            Elements = [new Reference { TargetType = MaterialAssetProviderType, TargetID = materialId }]
-                        }
-                    },
-                    cancellationToken).ConfigureAwait(false);
+                    staticMeshId,
+                    meshColliderId,
+                    staticTextureId,
+                    materialId,
+                    meshRendererId,
+                    avatarProtectionId);
+
+                try
+                {
+                    await ExecuteDataModelOperationBatchAsync(operations, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    await TryRemoveCreatedSlotAsync(tileSlotId, cancellationToken).ConfigureAwait(false);
+                    throw;
+                }
+
                 return tileSlotId;
             }
             finally
@@ -819,6 +801,70 @@ namespace ThreeDTilesLink.Core.Resonite
                     }),
                 cancellationToken).ConfigureAwait(false));
             return response.EntityId;
+        }
+
+        private async Task ExecuteDataModelOperationBatchAsync(
+            List<DataModelOperation> operations,
+            CancellationToken cancellationToken = default)
+        {
+            if (operations.Count == 0)
+            {
+                return;
+            }
+
+            BatchResponse response = EnsureSuccess(await ExecuteLinkRequestAsync(
+                link => link.RunDataModelOperationBatch(operations),
+                cancellationToken).ConfigureAwait(false));
+
+            if (response.Responses is null || response.Responses.Count != operations.Count)
+            {
+                throw new InvalidOperationException("ResoniteLink batch response did not include the expected operation count.");
+            }
+
+            for (int i = 0; i < response.Responses.Count; i++)
+            {
+                Response operationResponse = response.Responses[i];
+                if (!operationResponse.Success)
+                {
+                    throw new InvalidOperationException(
+                        $"ResoniteLink batch operation failed at index {i}: {operationResponse.ErrorInfo}");
+                }
+            }
+        }
+
+        private async Task TryRemoveCreatedSlotAsync(string? slotId, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(slotId))
+            {
+                return;
+            }
+
+            try
+            {
+                await RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (ResoniteLinkNoResponseException)
+            {
+            }
+            catch (ResoniteLinkDisconnectedException)
+            {
+            }
+            catch (TimeoutException)
+            {
+            }
+            catch (WebSocketException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
         }
 
         private async Task<string?> TryAddComponentAsync(
@@ -1654,6 +1700,187 @@ namespace ThreeDTilesLink.Core.Resonite
                     TargetID = warningSlotId,
                     TargetType = SlotWorkerType
                 }
+            };
+        }
+
+        private List<DataModelOperation> BuildMeshPlacementBatchOperations(
+            PlacedMeshPayload payload,
+            string parentSlotId,
+            string warningSlotId,
+            Uri meshAssetUri,
+            Uri? textureAssetUri,
+            string tileSlotId,
+            string staticMeshId,
+            string meshColliderId,
+            string? staticTextureId,
+            string materialId,
+            string meshRendererId,
+            string? avatarProtectionId)
+        {
+            var operations = new List<DataModelOperation>
+            {
+                new AddSlot
+                {
+                    Data = BuildSlotData(
+                        tileSlotId,
+                        payload.Name,
+                        parentSlotId,
+                        payload.SlotPosition,
+                        payload.SlotRotation,
+                        payload.SlotScale)
+                },
+                new AddComponent
+                {
+                    ContainerSlotId = tileSlotId,
+                    Data = BuildComponentData(
+                        staticMeshId,
+                        StaticMeshComponentType,
+                        new Dictionary<string, Member>(StringComparer.Ordinal)
+                        {
+                            ["URL"] = new Field_Uri { Value = meshAssetUri }
+                        })
+                },
+                new AddComponent
+                {
+                    ContainerSlotId = tileSlotId,
+                    Data = BuildComponentData(
+                        meshColliderId,
+                        MeshColliderComponentType,
+                        new Dictionary<string, Member>(StringComparer.Ordinal)
+                        {
+                            ["Mesh"] = new Reference { TargetType = MeshAssetProviderType, TargetID = staticMeshId },
+                            ["CharacterCollider"] = new Field_bool { Value = true },
+                            ["Type"] = new Field_Enum
+                            {
+                                EnumType = ColliderTypeEnumType,
+                                Value = "Static"
+                            }
+                        })
+                }
+            };
+
+            if (!string.IsNullOrWhiteSpace(avatarProtectionId) &&
+                !_avatarProtectionUnavailable &&
+                !string.IsNullOrWhiteSpace(_avatarProtectionComponentType))
+            {
+                operations.Add(new AddComponent
+                {
+                    ContainerSlotId = tileSlotId,
+                    Data = BuildComponentData(
+                        avatarProtectionId,
+                        _avatarProtectionComponentType,
+                        BuildAvatarProtectionMembers())
+                });
+            }
+
+            operations.Add(new AddComponent
+            {
+                ContainerSlotId = tileSlotId,
+                Data = BuildComponentData(
+                    $"t3dtile_comp_{Guid.NewGuid():N}",
+                    PackageExportableComponentType,
+                    BuildPackageExportableMembers(warningSlotId))
+            });
+
+            if (textureAssetUri is not null && !string.IsNullOrWhiteSpace(staticTextureId))
+            {
+                operations.Add(new AddComponent
+                {
+                    ContainerSlotId = tileSlotId,
+                    Data = BuildComponentData(
+                        staticTextureId,
+                        StaticTextureComponentType,
+                        new Dictionary<string, Member>(StringComparer.Ordinal)
+                        {
+                            ["URL"] = new Field_Uri { Value = textureAssetUri }
+                        })
+                });
+            }
+
+            var materialMembers = new Dictionary<string, Member>(StringComparer.Ordinal);
+            Dictionary<string, MemberDefinition> materialMembersDefinition = _materialMemberDefinitions
+                ?? new Dictionary<string, MemberDefinition>(StringComparer.Ordinal);
+            if (materialMembersDefinition.ContainsKey("Smoothness"))
+            {
+                materialMembers["Smoothness"] = new Field_float { Value = 0f };
+            }
+
+            string? textureMemberName = _materialTextureFieldName;
+            if (textureAssetUri is not null &&
+                !string.IsNullOrWhiteSpace(textureMemberName) &&
+                !string.IsNullOrWhiteSpace(staticTextureId))
+            {
+                materialMembers[textureMemberName] = new Reference
+                {
+                    TargetType = TextureAssetProviderType,
+                    TargetID = staticTextureId
+                };
+            }
+
+            operations.Add(new AddComponent
+            {
+                ContainerSlotId = tileSlotId,
+                Data = BuildComponentData(materialId, MaterialComponentType, materialMembers)
+            });
+            operations.Add(new AddComponent
+            {
+                ContainerSlotId = tileSlotId,
+                Data = BuildComponentData(
+                    meshRendererId,
+                    MeshRendererComponentType,
+                    new Dictionary<string, Member>(StringComparer.Ordinal)
+                    {
+                        ["Mesh"] = new Reference { TargetType = MeshAssetProviderType, TargetID = staticMeshId },
+                        ["Materials"] = new SyncList
+                        {
+                            Elements = [new Reference { TargetType = MaterialAssetProviderType, TargetID = materialId }]
+                        }
+                    })
+            });
+
+            return operations;
+        }
+
+        private static Slot BuildSlotData(
+            string slotId,
+            string name,
+            string? parentSlotId,
+            Vector3 position,
+            Quaternion rotation,
+            Vector3 scale)
+        {
+            var slot = new Slot
+            {
+                ID = slotId,
+                Name = new Field_string { Value = name },
+                Position = new Field_float3 { Value = new float3 { x = position.X, y = position.Y, z = position.Z } },
+                Rotation = new Field_floatQ { Value = new floatQ { x = rotation.X, y = rotation.Y, z = rotation.Z, w = rotation.W } },
+                Scale = new Field_float3 { Value = new float3 { x = scale.X, y = scale.Y, z = scale.Z } },
+                IsPersistent = new Field_bool { Value = false }
+            };
+
+            if (!string.IsNullOrWhiteSpace(parentSlotId))
+            {
+                slot.Parent = new Reference
+                {
+                    TargetID = parentSlotId,
+                    TargetType = SlotWorkerType
+                };
+            }
+
+            return slot;
+        }
+
+        private static Component BuildComponentData(
+            string componentId,
+            string componentType,
+            Dictionary<string, Member> members)
+        {
+            return new Component
+            {
+                ID = componentId,
+                ComponentType = componentType,
+                Members = members
             };
         }
 
