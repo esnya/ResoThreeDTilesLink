@@ -37,8 +37,11 @@ This document contains only current operational information that is difficult to
 - In some live environments, `SimpleAvatarProtection` may not be exposed. Even in that case, assume connection and mesh transmission can continue.
 - Put persistent writable `DynamicValueVariable<T>` members attached to the session root or parent slot on the session side first.
 - When `DynamicVariableSpace.OnlyDirectBinding` is enabled, the session-side source DV name must explicitly include `SpaceName/`.
+- For Interactive input parameters, derive the watch paths from `--watch-path` and require that base path to start with `World/`; the app normalizes each remaining path segment into an alphanumeric member name before creating the `Latitude` / `Longitude` / `Range` / `Search` watches.
 - Expose `World/` aliases as separate `DynamicValueVariable<T>` members driven from the session-side source by `ValueCopy<T>`, instead of `DynamicField`.
-- Control target-side overwrite through `ValueCopy.WriteBack`; enable it only for Interactive input parameters that must flow from `World/` back into the session-side values.
+- Keep the configurable Interactive input watches and the observation aliases distinct: `--watch-path` affects only the input watches, while the observation aliases remain fixed under `World/ThreeDTilesLink.*`.
+- Control target-side overwrite through `ValueCopy.WriteBack`; enable it only for Interactive input parameters that must flow from `World/` back into the session-side values, and keep it disabled for observation-only aliases.
+- Publish the session license credit from a session-side `DynamicValueVariable<string>` to the fixed alias `World/ThreeDTilesLink.License`.
 - Publish progress as a float in the range `0.0..1.0` from a session-side `DynamicValueVariable<float>` on the parent slot to `World/ThreeDTilesLink.Progress` through `ValueCopy<float>`.
 - Publish the human-readable progress string from a session-side `DynamicValueVariable<string>` on the parent slot to `World/ThreeDTilesLink.ProgressText` through `ValueCopy<string>`.
 
