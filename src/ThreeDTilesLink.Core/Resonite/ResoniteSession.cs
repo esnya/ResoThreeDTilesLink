@@ -1321,9 +1321,15 @@ namespace ThreeDTilesLink.Core.Resonite
             try
             {
                 Dictionary<string, MemberDefinition> members = await ResolveMaterialMemberDefinitionsAsync(cancellationToken).ConfigureAwait(false);
-                _materialTextureFieldName = ResolveMaterialTextureMemberName(members);
+                _materialTextureFieldName = SelectMaterialTextureMemberName(members);
                 _materialTextureFieldResolved = true;
                 return _materialTextureFieldName;
+            }
+            catch (OperationCanceledException)
+            {
+                _materialTextureFieldName = null;
+                _materialTextureFieldResolved = false;
+                throw;
             }
             catch (ObjectDisposedException)
             {
@@ -1351,7 +1357,7 @@ namespace ThreeDTilesLink.Core.Resonite
             }
         }
 
-        private static string? ResolveMaterialTextureMemberName(Dictionary<string, MemberDefinition> members)
+        private static string? SelectMaterialTextureMemberName(Dictionary<string, MemberDefinition> members)
         {
             var textureFields = members
                 .Where(x => x.Value is ReferenceDefinition refDef && IsTextureProvider(refDef.TargetType))

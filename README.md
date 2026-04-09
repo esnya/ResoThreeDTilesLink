@@ -80,7 +80,7 @@ Required Google APIs by operation:
 - Tile streaming from `Latitude` / `Longitude` / `Range`: Google Map Tiles API
 - Free-text search from `Search`: Google Geocoding API
 
-At connection time, the app attaches watch `DynamicValueVariable<T>` values to the session root and uses the fixed `World/ThreeDTilesLink.*` paths:
+At connection time, the app attaches session-root writable `DynamicValueVariable<T>` values and derives the Interactive input watches from `--watch-path` (default: `World/ThreeDTilesLink`):
 
 - `World/ThreeDTilesLink.Latitude`
 - `World/ThreeDTilesLink.Longitude`
@@ -90,7 +90,12 @@ At connection time, the app attaches watch `DynamicValueVariable<T>` values to t
 The session-root writable values are kept as separate `DynamicValueVariable<T>` members.
 The `World/` paths are exposed as alias `DynamicValueVariable<T>` members driven through `ValueCopy<T>`.
 For the Interactive input parameters (`Latitude` / `Longitude` / `Range` / `Search`), `ValueCopy.WriteBack` is enabled so changes from `World/` flow back into the session-side values.
-For observation-only aliases such as progress and credit text, `ValueCopy.WriteBack` stays disabled so changes on the alias side do not overwrite the source values.
+For observation-only aliases, `ValueCopy.WriteBack` stays disabled so changes on the alias side do not overwrite the source values.
+Those observation aliases stay fixed at:
+
+- `World/ThreeDTilesLink.License`
+- `World/ThreeDTilesLink.Progress`
+- `World/ThreeDTilesLink.ProgressText`
 
 Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and retained tiles are reconciled for the latest selection.
 If `Search` is updated to a non-empty string, the app resolves it with the Google Geocoding API and writes the resulting coordinates back into `Latitude` / `Longitude`.
@@ -110,11 +115,14 @@ Run `dotnet run --project src/ThreeDTilesLink -- interactive --help` for units a
 - If `--resonite-host` is omitted, `localhost` is used.
 - When running from WSL against a Windows-hosted Resonite session, prefer host-side execution such as `cmd.exe /c dotnet.exe run ...` or `pwsh.exe`, because Linux-side `localhost` does not reliably mean the Windows host.
 - The anchor height is sea level at the current latitude/longitude, and `--height-offset` is applied relative to that anchor.
-- The Interactive input watches (`Latitude`, `Longitude`, `Range`, `Search`) and the observation aliases all live under the fixed `World/ThreeDTilesLink.*` namespace.
-- Useful tuning flags include `--poll-interval`, `--debounce`, `--throttle`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
+- `--watch-path` affects only the Interactive input watches (`Latitude`, `Longitude`, `Range`, `Search`); the observation aliases remain fixed under `World/ThreeDTilesLink.*`.
+- `--watch-path` must start with `World/`; each remaining path segment is normalized into a valid alphanumeric member name before the app creates the derived input watches.
+- Useful tuning flags include `--watch-path`, `--poll-interval`, `--debounce`, `--throttle`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
 
 ## Documentation
 
 - `AGENTS.md`: Minimal guide for coding agents
 - `docs/current-state.md`: Current operational information and constraints
 - `docs/agent-procedures.md`: Work procedures for AI agents
+- `docs/performance-3dtiles.md`: Current performance notes for Google 3D Tiles fetch, decode, and traversal
+- `docs/performance-resonitelink.md`: Current performance notes for Resonite Link transport and ordering
