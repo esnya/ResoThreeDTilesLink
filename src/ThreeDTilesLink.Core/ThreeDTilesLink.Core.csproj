@@ -13,9 +13,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>GeographicLib/geoids/egm96-5.pgm</Link>
     </Content>
-    <Content Include="Resources/GoogleMaps/GoogleMaps_Logo_WithLightOutline_2x.png">
+    <Content Include="Resources/GoogleMaps/*.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>GoogleMaps_Logo_WithLightOutline_2x.png</Link>
+      <Link>GoogleMaps/%(Filename)%(Extension)</Link>
     </Content>
   </ItemGroup>
 

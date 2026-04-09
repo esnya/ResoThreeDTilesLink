@@ -15,7 +15,7 @@ GitHub Releases are the canonical changelog for this project. We do not keep a s
 - Resonite is a third-party renderer for Google Map Tiles API content. Using this tool does not waive Google Maps Platform attribution, logo, or provider-credit requirements.
 - Keep the Google Maps attribution visible whenever streamed tiles are displayed.
 - This integration publishes a compact text attribution surface through `World/ThreeDTilesLink.License`; that line always includes `Google Maps` and any currently required third-party providers.
-- The official Google Maps logo asset is bundled at `src/ThreeDTilesLink.Core/Resources/GoogleMaps/GoogleMaps_Logo_WithLightOutline_2x.png` and copied to build output as `GoogleMaps_Logo_WithLightOutline_2x.png`.
+- The official Google Maps logo asset is bundled at `src/ThreeDTilesLink.Core/Resources/GoogleMaps/GoogleMaps_Logo_WithLightOutline_2x.png` and copied to build output as `GoogleMaps/GoogleMaps_Logo_WithLightOutline_2x.png`.
 - If your visible UI can render a logo, prefer the official Google Maps logo and never restyle, obscure, or merge it with renderer branding.
 - Keep third-party provider attributions visible in full alongside the Google Maps attribution while tiles are shown.
 - Saving streamed content into the Resonite inventory is not supported.
@@ -105,7 +105,7 @@ Those observation aliases stay fixed at:
 - `World/ThreeDTilesLink.Progress`
 - `World/ThreeDTilesLink.ProgressText`
 
-`World/ThreeDTilesLink.License` is the mandatory attribution surface for the currently visible Google tiles, not optional status text. `World/ThreeDTilesLink.AttributionRequirements` exposes the renderer-side compliance rule, and `World/ThreeDTilesLink.AttributionLogoAsset` exposes the bundled logo asset file name. Keep the visible attribution associated with the Google Maps logo or its allowed text fallback, and keep it visually separate from Resonite or other third-party logos.
+`World/ThreeDTilesLink.License` is the mandatory attribution surface for the currently visible Google tiles, not optional status text. `World/ThreeDTilesLink.AttributionRequirements` exposes the renderer-side compliance rule, and `World/ThreeDTilesLink.AttributionLogoAsset` exposes the bundled logo asset path relative to the application output directory. Keep the visible attribution associated with the Google Maps logo or its allowed text fallback, and keep it visually separate from Resonite or other third-party logos.
 
 Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and retained tiles are reconciled for the latest selection.
 If `Search` is updated to a non-empty string, the app resolves it with the Google Geocoding API and writes the resulting coordinates back into `Latitude` / `Longitude`.

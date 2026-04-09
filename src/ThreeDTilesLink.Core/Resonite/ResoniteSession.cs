@@ -113,6 +113,8 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string AttributionRequirementsDynamicVariablePath = "World/ThreeDTilesLink.AttributionRequirements";
         private const string AttributionLogoAssetVariableLocalName = "AttributionLogoAsset";
         private const string AttributionLogoAssetDynamicVariablePath = "World/ThreeDTilesLink.AttributionLogoAsset";
+        private const string AttributionLogoSlotName = "Google Maps Attribution";
+        private const string AttributionLogoFaceSlotName = "Google Maps Attribution Face";
         private const string ProgressValueVariableLocalName = "Progress";
         private const string ProgressTextVariableLocalName = "ProgressText";
         private const string ProgressDynamicVariablePath = "World/ThreeDTilesLink.Progress";
@@ -129,6 +131,8 @@ namespace ThreeDTilesLink.Core.Resonite
         private static readonly TimeSpan DefaultLinkRequestTimeout = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan MeshImportRequestTimeout = TimeSpan.FromMinutes(2);
         private static readonly TimeSpan ReadComponentMemberRetryDelay = TimeSpan.FromMilliseconds(25);
+        private static readonly Vector3 AttributionLogoPosition = new(0f, 2.5f, 0f);
+        private const float AttributionLogoHeightMeters = 0.09f;
 
         private static readonly string[] PreferredTextureFieldNames = ["AlbedoTexture", "BaseColorTexture", "MainTexture", "Texture"];
         private LinkInterface _linkInterface = resoniteLink ?? throw new ArgumentNullException(nameof(resoniteLink));
@@ -1458,7 +1462,7 @@ namespace ThreeDTilesLink.Core.Resonite
             DynamicVariableBinding? attributionLogoAssetBinding = await TryAddDynamicStringValueVariableAsync(
                 sessionRootSlotId,
                 BuildScopedVariablePath(GoogleTilesDynamicSpaceName, AttributionLogoAssetVariableLocalName),
-                GoogleMapsCompliance.BundledLogoFileName,
+                GoogleMapsCompliance.BundledLogoRelativePath,
                 cancellationToken).ConfigureAwait(false);
             if (attributionLogoAssetBinding is not null)
             {
@@ -1469,6 +1473,173 @@ namespace ThreeDTilesLink.Core.Resonite
                     writeBack: false,
                     cancellationToken).ConfigureAwait(false);
             }
+
+            await AttachGoogleMapsAttributionLogoAsync(sessionRootSlotId, cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task AttachGoogleMapsAttributionLogoAsync(string sessionRootSlotId, CancellationToken cancellationToken)
+        {
+            string bundledLogoPath = Path.Combine(AppContext.BaseDirectory, GoogleMapsCompliance.BundledLogoRelativePath);
+            if (!File.Exists(bundledLogoPath))
+            {
+                throw new InvalidOperationException($"Bundled Google Maps logo asset is missing: {bundledLogoPath}");
+            }
+
+            byte[] logoBytes = await File.ReadAllBytesAsync(bundledLogoPath, cancellationToken).ConfigureAwait(false);
+            float aspectRatio;
+            using (Image<Rgba32> logoImage = Image.Load<Rgba32>(logoBytes))
+            {
+                aspectRatio = logoImage.Width / (float)logoImage.Height;
+            }
+
+            AssetData? textureAsset = await ImportTextureAssetAsync(logoBytes, ".png", cancellationToken).ConfigureAwait(false);
+            if (textureAsset is null)
+            {
+                throw new InvalidOperationException("Failed to import bundled Google Maps logo texture.");
+            }
+
+            AssetData meshAsset = await ImportMeshAssetAsync(
+                BuildGoogleMapsAttributionLogoMesh(aspectRatio),
+                cancellationToken).ConfigureAwait(false);
+
+            string logoSlotId = await CreateSlotAsync(
+                AttributionLogoSlotName,
+                sessionRootSlotId,
+                AttributionLogoPosition,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            await AttachAvatarProtectionAsync(logoSlotId, cancellationToken).ConfigureAwait(false);
+            await AttachPackageExportableAsync(logoSlotId, cancellationToken).ConfigureAwait(false);
+
+            await AttachGoogleMapsAttributionFaceAsync(
+                logoSlotId,
+                meshAsset.AssetURL,
+                textureAsset.AssetURL,
+                Quaternion.Identity,
+                cancellationToken).ConfigureAwait(false);
+            await AttachGoogleMapsAttributionFaceAsync(
+                logoSlotId,
+                meshAsset.AssetURL,
+                textureAsset.AssetURL,
+                Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI * 0.5f),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task AttachGoogleMapsAttributionFaceAsync(
+            string parentSlotId,
+            Uri meshAssetUrl,
+            Uri textureAssetUrl,
+            Quaternion rotation,
+            CancellationToken cancellationToken)
+        {
+            string faceSlotId = await CreateSlotAsync(
+                AttributionLogoFaceSlotName,
+                parentSlotId,
+                rotation: rotation,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            string staticMeshId = await AddComponentAsync(
+                faceSlotId,
+                StaticMeshComponentType,
+                new Dictionary<string, Member>
+                {
+                    ["URL"] = new Field_Uri { Value = meshAssetUrl }
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            string staticTextureId = await AddComponentAsync(
+                faceSlotId,
+                StaticTextureComponentType,
+                new Dictionary<string, Member>
+                {
+                    ["URL"] = new Field_Uri { Value = textureAssetUrl }
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            var materialMembers = new Dictionary<string, Member>();
+            Dictionary<string, MemberDefinition> materialMembersDefinition = await ResolveMaterialMemberDefinitionsAsync(cancellationToken).ConfigureAwait(false);
+            if (materialMembersDefinition.ContainsKey("Smoothness"))
+            {
+                materialMembers["Smoothness"] = new Field_float { Value = 0f };
+            }
+
+            string? textureMemberName = await ResolveMaterialTextureMemberNameAsync(cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(textureMemberName))
+            {
+                materialMembers[textureMemberName] = new Reference
+                {
+                    TargetType = TextureAssetProviderType,
+                    TargetID = staticTextureId
+                };
+            }
+
+            string materialId = await AddComponentAsync(faceSlotId, MaterialComponentType, materialMembers, cancellationToken).ConfigureAwait(false);
+            _ = await AddComponentAsync(
+                faceSlotId,
+                MeshRendererComponentType,
+                new Dictionary<string, Member>
+                {
+                    ["Mesh"] = new Reference { TargetType = MeshAssetProviderType, TargetID = staticMeshId },
+                    ["Materials"] = new SyncList
+                    {
+                        Elements = [new Reference { TargetType = MaterialAssetProviderType, TargetID = materialId }]
+                    }
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        private static ImportMeshRawData BuildGoogleMapsAttributionLogoMesh(float aspectRatio)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(aspectRatio);
+
+            float halfHeight = AttributionLogoHeightMeters * 0.5f;
+            float halfWidth = halfHeight * aspectRatio;
+            var triangleSubmesh = new TriangleSubmeshRawData
+            {
+                TriangleCount = 4
+            };
+
+            var importMesh = new ImportMeshRawData
+            {
+                VertexCount = 4,
+                HasNormals = true,
+                HasTangents = false,
+                HasColors = false,
+                BoneWeightCount = 0,
+                UV_Channel_Dimensions = [2],
+                Submeshes = [triangleSubmesh]
+            };
+
+            importMesh.AllocateBuffer();
+            importMesh.Positions[0] = new float3 { x = -halfWidth, y = halfHeight, z = 0f };
+            importMesh.Positions[1] = new float3 { x = halfWidth, y = halfHeight, z = 0f };
+            importMesh.Positions[2] = new float3 { x = halfWidth, y = -halfHeight, z = 0f };
+            importMesh.Positions[3] = new float3 { x = -halfWidth, y = -halfHeight, z = 0f };
+
+            for (int i = 0; i < 4; i++)
+            {
+                importMesh.Normals[i] = new float3 { x = 0f, y = 0f, z = -1f };
+            }
+
+            Span<float2> uvSpan = importMesh.AccessUV_2D(0);
+            uvSpan[0] = new float2 { x = 0f, y = 0f };
+            uvSpan[1] = new float2 { x = 1f, y = 0f };
+            uvSpan[2] = new float2 { x = 1f, y = 1f };
+            uvSpan[3] = new float2 { x = 0f, y = 1f };
+
+            triangleSubmesh.Indices[0] = 0;
+            triangleSubmesh.Indices[1] = 1;
+            triangleSubmesh.Indices[2] = 2;
+            triangleSubmesh.Indices[3] = 0;
+            triangleSubmesh.Indices[4] = 2;
+            triangleSubmesh.Indices[5] = 3;
+            triangleSubmesh.Indices[6] = 2;
+            triangleSubmesh.Indices[7] = 1;
+            triangleSubmesh.Indices[8] = 0;
+            triangleSubmesh.Indices[9] = 3;
+            triangleSubmesh.Indices[10] = 2;
+            triangleSubmesh.Indices[11] = 0;
+            return importMesh;
         }
 
         private async Task EnsureSessionDynamicSpaceAsync(string sessionRootSlotId, CancellationToken cancellationToken = default)

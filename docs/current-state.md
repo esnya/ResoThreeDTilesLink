@@ -11,7 +11,9 @@ This document contains only current operational information that is difficult to
 - Because of that, persistent file caching for Google 3D Tiles is treated as wasted complexity and is not an operational goal even when response headers are cacheable.
 - Any HTTP caching for tile fetches should be limited to header-compliant process-local reuse, not per-user disk persistence.
 - Google Maps attribution must remain visible while any streamed Google tiles are visible.
-- The current integration surface for that requirement is the fixed alias `World/ThreeDTilesLink.License`, which always includes `Google Maps` plus the currently required provider attributions.
+- The current integration surface for that requirement is the fixed alias set `World/ThreeDTilesLink.License`, `World/ThreeDTilesLink.AttributionRequirements`, and `World/ThreeDTilesLink.AttributionLogoAsset`.
+- `World/ThreeDTilesLink.License` always includes `Google Maps` plus the currently required provider attributions.
+- `World/ThreeDTilesLink.AttributionLogoAsset` publishes the bundled logo asset path relative to the application output directory.
 - The session root also publishes `World/ThreeDTilesLink.AttributionRequirements` for renderer-side compliance guidance and `World/ThreeDTilesLink.AttributionLogoAsset` for the bundled official logo asset file name.
 - If a richer visible UI is added around the streamed scene, prefer the official Google Maps logo whenever that UI can render it, and do not restyle it or merge it with Resonite or other third-party branding.
 - The version baseline for official releases is standardized on `git tag` values in the form `v1.2.3`.
@@ -52,6 +54,7 @@ This document contains only current operational information that is difficult to
 - Control target-side overwrite through `ValueCopy.WriteBack`; enable it only for Interactive input parameters that must flow from `World/` back into the session-side values, and keep it disabled for observation-only aliases.
 - Publish the session license credit from a session-side `DynamicValueVariable<string>` to the fixed alias `World/ThreeDTilesLink.License`.
 - Treat `World/ThreeDTilesLink.License` as mandatory compliance output for the current Google tiles, not as optional metadata.
+- Publish renderer-facing guidance through the fixed aliases `World/ThreeDTilesLink.AttributionRequirements` and `World/ThreeDTilesLink.AttributionLogoAsset`.
 - Publish the renderer-side compliance guidance through the fixed alias `World/ThreeDTilesLink.AttributionRequirements`.
 - Publish the bundled Google Maps logo asset file name through the fixed alias `World/ThreeDTilesLink.AttributionLogoAsset`.
 - Publish progress as a float in the range `0.0..1.0` from a session-side `DynamicValueVariable<float>` on the parent slot to `World/ThreeDTilesLink.Progress` through `ValueCopy<float>`.
