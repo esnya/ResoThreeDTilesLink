@@ -25,7 +25,9 @@ namespace ThreeDTilesLink.Tests
                 NullLogger<InteractiveRunSupervisor>.Instance);
             InteractiveLoopState state = InteractiveLoopState.CreateInitial() with
             {
-                WatchBinding = CreateWatchBinding()
+                WatchBinding = CreateWatchBinding(),
+                PendingValues = new SelectionInputValues(10f, 20f, 30f),
+                PendingValuesChangedAt = DateTimeOffset.UnixEpoch
             };
 
             InteractiveLoopState next = await applier.ApplyAsync(
@@ -36,6 +38,8 @@ namespace ThreeDTilesLink.Tests
 
             _ = next.PendingSearch.Should().Be("Shibuya");
             _ = next.PendingSearchChangedAt.Should().Be(failureTime);
+            _ = next.PendingValues.Should().BeNull();
+            _ = next.PendingValuesChangedAt.Should().BeNull();
         }
 
         private static InteractiveRunRequest CreateOptions()
