@@ -410,15 +410,15 @@ namespace ThreeDTilesLink.Core.Pipeline
                 {
                     if (completedSuccessfully && pendingFailure is null)
                     {
-                        await _selectedTileProjector.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+                        await _selectedTileProjector.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
                     }
                     else
                     {
                         try
                         {
-                            await _selectedTileProjector.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+                            await _selectedTileProjector.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
                         }
-                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        catch (OperationCanceledException)
                         {
                         }
                         catch (Exception ex)
@@ -935,9 +935,10 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             RunPerformanceSummary? performanceSummary = _performanceSummary;
             long startedAt = performanceSummary is null ? 0L : Stopwatch.GetTimestamp();
+            Task<SendMeshResult>[] sendTasks = command.Content.Meshes.Select(SendPayloadAsync).ToArray();
             try
             {
-                SendMeshResult[] results = await Task.WhenAll(command.Content.Meshes.Select(SendPayloadAsync)).ConfigureAwait(false);
+                SendMeshResult[] results = await Task.WhenAll(sendTasks).ConfigureAwait(false);
                 var streamedSlotIds = results
                     .Select(static result => result.SlotId)
                     .Where(static slotId => !string.IsNullOrWhiteSpace(slotId))
@@ -973,6 +974,20 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                List<string> streamedSlotIds = sendTasks
+                    .Where(static task => task.Status == TaskStatus.RanToCompletion)
+                    .Select(static task => task.Result.SlotId)
+                    .Where(static slotId => !string.IsNullOrWhiteSpace(slotId))
+                    .Cast<string>()
+                    .ToList();
+                if (streamedSlotIds.Count > 0)
+                {
+                    _ = await TryRollbackPartialSendAsync(
+                        command.Content.Tile.TileId,
+                        streamedSlotIds,
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+
                 throw;
             }
             finally

@@ -38,6 +38,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 watchStore,
                 searchResolver,
                 coordinateTransformer,
+                clock,
                 logger);
         }
 

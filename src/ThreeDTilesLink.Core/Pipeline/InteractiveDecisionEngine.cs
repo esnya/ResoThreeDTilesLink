@@ -5,7 +5,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 {
     internal abstract record InteractiveAction;
 
-    internal sealed record ResolveSearchAction(string SearchText, DateTimeOffset RequestedAt) : InteractiveAction;
+    internal sealed record ResolveSearchAction(string SearchText) : InteractiveAction;
 
     internal sealed record CancelActiveRunAction() : InteractiveAction;
 
@@ -42,7 +42,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 now - next.PendingSearchChangedAt.Value >= options.Debounce &&
                 !string.Equals(next.LastResolvedSearch, next.PendingSearch, StringComparison.Ordinal))
             {
-                actions.Add(new ResolveSearchAction(next.PendingSearch, now));
+                actions.Add(new ResolveSearchAction(next.PendingSearch));
                 next = next with
                 {
                     PendingSearch = null,
@@ -52,7 +52,18 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return new InteractiveDecisionResult(next, actions);
             }
 
-            if (next.PendingValues is not null &&
+            if (next.PendingSearch is not null &&
+                string.Equals(next.LastResolvedSearch, next.PendingSearch, StringComparison.Ordinal))
+            {
+                next = next with
+                {
+                    PendingSearch = null,
+                    PendingSearchChangedAt = null
+                };
+            }
+
+            if (next.PendingSearch is null &&
+                next.PendingValues is not null &&
                 next.PendingValuesChangedAt is not null)
             {
                 bool debounceElapsed = now - next.PendingValuesChangedAt.Value >= options.Debounce;

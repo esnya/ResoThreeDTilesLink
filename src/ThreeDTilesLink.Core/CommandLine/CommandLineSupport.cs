@@ -147,7 +147,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                     return Error($"Missing required argument: {definition.Name}", helpText);
                 }
 
-                values[definition.Name] = definition.DefaultValue ?? GetImplicitDefault(definition.ValueKind);
+                values[definition.Name] = definition.DefaultValue ?? GetOptionalUnsetValue(definition.ValueKind);
             }
 
             return new ParsedCommand(CommandParseStatus.Success, values, string.Empty, false);
@@ -254,12 +254,12 @@ namespace ThreeDTilesLink.Core.CommandLine
             return string.Join(" ", parts);
         }
 
-        private static object GetImplicitDefault(CommandOptionValueKind valueKind)
+        private static object? GetOptionalUnsetValue(CommandOptionValueKind valueKind)
         {
             return valueKind switch
             {
                 CommandOptionValueKind.Switch => false,
-                _ => string.Empty
+                _ => null
             };
         }
 

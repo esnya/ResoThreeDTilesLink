@@ -6,6 +6,7 @@ using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Models;
+using ThreeDTilesLink.Core.Resonite;
 
 namespace ThreeDTilesLink.Core.Pipeline
 {
@@ -15,6 +16,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         IWatchStore watchStore,
         ISearchResolver searchResolver,
         ICoordinateTransformer coordinateTransformer,
+        IClock clock,
         ILogger<InteractiveRunSupervisor> logger)
     {
         private static readonly Action<ILogger, string, string, Exception?> s_retainedSlotClearFailed =
@@ -28,6 +30,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly IWatchStore _watchStore = watchStore;
         private readonly ISearchResolver _searchResolver = searchResolver;
         private readonly ICoordinateTransformer _coordinateTransformer = coordinateTransformer;
+        private readonly IClock _clock = clock;
         private readonly ILogger<InteractiveRunSupervisor> _logger = logger;
 
         internal Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
@@ -134,7 +137,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             if (string.IsNullOrWhiteSpace(options.ApiKey))
             {
                 InteractiveRunSupervisor.Log.SearchIgnored(_logger, action.SearchText);
-                return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                return MarkSearchHandled(state, action.SearchText);
             }
 
             try
@@ -143,7 +146,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 if (result is null)
                 {
                     InteractiveRunSupervisor.Log.SearchNoResult(_logger, action.SearchText);
-                    return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                    return MarkSearchHandled(state, action.SearchText);
                 }
 
                 try
@@ -157,52 +160,62 @@ namespace ThreeDTilesLink.Core.Pipeline
                 catch (ArgumentException ex)
                 {
                     InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                    return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                    return RequeueSearch(state, action.SearchText);
+                }
+                catch (ResoniteLinkNoResponseException ex)
+                {
+                    InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
+                    return RequeueSearch(state, action.SearchText);
+                }
+                catch (ResoniteLinkDisconnectedException ex)
+                {
+                    InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
+                    return RequeueSearch(state, action.SearchText);
                 }
                 catch (HttpRequestException ex)
                 {
                     InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                    return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                    return RequeueSearch(state, action.SearchText);
                 }
                 catch (JsonException ex)
                 {
                     InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                    return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                    return RequeueSearch(state, action.SearchText);
                 }
                 catch (TimeoutException ex)
                 {
                     InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                    return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                    return RequeueSearch(state, action.SearchText);
                 }
                 catch (NotSupportedException ex)
                 {
                     InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                    return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                    return RequeueSearch(state, action.SearchText);
                 }
                 catch (ObjectDisposedException ex)
                 {
                     InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                    return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                    return RequeueSearch(state, action.SearchText);
                 }
                 catch (WebSocketException ex)
                 {
                     InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                    return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                    return RequeueSearch(state, action.SearchText);
                 }
                 catch (UriFormatException ex)
                 {
                     InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                    return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                    return RequeueSearch(state, action.SearchText);
                 }
                 catch (InvalidOperationException ex)
                 {
                     InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                    return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                    return RequeueSearch(state, action.SearchText);
                 }
                 catch (OverflowException ex)
                 {
                     InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                    return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                    return RequeueSearch(state, action.SearchText);
                 }
 
                 InteractiveRunSupervisor.Log.SearchResolved(
@@ -226,61 +239,78 @@ namespace ThreeDTilesLink.Core.Pipeline
             catch (ArgumentException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                return RequeueSearch(state, action.SearchText);
+            }
+            catch (ResoniteLinkNoResponseException ex)
+            {
+                InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
+                return RequeueSearch(state, action.SearchText);
+            }
+            catch (ResoniteLinkDisconnectedException ex)
+            {
+                InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
+                return RequeueSearch(state, action.SearchText);
             }
             catch (HttpRequestException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                return RequeueSearch(state, action.SearchText);
             }
             catch (JsonException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                return RequeueSearch(state, action.SearchText);
             }
             catch (TimeoutException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                return RequeueSearch(state, action.SearchText);
             }
             catch (NotSupportedException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                return RequeueSearch(state, action.SearchText);
             }
             catch (ObjectDisposedException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                return RequeueSearch(state, action.SearchText);
             }
             catch (WebSocketException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                return RequeueSearch(state, action.SearchText);
             }
             catch (UriFormatException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                return RequeueSearch(state, action.SearchText);
             }
             catch (InvalidOperationException ex)
             {
                 InteractiveRunSupervisor.Log.SearchResolutionFailed(_logger, ex, action.SearchText);
-                return RequeueSearch(state, action.SearchText, action.RequestedAt, options.Watch);
+                return RequeueSearch(state, action.SearchText);
             }
         }
 
-        private static InteractiveLoopState RequeueSearch(
+        private InteractiveLoopState RequeueSearch(
             InteractiveLoopState state,
-            string searchText,
-            DateTimeOffset requestedAt,
-            WatchOptions watchOptions)
+            string searchText)
         {
-            TimeSpan retryDelay = watchOptions.Debounce + watchOptions.PollInterval;
             return state with
             {
                 PendingSearch = searchText,
-                PendingSearchChangedAt = requestedAt + retryDelay
+                PendingSearchChangedAt = _clock.UtcNow
+            };
+        }
+
+        private static InteractiveLoopState MarkSearchHandled(InteractiveLoopState state, string searchText)
+        {
+            return state with
+            {
+                PendingSearch = null,
+                PendingSearchChangedAt = null,
+                LastResolvedSearch = searchText
             };
         }
 

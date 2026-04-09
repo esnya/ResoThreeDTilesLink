@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using ThreeDTilesLink.Core.App;
 
@@ -31,7 +32,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 CommonCommandOptions.HeightOffset(),
                 new("--range", CommandOptionValueKind.DecimalNumber, "Minimum coverage range from the center.", Required: true, Unit: "m", RenamedFrom: ["--half-width-m"]),
                 CommonCommandOptions.ResoniteHost(),
-                CommonCommandOptions.ResonitePort(),
+                CommonCommandOptions.ResonitePort(required: false),
                 CommonCommandOptions.TileLimit("Maximum number of tiles to stream."),
                 CommonCommandOptions.DepthLimit("Maximum traversal depth."),
                 CommonCommandOptions.DetailTarget(),
@@ -77,7 +78,6 @@ namespace ThreeDTilesLink.Core.CommandLine
                 !CommandInvocationBuilder.TryGetValue(parsed, "--height-offset", out double heightOffset) ||
                 !CommandInvocationBuilder.TryGetPositiveDouble(parsed, "--range", out double rangeM) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--resonite-host", out string? resoniteHost) ||
-                !CommandInvocationBuilder.TryGetPort(parsed, "--resonite-port", out int resonitePort) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--tile-limit", out int tileLimit) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--depth-limit", out int depthLimit) ||
                 !CommandInvocationBuilder.TryGetPositiveDouble(parsed, "--detail", out double detailTargetM) ||
@@ -88,9 +88,36 @@ namespace ThreeDTilesLink.Core.CommandLine
                 return CommandInvocationBuilder.Error<StreamCommandOptions>("Invalid command values.", RenderHelp);
             }
 
+            if (latitude is < -90d or > 90d)
+            {
+                return CommandInvocationBuilder.Error<StreamCommandOptions>(
+                    $"Invalid value for --latitude: {latitude.ToString(CultureInfo.InvariantCulture)}",
+                    RenderHelp);
+            }
+
+            if (longitude is < -180d or > 180d)
+            {
+                return CommandInvocationBuilder.Error<StreamCommandOptions>(
+                    $"Invalid value for --longitude: {longitude.ToString(CultureInfo.InvariantCulture)}",
+                    RenderHelp);
+            }
+
             if (string.IsNullOrWhiteSpace(resoniteHost))
             {
                 return CommandInvocationBuilder.Error<StreamCommandOptions>("Invalid value for --resonite-host.", RenderHelp);
+            }
+
+            int resonitePort = 0;
+            if (parsed.Values.TryGetValue("--resonite-port", out object? rawResonitePort) && rawResonitePort is not null)
+            {
+                if (!CommandInvocationBuilder.TryGetPort(parsed, "--resonite-port", out resonitePort))
+                {
+                    return CommandInvocationBuilder.Error<StreamCommandOptions>("Invalid value for --resonite-port.", RenderHelp);
+                }
+            }
+            else if (!dryRun)
+            {
+                return CommandInvocationBuilder.Error<StreamCommandOptions>("Missing required argument: --resonite-port", RenderHelp);
             }
 
             return new CommandInvocation<StreamCommandOptions>(true, new StreamCommandOptions(

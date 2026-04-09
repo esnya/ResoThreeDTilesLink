@@ -18,11 +18,9 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.Output.Should().Contain("--content-workers <value>");
             _ = invocation.Output.Should().Contain("--resonite-send-workers <value>");
             _ = invocation.Output.Should().Contain("--remove-out-of-range");
-            _ = invocation.Output.Should().Contain("--watch-path <path>");
             _ = invocation.Output.Should().Contain("dotnet run --project src/ThreeDTilesLink -- interactive [options]");
             _ = invocation.Output.Should().Contain("Default: localhost.");
             _ = invocation.Output.Should().Contain("Unit: ms.");
-            _ = invocation.Output.Should().Contain("Default: World/ThreeDTilesLink.");
         }
 
         [Fact]
@@ -54,7 +52,6 @@ namespace ThreeDTilesLink.Tests
                 "--debounce=800",
                 "--throttle", "3000",
                 "--remove-out-of-range",
-                "--watch-path", "World/ThreeDTilesLink/Watch/",
                 "--dry-run",
                 "--log-level", "Trace"
             ]);
@@ -68,21 +65,7 @@ namespace ThreeDTilesLink.Tests
             _ = parsed.DebounceMs.Should().Be(800);
             _ = parsed.ThrottleMs.Should().Be(3000);
             _ = parsed.RemoveOutOfRange.Should().BeTrue();
-            _ = parsed.WatchPath.Should().Be("World/ThreeDTilesLink.Watch");
             _ = parsed.LogLevel.Should().Be(LogLevel.Trace);
-        }
-
-        [Fact]
-        public void Parse_NormalizesWatchPathSegments()
-        {
-            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
-            [
-                "--resonite-port", "12000",
-                "--watch-path", "World/123 tiles/@foo"
-            ]);
-
-            _ = invocation.ShouldRun.Should().BeTrue();
-            _ = invocation.Options!.WatchPath.Should().Be("World/Three123tiles.foo");
         }
 
         [Fact]
