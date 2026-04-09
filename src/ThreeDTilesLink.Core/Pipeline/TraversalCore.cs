@@ -88,8 +88,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                             break;
                         }
 
-                        if (node.Fact.Tile.Depth < facts.Request.Traversal.MaxDepth &&
-                            node.Fact.NestedStatus == ContentDiscoveryStatus.Unrequested)
+                        if (node.Fact.NestedStatus == ContentDiscoveryStatus.Unrequested)
                         {
                             planned.Add(new LoadNestedTilesetWorkItem(node.Fact.Tile));
                             availableNestedSlots--;
@@ -270,9 +269,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 tileset,
                 facts.Request.SelectionReference,
                 facts.Range,
-                facts.Request.Traversal.MaxDepth,
                 facts.Request.Traversal.DetailTargetM,
-                maxTiles: 0,
                 parentWorld,
                 idPrefix,
                 depthOffset,
@@ -801,12 +798,6 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             foreach (PlanningNode node in GetRenderableFrontierNodes(tree))
             {
-                if (candidates.Count >= tree.Request.Traversal.MaxTiles &&
-                    !tree.PlanningVisibleStableIds.Contains(node.StableId))
-                {
-                    continue;
-                }
-
                 _ = candidates.Add(node.StableId);
             }
 

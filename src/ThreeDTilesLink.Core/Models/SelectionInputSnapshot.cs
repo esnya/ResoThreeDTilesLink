@@ -2,5 +2,6 @@ namespace ThreeDTilesLink.Core.Models
 {
     internal sealed record SelectionInputSnapshot(
         string? SearchText,
-        SelectionInputValues? Values);
+        SelectionInputValues? Values,
+        bool StopRequested = false);
 }

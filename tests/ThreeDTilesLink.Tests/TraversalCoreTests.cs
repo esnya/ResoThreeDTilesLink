@@ -1179,7 +1179,7 @@ namespace ThreeDTilesLink.Tests
             return new TileRunRequest(
                 new GeoReference(0d, 0d, 0d),
                 new GeoReference(0d, 0d, 0d),
-                new TraversalOptions(rangeM, 16, 16, 40d, bootstrapRangeMultiplier),
+                new TraversalOptions(rangeM, 40d, bootstrapRangeMultiplier),
                 new ResoniteOutputOptions("127.0.0.1", 12000, dryRun),
                 "k");
         }
@@ -1298,9 +1298,7 @@ namespace ThreeDTilesLink.Tests
                 Tileset tileset,
                 GeoReference reference,
                 QueryRange range,
-                int maxDepth,
                 double detailTargetM,
-                int maxTiles,
                 Matrix4x4d rootParentWorld,
                 string idPrefix,
                 int depthOffset,
@@ -1319,9 +1317,7 @@ namespace ThreeDTilesLink.Tests
                 Tileset tileset,
                 GeoReference reference,
                 QueryRange range,
-                int maxDepth,
                 double detailTargetM,
-                int maxTiles,
                 Matrix4x4d rootParentWorld,
                 string idPrefix,
                 int depthOffset,

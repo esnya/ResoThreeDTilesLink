@@ -99,6 +99,61 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void Evaluate_StopRequested_CancelsActiveRun_AndClearsPendingValues()
+        {
+            SelectionInputValues values = new(35f, 139f, 400f);
+            using var cancellationSource = new CancellationTokenSource();
+            InteractiveLoopState state = InteractiveLoopState.CreateInitial() with
+            {
+                LastObservedValues = values,
+                PendingValues = values,
+                PendingValuesChangedAt = DateTimeOffset.UnixEpoch,
+                ActiveRun = new InteractiveActiveRun(
+                    Task.FromResult(new InteractiveTileRunResult(
+                        new RunSummary(0, 0, 0, 0),
+                        new Dictionary<string, RetainedTileState>(StringComparer.Ordinal),
+                        new HashSet<string>(StringComparer.Ordinal),
+                        null)),
+                    cancellationSource)
+            };
+
+            InteractiveDecisionResult result = Evaluate(
+                state,
+                new SelectionInputSnapshot(null, null, StopRequested: true),
+                debounce: TimeSpan.FromSeconds(1),
+                throttle: TimeSpan.FromSeconds(1),
+                now: DateTimeOffset.UnixEpoch.AddSeconds(2));
+
+            _ = result.Actions.Should().ContainSingle().Which.Should().BeOfType<CancelActiveRunAction>();
+            _ = result.State.LastObservedValues.Should().BeNull();
+            _ = result.State.PendingValues.Should().BeNull();
+            _ = result.State.PendingValuesChangedAt.Should().BeNull();
+        }
+
+        [Fact]
+        public void Evaluate_StopRequested_WithoutActiveRun_DoesNotScheduleActions()
+        {
+            InteractiveLoopState state = InteractiveLoopState.CreateInitial() with
+            {
+                LastObservedValues = new SelectionInputValues(35f, 139f, 400f),
+                PendingValues = new SelectionInputValues(35f, 139f, 400f),
+                PendingValuesChangedAt = DateTimeOffset.UnixEpoch
+            };
+
+            InteractiveDecisionResult result = Evaluate(
+                state,
+                new SelectionInputSnapshot(null, null, StopRequested: true),
+                debounce: TimeSpan.FromSeconds(1),
+                throttle: TimeSpan.FromSeconds(1),
+                now: DateTimeOffset.UnixEpoch.AddSeconds(2));
+
+            _ = result.Actions.Should().BeEmpty();
+            _ = result.State.LastObservedValues.Should().BeNull();
+            _ = result.State.PendingValues.Should().BeNull();
+            _ = result.State.PendingValuesChangedAt.Should().BeNull();
+        }
+
+        [Fact]
         public void Evaluate_StartsRun_WhenSelectionValuesAreReady()
         {
             InteractiveLoopState state = InteractiveLoopState.CreateInitial() with

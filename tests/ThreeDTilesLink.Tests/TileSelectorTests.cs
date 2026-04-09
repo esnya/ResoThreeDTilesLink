@@ -74,7 +74,7 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            IReadOnlyList<TileSelectionResult> selected = selector.Select(tileset, reference, new QueryRange(120d), maxDepth: 8, detailTargetM: 40d, maxTiles: 32, Matrix4x4d.Identity, string.Empty, 0, null, null);
+            IReadOnlyList<TileSelectionResult> selected = selector.Select(tileset, reference, new QueryRange(120d), detailTargetM: 40d, Matrix4x4d.Identity, string.Empty, 0, null, null);
 
             _ = selected.Select(x => x.TileId).Should().Contain(["region-in", "box-in"]);
             _ = selected.Select(x => x.TileId).Should().NotContain(["sphere-out", "box-below-local-plane"]);
@@ -115,9 +115,7 @@ namespace ThreeDTilesLink.Tests
                 tileset,
                 new GeoReference(0d, 0d, 0d),
                 new QueryRange(500d),
-                maxDepth: 16,
                 detailTargetM: 30d,
-                maxTiles: 64,
                 Matrix4x4d.Identity,
                 string.Empty,
                 0,
@@ -203,9 +201,7 @@ namespace ThreeDTilesLink.Tests
                 tileset,
                 reference,
                 new QueryRange(500d),
-                maxDepth: 16,
                 detailTargetM: 60d,
-                maxTiles: 64,
                 Matrix4x4d.Identity,
                 string.Empty,
                 0,
@@ -265,9 +261,7 @@ namespace ThreeDTilesLink.Tests
                 tileset,
                 reference,
                 new QueryRange(500d),
-                maxDepth: 16,
                 detailTargetM: 30d,
-                maxTiles: 64,
                 Matrix4x4d.Identity,
                 string.Empty,
                 0,
@@ -314,9 +308,7 @@ namespace ThreeDTilesLink.Tests
                 tilesetA,
                 reference,
                 range,
-                maxDepth: 8,
                 detailTargetM: 40d,
-                maxTiles: 32,
                 Matrix4x4d.Identity,
                 idPrefix: "12",
                 depthOffset: 0,
@@ -327,9 +319,7 @@ namespace ThreeDTilesLink.Tests
                 tilesetB,
                 reference,
                 range,
-                maxDepth: 8,
                 detailTargetM: 40d,
-                maxTiles: 32,
                 Matrix4x4d.Identity,
                 idPrefix: "1",
                 depthOffset: 0,

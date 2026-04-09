@@ -69,11 +69,11 @@ dotnet run --project src/ThreeDTilesLink -- stream \
 - `--range` defines the approximate square coverage half-width around the center point (X/Z local extent), not a strict spherical radius.
 - Large ranges prioritize coarse ancestor tiles first so the requested coverage is established before finer descendants arrive.
 - Add `--dry-run` to verify only the fetch and conversion path without sending anything to Resonite; in dry-run mode, `--resonite-port` is optional.
-- Useful tuning flags include `--tile-limit`, `--depth-limit`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
+- Useful tuning flags include `--detail`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
 - If `--resonite-host` is omitted, `localhost` is used.
 - When running from WSL against a Windows-hosted Resonite session, prefer host-side execution such as `cmd.exe /c dotnet.exe run ...` or `pwsh.exe`, because Linux-side `localhost` does not reliably mean the Windows host.
 - For live verification, clear old `3DTilesLink Session ...` roots before the case by running `tools/Invoke-ResoniteLinkCommand.ps1 cleanup-sessions`.
-- Treat the standard Tokyo Tower live case as `--latitude 35.65858 --longitude 139.745433 --range 60` without extra limiting arguments such as `--depth-limit`, unless the limit itself is what you are testing.
+- Treat the standard Tokyo Tower live case as `--latitude 35.65858 --longitude 139.745433 --range 60` without extra limiting arguments beyond the defaults.
 - If `--height-offset` is omitted, `0` is used.
 - The anchor height is sea level at the specified latitude/longitude, and `--height-offset` is applied relative to that anchor.
 - Run `dotnet run --project src/ThreeDTilesLink -- stream --help` for units and defaults.
@@ -94,6 +94,7 @@ At connection time, the app attaches session-root writable `DynamicValueVariable
 
 The Interactive loop reads those session-root values directly.
 For convenience, the same input values are also exposed through fixed `World/ThreeDTilesLink.*` alias `DynamicValueVariable<T>` members driven through `ValueCopy<T>`.
+Treat those aliases as convenience mirrors, not the primary control surface.
 For the Interactive input parameters (`Latitude` / `Longitude` / `Range` / `Search`), `ValueCopy.WriteBack` is enabled so changes from `World/` flow back into the session-side values.
 For observation-only aliases, `ValueCopy.WriteBack` stays disabled so changes on the alias side do not overwrite the source values.
 Those observation aliases stay fixed at:
@@ -106,9 +107,10 @@ Those observation aliases stay fixed at:
 `World/ThreeDTilesLink.License` is the mandatory attribution surface for the currently visible Google tiles, not optional status text. `World/ThreeDTilesLink.AttributionRequirements` exposes the renderer-side compliance rule. If your renderer needs a Google Maps logo for compliance, implement that logo on the user side and keep it visually separate from Resonite or other third-party logos.
 
 Value updates are handled with debounce/throttle; when a new run starts, the previous run task is canceled and retained tiles are reconciled for the latest selection.
-During overlapping updates, retained tiles outside the latest `Range` are removed by default so the visible coverage follows the current selection instead of sticking to an older extent.
+During overlapping updates, retained tiles outside the latest `Range` are removed.
 If `Search` is updated to a non-empty string, the app resolves it with the Google Geocoding API and writes the resulting coordinates back into `Latitude` / `Longitude`.
-If the Interactive `Range` value is `0` or less, no streaming run is started.
+If the Interactive `Range` value is `0` or less, or if `Latitude` / `Longitude` are invalid, no streaming run is started. Existing streamed content can be removed from Resonite separately if needed.
+If a run fails after the progress surface is available, `World/ThreeDTilesLink.ProgressText` shows the latest error.
 When `Range` is large, the run first secures visible coverage with coarse ancestor tiles before refining toward smaller descendants.
 
 ```bash

@@ -42,8 +42,6 @@ namespace ThreeDTilesLink.Tests
                 "--height-offset", "20",
                 "--resonite-host", "127.0.0.1",
                 "--resonite-port", "12000",
-                "--tile-limit=128",
-                "--depth-limit", "16",
                 "--detail", "25",
                 "--content-workers", "3",
                 "--resonite-send-workers", "5",
@@ -51,7 +49,6 @@ namespace ThreeDTilesLink.Tests
                 "--poll-interval", "250",
                 "--debounce=800",
                 "--throttle", "3000",
-                "--dry-run",
                 "--log-level", "Trace"
             ]);
 
@@ -77,19 +74,6 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.ShouldRun.Should().BeTrue();
             InteractiveCommandOptions parsed = invocation.Options!;
             _ = parsed.ResoniteHost.Should().Be("localhost");
-        }
-
-        [Fact]
-        public void Parse_DefaultsTileLimitTo2048()
-        {
-            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
-            [
-                "--resonite-port", "12000"
-            ]);
-
-            _ = invocation.ShouldRun.Should().BeTrue();
-            InteractiveCommandOptions parsed = invocation.Options!;
-            _ = parsed.TileLimit.Should().Be(2048);
         }
 
         [Fact]
@@ -165,8 +149,6 @@ namespace ThreeDTilesLink.Tests
         [Theory]
         [InlineData("--resonite-port", "0")]
         [InlineData("--resonite-port", "65536")]
-        [InlineData("--tile-limit", "0")]
-        [InlineData("--depth-limit", "0")]
         [InlineData("--detail", "0")]
         [InlineData("--timeout", "0")]
         [InlineData("--poll-interval", "0")]
@@ -183,6 +165,24 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.ShouldRun.Should().BeFalse();
             _ = invocation.ExitCode.Should().Be(1);
             _ = invocation.Output.Should().Contain("Invalid command values.");
+        }
+
+        [Theory]
+        [InlineData("--tile-limit", "1")]
+        [InlineData("--max-tiles", "1")]
+        [InlineData("--depth-limit", "1")]
+        [InlineData("--max-depth", "1")]
+        [InlineData("--dry-run", "")]
+        public void Parse_RejectsRemovedArguments(string option, string value)
+        {
+            string[] args = string.IsNullOrEmpty(value)
+                ? ["--resonite-port", "12000", option]
+                : ["--resonite-port", "12000", option, value];
+            CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(args);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(1);
+            _ = invocation.Output.Should().Contain($"{option} is no longer supported");
         }
     }
 }

@@ -5,7 +5,6 @@ namespace ThreeDTilesLink.Core.Models
         int ResonitePort,
         double HeightOffset,
         TraversalOptions Traversal,
-        bool DryRun,
         string? ApiKey,
         bool RemoveOutOfRange,
         WatchOptions Watch);

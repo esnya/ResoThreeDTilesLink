@@ -155,13 +155,6 @@ namespace ThreeDTilesLink.Core.Pipeline
             TileSelectionInteractiveExecutionContext? interactiveContext,
             CancellationToken cancellationToken)
         {
-            GoogleTilesAuth auth = await BuildAuthAsync(request).ConfigureAwait(false);
-            if (!request.Output.DryRun && request.Output.ManageConnection)
-            {
-                s_connectingToResonite(_logger, request.Output.Host, request.Output.Port, null);
-                await _resoniteSession.ConnectAsync(request.Output.Host, request.Output.Port, cancellationToken).ConfigureAwait(false);
-            }
-
             using var workerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var discoveryTasks = new Dictionary<string, DiscoveryTaskEntry>(StringComparer.Ordinal);
             var writerTasks = new List<Task<WriterCompletion>>();
@@ -175,6 +168,22 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
+                GoogleTilesAuth auth;
+                try
+                {
+                    auth = await BuildAuthAsync(request).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    await TrySetFailureProgressAsync(request, ex).ConfigureAwait(false);
+                    throw;
+                }
+                if (!request.Output.DryRun && request.Output.ManageConnection)
+                {
+                    s_connectingToResonite(_logger, request.Output.Host, request.Output.Port, null);
+                    await _resoniteSession.ConnectAsync(request.Output.Host, request.Output.Port, cancellationToken).ConfigureAwait(false);
+                }
+
                 s_fetchingRootTileset(_logger, null);
                 if (!request.Output.DryRun)
                 {
@@ -323,6 +332,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             catch (Exception ex)
             {
                 pendingFailure = ExceptionDispatchInfo.Capture(ex);
+                await TrySetFailureProgressAsync(request, ex).ConfigureAwait(false);
                 throw;
             }
             finally
@@ -1082,6 +1092,38 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             throw new InvalidOperationException("GOOGLE_MAPS_API_KEY is required for Google Map Tiles API requests.");
+        }
+
+        [SuppressMessage(
+            "Reliability",
+            "CA1031:DoNotCatchGeneralExceptionTypes",
+            Justification = "Failure progress reporting is best-effort and must not hide the original run failure.")]
+        private async Task TrySetFailureProgressAsync(TileRunRequest request, Exception exception)
+        {
+            if (request.Output.DryRun)
+            {
+                return;
+            }
+
+            try
+            {
+                await _sessionMetadataPort.SetProgressAsync(
+                    request.Output.MeshParentSlotId,
+                    0f,
+                    $"Failed: {FormatFailureMessage(exception)}",
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+        }
+
+        private static string FormatFailureMessage(Exception exception)
+        {
+            string message = string.IsNullOrWhiteSpace(exception.Message)
+                ? exception.GetType().Name
+                : exception.Message.Trim();
+            return message.Length <= 200 ? message : $"{message[..197]}...";
         }
     }
 }
