@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check for existing release
+        id: existing
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if gh release view "$TAG_NAME" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists for tag $TAG_NAME"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create draft release
+        if: steps.existing.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          gh release create "$TAG_NAME" \
+            --repo "$REPOSITORY" \
+            --draft \
+            --title "$TAG_NAME" \
+            --generate-notes

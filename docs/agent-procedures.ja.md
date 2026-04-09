@@ -44,6 +44,15 @@
 6. `.ja.*` を英語正本より先に変更したり、独立して更新したりしない
 7. 英語正本を変更したら、対応する `.ja.*` は全文再翻訳で作り直し、日本語ファイル全体を最新の英語内容に一致させる
 
+## リリース手順
+
+1. GitHub Releases を changelog の正本として扱い、別個の `CHANGELOG.md` は追加しない
+2. 正式リリース用のタグは `vX.Y.Z` 形式で作る
+3. release tag を GitHub へ push して、draft release の自動作成を起動する
+4. GitHub 上で自動生成された release notes を確認し、必要がある場合だけ label や本文を調整する
+5. リリースの準備ができたら draft を手動で publish する
+6. release 方針を明示的に変えない限り、独自のバイナリアセットは添付しない
+
 ## 検証
 
 - 通常は `dotnet test ThreeDTilesLink.slnx`
