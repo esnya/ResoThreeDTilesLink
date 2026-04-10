@@ -36,10 +36,9 @@ namespace ThreeDTilesLink.Core.Pipeline
             ArgumentNullException.ThrowIfNull(createReference);
             ArgumentNullException.ThrowIfNull(overlaps);
 
-            InteractiveLoopState next = ApplyObservedSearch(state, snapshot.SearchText, now);
-            next = ApplyObservedValues(next, snapshot.Values, now);
-
             var actions = new List<InteractiveAction>();
+            InteractiveLoopState next = ApplyObservedSearch(state, snapshot.SearchText, now);
+            next = ApplyObservedValues(next, snapshot.Values, snapshot.StopRequested, now, actions);
 
             if (next.PendingSearch is not null &&
                 next.PendingSearchChangedAt is not null &&
@@ -141,8 +140,25 @@ namespace ThreeDTilesLink.Core.Pipeline
         private static InteractiveLoopState ApplyObservedValues(
             InteractiveLoopState state,
             SelectionInputValues? currentValues,
-            DateTimeOffset now)
+            bool stopRequested,
+            DateTimeOffset now,
+            List<InteractiveAction> actions)
         {
+            if (stopRequested)
+            {
+                if (state.ActiveRun is not null)
+                {
+                    actions.Add(new CancelActiveRunAction());
+                }
+
+                return state with
+                {
+                    LastObservedValues = null,
+                    PendingValues = null,
+                    PendingValuesChangedAt = null
+                };
+            }
+
             bool resolvedCoordinatesReflected = false;
             if (currentValues is not null && state.AwaitingResolvedCoordinates is not null)
             {

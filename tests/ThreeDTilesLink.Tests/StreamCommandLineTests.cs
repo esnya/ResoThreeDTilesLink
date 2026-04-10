@@ -47,8 +47,6 @@ namespace ThreeDTilesLink.Tests
                 "--range=400",
                 "--resonite-host", "127.0.0.1",
                 "--resonite-port=12000",
-                "--tile-limit", "128",
-                "--depth-limit=16",
                 "--detail", "25",
                 "--content-workers", "3",
                 "--resonite-send-workers", "5",
@@ -65,8 +63,6 @@ namespace ThreeDTilesLink.Tests
             _ = parsed.RangeM.Should().Be(400d);
             _ = parsed.ResoniteHost.Should().Be("127.0.0.1");
             _ = parsed.ResonitePort.Should().Be(12000);
-            _ = parsed.TileLimit.Should().Be(128);
-            _ = parsed.DepthLimit.Should().Be(16);
             _ = parsed.DetailTargetM.Should().Be(25d);
             _ = parsed.ContentWorkers.Should().Be(3);
             _ = parsed.ResoniteSendWorkers.Should().Be(5);
@@ -89,22 +85,6 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.ShouldRun.Should().BeTrue();
             StreamCommandOptions parsed = invocation.Options!;
             _ = parsed.ResoniteHost.Should().Be("localhost");
-        }
-
-        [Fact]
-        public void Parse_DefaultsTileLimitTo2048()
-        {
-            CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
-            [
-                "--latitude", "35.65858",
-                "--longitude", "139.745433",
-                "--range", "400",
-                "--resonite-port", "12000"
-            ]);
-
-            _ = invocation.ShouldRun.Should().BeTrue();
-            StreamCommandOptions parsed = invocation.Options!;
-            _ = parsed.TileLimit.Should().Be(2048);
         }
 
         [Fact]
@@ -195,8 +175,6 @@ namespace ThreeDTilesLink.Tests
         [Theory]
         [InlineData("--range", "0")]
         [InlineData("--range", "-1")]
-        [InlineData("--tile-limit", "0")]
-        [InlineData("--depth-limit", "0")]
         [InlineData("--detail", "0")]
         [InlineData("--timeout", "-1")]
         public void Parse_RejectsInvalidPositiveNumericArguments(string option, string value)
@@ -252,6 +230,27 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.ShouldRun.Should().BeFalse();
             _ = invocation.ExitCode.Should().Be(1);
             _ = invocation.Output.Should().Contain($"Invalid value for {option}: {value}");
+        }
+
+        [Theory]
+        [InlineData("--tile-limit")]
+        [InlineData("--max-tiles")]
+        [InlineData("--depth-limit")]
+        [InlineData("--max-depth")]
+        public void Parse_RejectsRemovedLimitArguments(string option)
+        {
+            CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
+            [
+                "--latitude", "35.0",
+                "--longitude", "139.0",
+                "--range", "400",
+                "--resonite-port", "12000",
+                option, "1"
+            ]);
+
+            _ = invocation.ShouldRun.Should().BeFalse();
+            _ = invocation.ExitCode.Should().Be(1);
+            _ = invocation.Output.Should().Contain($"{option} is no longer supported");
         }
     }
 }

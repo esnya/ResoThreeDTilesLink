@@ -214,14 +214,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                 placementReference,
                 new TraversalOptions(
                     rangeM,
-                    options.Traversal.MaxTiles,
-                    options.Traversal.MaxDepth,
                     options.Traversal.DetailTargetM,
                     options.Traversal.BootstrapRangeMultiplier),
                 new ResoniteOutputOptions(
                     options.ResoniteHost,
                     options.ResonitePort,
-                    options.DryRun,
+                    false,
                     ManageConnection: false),
                 options.ApiKey);
         }

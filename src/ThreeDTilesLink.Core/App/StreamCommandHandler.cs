@@ -21,8 +21,6 @@ namespace ThreeDTilesLink.Core.App
                 reference,
                 new TraversalOptions(
                     options.RangeM,
-                    options.TileLimit,
-                    options.DepthLimit,
                     options.DetailTargetM),
                 new ResoniteOutputOptions(
                     options.ResoniteHost,

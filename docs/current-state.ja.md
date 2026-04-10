@@ -51,12 +51,14 @@
 - `World/` alias は `DynamicField` ではなく、session-side の値を `ValueCopy<T>` で Drive する別の `DynamicValueVariable<T>` として公開する
 - Interactive の入力 source 値と観測用 alias は分けて扱う。入力 source 値は session root slot 上に置き、観測用 alias は `World/ThreeDTilesLink.*` 配下に固定する
 - Target 側からの上書きは `ValueCopy.WriteBack` で制御し、`World/` から session-side へ戻す必要がある Interactive 入力パラメーターにだけ有効化する。観測専用 alias では無効のままにする
-- interactive では、overlap する再実行時でも最新の `Range` から外れた retained tile を既定で除去し、可視 coverage が古い範囲に張り付かないようにする
+- interactive では、overlap する再実行時でも最新の `Range` から外れた retained tile を除去し、可視 coverage が古い範囲に張り付かないようにする
+- interactive では、`Range`、`Latitude`、`Longitude` のいずれかが無効なときは新しい streaming run を開始しない。すでに streamed 済みの content の除去は Resonite 側で明示的に行う
 - session の license credit は session-side の `DynamicValueVariable<string>` から固定 alias `World/ThreeDTilesLink.License` へ公開する
 - `World/ThreeDTilesLink.License` は現在表示中の Google tiles 向けの必須 compliance 出力として扱い、任意の metadata としては扱わない
 - renderer 側の compliance ガイダンスは固定 alias `World/ThreeDTilesLink.AttributionRequirements` へ公開する
 - Progress は親スロットに置いた session-side の `DynamicValueVariable<float>` から `ValueCopy<float>` 経由で `World/ThreeDTilesLink.Progress` へ `0.0..1.0` の float として公開する
 - 人間向けの進捗文字列は親スロットに置いた session-side の `DynamicValueVariable<string>` から `ValueCopy<string>` 経由で `World/ThreeDTilesLink.ProgressText` へ公開する
+- progress surface が利用可能になった後で run が失敗した場合は、エラー要約を `World/ThreeDTilesLink.ProgressText` に公開する
 
 ## WSL からの単発確認
 
@@ -86,7 +88,7 @@
 ## Live 検証の観点
 
 - `stream` の確認では、東京タワー付近の小さい範囲を優先する。例: `--latitude 35.65858 --longitude 139.745433 --range 60`
-- 東京タワーの標準 live ケースは、上記の条件に対して `--depth-limit` などの制限引数を足さない形とする。制限引数は、その制限自体を検証したい場合だけ追加する
+- 東京タワーの標準 live ケースは、通常の既定値のままで扱う
 - `stream` では、粗いタイルから細かいタイルへ収束する過程で、可視範囲が維持されるかを見る
 - `--range` は中心点周辺の近似正方形カバレッジの半幅（X/Z 平面）で、厳密な球面半径ではない
 - 要求した `range` が大きい場合、細かい descendant より先に粗い coverage ancestor が送られることがある。この順序は bootstrap の意図した挙動であり、それだけで退行とはみなさない

@@ -30,7 +30,7 @@ This document contains procedures for AI and coding agents. It keeps only decisi
 10. If exactly one session is present, omit `-Port` for `repl`, `send-json`, `cleanup-slot`, and `cleanup-sessions`; the script resolves it automatically.
 11. If multiple sessions are present, select one with `-SessionId` or `-SessionName` instead of copying a fixed port into notes or scripts.
 12. Use the official ResoniteLink REPL via `tools/Invoke-ResoniteLinkCommand.ps1 repl ...` for live inspection and member confirmation when raw JSON inspection is insufficient.
-13. Use the Tokyo Tower live case without extra limiting arguments such as `--depth-limit` as the default verification path unless the limit itself is under test.
+13. Use the Tokyo Tower live case with the normal defaults as the default verification path.
 14. If application entry points still require `--resonite-port`, discover the current session immediately before running and treat that value as ephemeral input only.
 15. If real-environment verification was not possible, state that assumption explicitly in the change description.
 16. If the change affects Google tile display or metadata, verify that the published attribution still includes `Google Maps` plus the currently required provider attributions, and re-check whether README user guidance for logo and third-party renderer handling needs updates.

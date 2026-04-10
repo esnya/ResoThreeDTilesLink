@@ -10,6 +10,5 @@
     <Project Path="tools/ResoniteRawJson/ResoniteRawJson.csproj" />
     <Project Path="tools/ResoniteRepl/ResoniteRepl.csproj" />
     <Project Path="tools/ResoniteSessionCleanup/ResoniteSessionCleanup.csproj" />
-    <Project Path="tools/TextureSamplingExperiment/TextureSamplingExperiment.csproj" />
   </Folder>
 </Solution>

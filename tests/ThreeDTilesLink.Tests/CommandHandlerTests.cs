@@ -19,8 +19,6 @@ namespace ThreeDTilesLink.Tests
                 400d,
                 "localhost",
                 12000,
-                128,
-                16,
                 25d,
                 3,
                 4,
@@ -36,8 +34,6 @@ namespace ThreeDTilesLink.Tests
             _ = request.SelectionReference.Height.Should().Be(120d);
             _ = request.PlacementReference.Should().BeEquivalentTo(request.SelectionReference);
             _ = request.Traversal.RangeM.Should().Be(400d);
-            _ = request.Traversal.MaxTiles.Should().Be(128);
-            _ = request.Traversal.MaxDepth.Should().Be(16);
             _ = request.Traversal.DetailTargetM.Should().Be(25d);
             _ = request.Output.Host.Should().Be("localhost");
             _ = request.Output.Port.Should().Be(12000);
@@ -52,8 +48,6 @@ namespace ThreeDTilesLink.Tests
                 20d,
                 "localhost",
                 12000,
-                128,
-                16,
                 25d,
                 3,
                 4,
@@ -62,7 +56,6 @@ namespace ThreeDTilesLink.Tests
                 250,
                 800,
                 3000,
-                true,
                 LogLevel.Trace);
 
             var request = InteractiveCommandHandler.CreateRequest(options, "key");
@@ -71,10 +64,7 @@ namespace ThreeDTilesLink.Tests
             _ = request.ResonitePort.Should().Be(12000);
             _ = request.HeightOffset.Should().Be(20d);
             _ = request.Traversal.RangeM.Should().Be(0d);
-            _ = request.Traversal.MaxTiles.Should().Be(128);
-            _ = request.Traversal.MaxDepth.Should().Be(16);
             _ = request.Traversal.DetailTargetM.Should().Be(25d);
-            _ = request.DryRun.Should().BeTrue();
             _ = request.ApiKey.Should().Be("key");
             _ = request.RemoveOutOfRange.Should().BeTrue();
             _ = request.Watch.PollInterval.Should().Be(TimeSpan.FromMilliseconds(250));

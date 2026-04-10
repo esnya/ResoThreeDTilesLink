@@ -11,8 +11,6 @@ namespace ThreeDTilesLink.Core.CommandLine
         double RangeM,
         string ResoniteHost,
         int ResonitePort,
-        int TileLimit,
-        int DepthLimit,
         double DetailTargetM,
         int ContentWorkers,
         int ResoniteSendWorkers,
@@ -30,23 +28,25 @@ namespace ThreeDTilesLink.Core.CommandLine
                 new("--latitude", CommandOptionValueKind.DecimalNumber, "Center latitude.", Required: true, Unit: "degrees"),
                 new("--longitude", CommandOptionValueKind.DecimalNumber, "Center longitude.", Required: true, Unit: "degrees"),
                 CommonCommandOptions.HeightOffset(),
-                new("--range", CommandOptionValueKind.DecimalNumber, "Minimum coverage range from the center.", Required: true, Unit: "m", RenamedFrom: ["--half-width-m"]),
+                new("--range", CommandOptionValueKind.DecimalNumber, "Approximate square coverage half-width from the center (X/Z local extent).", Required: true, Unit: "m", RenamedFrom: ["--half-width-m"]),
                 CommonCommandOptions.ResoniteHost(),
                 CommonCommandOptions.ResonitePort(required: false),
-                CommonCommandOptions.TileLimit("Maximum number of tiles to stream."),
-                CommonCommandOptions.DepthLimit("Maximum traversal depth."),
                 CommonCommandOptions.DetailTarget(),
                 CommonCommandOptions.ContentWorkers("Maximum number of tile content fetch/decode workers."),
                 CommonCommandOptions.ResoniteSendWorkers("Maximum number of parallel Resonite send workers."),
                 CommonCommandOptions.MeasurePerformance(),
                 CommonCommandOptions.Timeout(),
-                CommonCommandOptions.DryRun(),
+                new("--dry-run", CommandOptionValueKind.Switch, "Fetch and convert tiles without sending anything to Resonite.", DefaultValue: false),
                 CommonCommandOptions.LogLevelOption()
             ],
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["--lat"] = "--lat was renamed to --latitude.",
                 ["--lon"] = "--lon was renamed to --longitude.",
+                ["--tile-limit"] = "--tile-limit is no longer supported.",
+                ["--max-tiles"] = "--max-tiles is no longer supported.",
+                ["--depth-limit"] = "--depth-limit is no longer supported.",
+                ["--max-depth"] = "--max-depth is no longer supported.",
                 ["--render-start-span-ratio"] = "--render-start-span-ratio is no longer supported."
             });
 
@@ -78,8 +78,6 @@ namespace ThreeDTilesLink.Core.CommandLine
                 !CommandInvocationBuilder.TryGetValue(parsed, "--height-offset", out double heightOffset) ||
                 !CommandInvocationBuilder.TryGetPositiveDouble(parsed, "--range", out double rangeM) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--resonite-host", out string? resoniteHost) ||
-                !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--tile-limit", out int tileLimit) ||
-                !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--depth-limit", out int depthLimit) ||
                 !CommandInvocationBuilder.TryGetPositiveDouble(parsed, "--detail", out double detailTargetM) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--timeout", out int timeoutSec) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--measure-performance", out bool measurePerformance) ||
@@ -127,8 +125,6 @@ namespace ThreeDTilesLink.Core.CommandLine
                 rangeM,
                 resoniteHost,
                 resonitePort,
-                tileLimit,
-                depthLimit,
                 detailTargetM,
                 contentWorkers,
                 resoniteSendWorkers,
