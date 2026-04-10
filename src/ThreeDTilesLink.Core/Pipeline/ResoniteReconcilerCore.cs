@@ -366,6 +366,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                     .Where(tile => desiredView.SelectedStableIds.Contains(tile.StableId))
                     .Where(tile => !desiredView.StableIds.Contains(tile.StableId))
                     .Where(tile => !writerState.FailedRemovalStableIds.Contains(tile.StableId))
+                    .Where(tile => !HasInFlightSendDescendant(
+                        facts,
+                        writerState,
+                        tile.StableId))
                     .OrderByDescending(static tile => tile.AncestorStableIds.Count)
                     .ThenBy(static tile => tile.TileId, StringComparer.Ordinal)
                     .FirstOrDefault();
@@ -435,6 +439,53 @@ namespace ThreeDTilesLink.Core.Pipeline
                 desiredView.SelectedStableIds.Contains(tile.StableId) &&
                 !desiredView.StableIds.Contains(tile.StableId) &&
                 !writerState.FailedRemovalStableIds.Contains(tile.StableId));
+        }
+
+        private static bool HasInFlightSendDescendant(
+            DiscoveryFacts facts,
+            WriterState writerState,
+            string stableId)
+        {
+            foreach (string candidateStableId in writerState.InFlightSendStableIds)
+            {
+                if (string.Equals(candidateStableId, stableId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (IsDescendantOf(facts, candidateStableId, stableId))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsDescendantOf(DiscoveryFacts facts, string stableId, string ancestorStableId)
+        {
+            if (!facts.Branches.TryGetValue(stableId, out TileBranchFact? fact))
+            {
+                return false;
+            }
+
+            string? currentStableId = fact.Tile.ParentStableId;
+            while (!string.IsNullOrWhiteSpace(currentStableId))
+            {
+                if (string.Equals(currentStableId, ancestorStableId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                if (!facts.Branches.TryGetValue(currentStableId, out TileBranchFact? parentFact))
+                {
+                    break;
+                }
+
+                currentStableId = parentFact.Tile.ParentStableId;
+            }
+
+            return false;
         }
 
         private static List<string> GetAncestorStableIds(DiscoveryFacts facts, string? parentStableId)

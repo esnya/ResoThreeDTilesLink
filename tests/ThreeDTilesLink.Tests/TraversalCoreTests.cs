@@ -159,6 +159,39 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void PlanWriterCommand_DoesNotRemoveParentWhileReplacementDescendantSendIsInFlight()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p", "https://example.com/p.glb", depth: 0, parentTileId: null, hasChildren: true, span: 120d),
+                CreateTile("j", "https://example.com/j.json", depth: 1, parentTileId: "p", hasChildren: true, span: 40d, stableId: StableId("j"), parentStableId: StableId("p")),
+                CreateTile("g", "https://example.com/g.glb", depth: 2, parentTileId: "j", hasChildren: false, span: 20d, stableId: StableId("g"), parentStableId: StableId("j"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent")
+            });
+            _ = writerState.InFlightSendStableIds.Add(StableId("g"));
+
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+
+            WriterCommand? removal = reconciler.PlanNextWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(3, 1, 0, 0),
+                dryRun: false,
+                allowSend: false,
+                allowMetadata: false);
+
+            _ = desired.StableIds.Should().Contain(StableId("p"));
+            _ = removal.Should().BeNull();
+        }
+
+        [Fact]
         public void ComputeDesiredView_VisibleParent_RemainsWhenSiblingReplacementBranchIsSelectedButNotYetVisible()
         {
             TraversalCore core = CreateCore(_ =>
