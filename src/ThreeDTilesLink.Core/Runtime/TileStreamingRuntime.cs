@@ -17,11 +17,29 @@ namespace ThreeDTilesLink.Core.Runtime
         private readonly HttpClient _httpClient;
         private readonly ResoniteSession _session;
         private readonly IGeoReferenceResolver _geoReferenceResolver;
-        private readonly IDisposable? _geoReferenceResolverDisposable;
+        private readonly IDisposable _geoReferenceResolverDisposable;
         private readonly RunPerformanceSummary? _performanceSummary;
         private bool _disposed;
 
-        internal TileStreamingRuntime(
+        private TileStreamingRuntime(
+            HttpClient httpClient,
+            ResoniteSession session,
+            IGeoReferenceResolver geoReferenceResolver,
+            IDisposable geoReferenceResolverDisposable,
+            RunPerformanceSummary? performanceSummary,
+            TileSelectionService selectionService,
+            InteractiveRunSupervisor interactiveSupervisor)
+        {
+            _httpClient = httpClient;
+            _session = session;
+            _geoReferenceResolver = geoReferenceResolver;
+            _geoReferenceResolverDisposable = geoReferenceResolverDisposable;
+            _performanceSummary = performanceSummary;
+            SelectionService = selectionService;
+            InteractiveSupervisor = interactiveSupervisor;
+        }
+
+        internal static async Task<TileStreamingRuntime> CreateAsync(
             ILoggerFactory loggerFactory,
             TimeSpan requestTimeout,
             int maxConcurrentTileProcessing = 8,
@@ -56,52 +74,45 @@ namespace ThreeDTilesLink.Core.Runtime
             };
             #pragma warning restore CA2000
 
-            _httpClient = new HttpClient(httpHandler)
+            var httpClient = new HttpClient(httpHandler)
             {
                 Timeout = requestTimeout,
                 DefaultRequestVersion = HttpVersion.Version20,
                 DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher
             };
-            _performanceSummary = measurePerformance ? new RunPerformanceSummary() : null;
 
-            var transformer = new GeographicCoordinateTransformer();
-            _geoReferenceResolver = new SeaLevelGeoReferenceResolver();
-            _geoReferenceResolverDisposable = _geoReferenceResolver as IDisposable;
-            var tilesSource = new HttpTilesSource(_httpClient, _performanceSummary);
-            var selector = new TileSelector(transformer);
-            var traversalCore = new TraversalCore(selector);
-            var reconcilerCore = new ResoniteReconcilerCore();
-            var extractor = new GlbMeshExtractor();
-            var contentProcessor = new TileContentProcessor(tilesSource, extractor, _performanceSummary);
-            var meshPlacementService = new MeshPlacementService(transformer);
-            var geocodingClient = new GoogleGeocodingClient(_httpClient);
-            var searchResolver = new SearchResolver(geocodingClient);
+            RunPerformanceSummary? performanceSummary = measurePerformance ? new RunPerformanceSummary() : null;
+            IGeoReferenceResolver geoReferenceResolver = new SeaLevelGeoReferenceResolver();
+            var geoReferenceResolverDisposable = (IDisposable)geoReferenceResolver;
             LinkInterface? linkInterface = null;
-            RuntimeResonitePorts resonitePorts;
+            ResoniteSession? session = null;
             try
             {
+                var transformer = new GeographicCoordinateTransformer();
+                var tilesSource = new HttpTilesSource(httpClient, performanceSummary);
+                var selector = new TileSelector(transformer);
+                var traversalCore = new TraversalCore(selector);
+                var reconcilerCore = new ResoniteReconcilerCore();
+                var extractor = new GlbMeshExtractor();
+                var contentProcessor = new TileContentProcessor(tilesSource, extractor, performanceSummary);
+                var meshPlacementService = new MeshPlacementService(transformer);
+                var geocodingClient = new GoogleGeocodingClient(httpClient);
+                var searchResolver = new SearchResolver(geocodingClient);
+
 #pragma warning disable CA2000
                 linkInterface = new LinkInterface();
-                var resoniteSession = new ResoniteSession(
+                session = new ResoniteSession(
                     linkInterface,
                     loggerFactory.CreateLogger<ResoniteSession>(),
                     assetImportWorkers: resoniteSendWorkers);
 #pragma warning restore CA2000
-                resonitePorts = new RuntimeResonitePorts(resoniteSession);
-            }
-            catch
-            {
-                linkInterface?.Dispose();
-                throw;
-            }
-            try
-            {
-                _session = resonitePorts.Session;
+
+                var resonitePorts = new RuntimeResonitePorts(session);
                 var selectionInputReader = new SelectionInputReader(
                     resonitePorts.InteractiveInputStore,
                     loggerFactory.CreateLogger<SelectionInputReader>());
 
-                SelectionService = new TileSelectionService(
+                var selectionService = new TileSelectionService(
                     tilesSource,
                     traversalCore,
                     reconcilerCore,
@@ -112,23 +123,44 @@ namespace ThreeDTilesLink.Core.Runtime
                     loggerFactory.CreateLogger<TileSelectionService>(),
                     maxConcurrentTileProcessing,
                     resoniteSendWorkers,
-                    _performanceSummary);
+                    performanceSummary);
 
-                InteractiveSupervisor = new InteractiveRunSupervisor(
-                    SelectionService,
+                var interactiveSupervisor = new InteractiveRunSupervisor(
+                    selectionService,
                     resonitePorts.InteractiveSession,
                     resonitePorts.InteractiveInputStore,
                     searchResolver,
                     transformer,
-                    _geoReferenceResolver,
+                    geoReferenceResolver,
                     new SystemClock(),
                     selectionInputReader,
                     loggerFactory,
                     loggerFactory.CreateLogger<InteractiveRunSupervisor>());
+
+                return new TileStreamingRuntime(
+                    httpClient,
+                    session,
+                    geoReferenceResolver,
+                    geoReferenceResolverDisposable,
+                    performanceSummary,
+                    selectionService,
+                    interactiveSupervisor);
             }
             catch
             {
-                resonitePorts.Session.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                if (session is not null)
+                {
+                    await session.DisposeAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    linkInterface?.Dispose();
+                }
+
+                geoReferenceResolverDisposable.Dispose();
+                performanceSummary?.Dispose();
+                httpClient.Dispose();
+
                 throw;
             }
         }
@@ -153,7 +185,7 @@ namespace ThreeDTilesLink.Core.Runtime
 
             _disposed = true;
             await _session.DisposeAsync().ConfigureAwait(false);
-            _geoReferenceResolverDisposable?.Dispose();
+            _geoReferenceResolverDisposable.Dispose();
             _performanceSummary?.Dispose();
             _httpClient.Dispose();
         }
