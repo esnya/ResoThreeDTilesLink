@@ -53,6 +53,11 @@ namespace ThreeDTilesLink.App
             {
                 _completion.TrySetExitCode(0);
             }
+            catch (Exception ex)
+            {
+                _completion.TrySetException(ex);
+                throw;
+            }
             finally
             {
                 _lifetime.StopApplication();
@@ -98,6 +103,11 @@ namespace ThreeDTilesLink.App
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 _completion.TrySetExitCode(0);
+            }
+            catch (Exception ex)
+            {
+                _completion.TrySetException(ex);
+                throw;
             }
             finally
             {

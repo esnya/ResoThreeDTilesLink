@@ -16,5 +16,11 @@ namespace ThreeDTilesLink.App
         {
             _ = _completion.TrySetResult(exitCode);
         }
+
+        internal void TrySetException(Exception exception)
+        {
+            ArgumentNullException.ThrowIfNull(exception);
+            _ = _completion.TrySetException(exception);
+        }
     }
 }
