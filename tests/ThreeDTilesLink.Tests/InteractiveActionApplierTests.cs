@@ -18,11 +18,11 @@ namespace ThreeDTilesLink.Tests
             var applier = new InteractiveActionApplier(
                 new StubTileSelectionService(),
                 new StubResoniteSession(),
-                new ThrowingInteractiveInputStore(new InvalidOperationException("synthetic input write failure")),
+                new ThrowingInteractiveInputStore(new HttpRequestException("synthetic input write failure")),
                 new FixedSearchResolver(new LocationSearchResult("Shibuya", 35.65858d, 139.745433d)),
                 new PassThroughTransformer(),
                 clock,
-                NullLogger<InteractiveRunSupervisor>.Instance);
+                NullLoggerFactory.Instance);
             InteractiveLoopState state = InteractiveLoopState.CreateInitial() with
             {
                 InputBinding = CreateInputBinding(),

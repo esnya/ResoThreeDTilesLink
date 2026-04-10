@@ -55,7 +55,7 @@ static async Task<int> RunAsync(string[] args)
     }
     catch (Exception ex)
     {
-        await Console.Error.WriteLineAsync(ex.Message).ConfigureAwait(false);
+        await Console.Error.WriteLineAsync(ex.ToString()).ConfigureAwait(false);
         return 1;
     }
     finally

@@ -123,6 +123,7 @@ namespace ThreeDTilesLink.Core.Runtime
                     _geoReferenceResolver,
                     new SystemClock(),
                     selectionInputReader,
+                    loggerFactory,
                     loggerFactory.CreateLogger<InteractiveRunSupervisor>());
             }
             catch

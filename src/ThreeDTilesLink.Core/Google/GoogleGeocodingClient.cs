@@ -11,7 +11,7 @@ namespace ThreeDTilesLink.Core.Google
             string normalizedApiKey = apiKey?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(normalizedApiKey))
             {
-                throw new InvalidOperationException("GOOGLE_MAPS_API_KEY is required for Google geocoding search.");
+                throw new ArgumentException("GOOGLE_MAPS_API_KEY is required for Google geocoding search.", nameof(apiKey));
             }
 
             string normalizedQuery = query?.Trim() ?? string.Empty;
@@ -29,13 +29,12 @@ namespace ThreeDTilesLink.Core.Google
             {
                 string responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
                 throw new HttpRequestException(
-                    $"Google geocoding HTTP {(int)response.StatusCode} {response.ReasonPhrase}. Body: {responseBody}",
+                    FormatHttpFailure(response.StatusCode, response.ReasonPhrase, responseBody),
                     null,
                     response.StatusCode);
             }
 
-            await using Stream responseStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            await using (responseStream.ConfigureAwait(false))
+            using Stream responseStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             {
                 using JsonDocument document = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -124,6 +123,21 @@ namespace ThreeDTilesLink.Core.Google
 
             value = default;
             return false;
+        }
+
+        private static string FormatHttpFailure(
+            System.Net.HttpStatusCode statusCode,
+            string? reasonPhrase,
+            string responseBody)
+        {
+            const int MaxBodyLength = 256;
+            string bodyPreview = responseBody.Length <= MaxBodyLength
+                ? responseBody
+                : $"{responseBody[..MaxBodyLength]}...";
+
+            return string.IsNullOrWhiteSpace(bodyPreview)
+                ? $"Google geocoding HTTP {(int)statusCode} {reasonPhrase}."
+                : $"Google geocoding HTTP {(int)statusCode} {reasonPhrase}. Body preview: {bodyPreview}";
         }
     }
 

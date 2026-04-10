@@ -52,7 +52,7 @@ namespace ThreeDTilesLink.Core.Tiles
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken).ConfigureAwait(false);
             await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
-            await using Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             using var reader = new StreamReader(contentStream);
             string json = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
             Uri sourceUri = response.RequestMessage?.RequestUri ?? tilesetUri;
@@ -61,6 +61,7 @@ namespace ThreeDTilesLink.Core.Tiles
             {
                 performanceSummary.AddFetch(DateTimeOffset.UtcNow - startedAt);
             }
+
             return TilesetParser.Parse(json, sourceUri);
         }
 
@@ -75,7 +76,7 @@ namespace ThreeDTilesLink.Core.Tiles
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken).ConfigureAwait(false);
             await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
-            await using Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             using var buffer = new MemoryStream();
             await contentStream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
             byte[] bytes = buffer.ToArray();
@@ -83,6 +84,7 @@ namespace ThreeDTilesLink.Core.Tiles
             {
                 performanceSummary.AddFetch(DateTimeOffset.UtcNow - startedAt);
             }
+
             return bytes;
         }
 
@@ -134,13 +136,28 @@ namespace ThreeDTilesLink.Core.Tiles
                 return;
             }
 
-            await using Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             using var reader = new StreamReader(contentStream);
             string body = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
             throw new HttpRequestException(
-                $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}. Body: {body}",
+                FormatHttpFailure(response.StatusCode, response.ReasonPhrase, body),
                 null,
                 response.StatusCode);
+        }
+
+        private static string FormatHttpFailure(
+            System.Net.HttpStatusCode statusCode,
+            string? reasonPhrase,
+            string responseBody)
+        {
+            const int MaxBodyLength = 256;
+            string bodyPreview = responseBody.Length <= MaxBodyLength
+                ? responseBody
+                : $"{responseBody[..MaxBodyLength]}...";
+
+            return string.IsNullOrWhiteSpace(bodyPreview)
+                ? $"HTTP {(int)statusCode} {reasonPhrase}."
+                : $"HTTP {(int)statusCode} {reasonPhrase}. Body preview: {bodyPreview}";
         }
 
         private sealed record CachedTilesetJson(Uri SourceUri, string Json);

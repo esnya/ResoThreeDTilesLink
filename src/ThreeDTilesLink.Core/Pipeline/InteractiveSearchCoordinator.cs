@@ -1,6 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Net.WebSockets;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Google;
@@ -13,12 +12,12 @@ namespace ThreeDTilesLink.Core.Pipeline
         IInteractiveInputStore interactiveInputStore,
         ISearchResolver searchResolver,
         IClock clock,
-        ILogger<InteractiveRunSupervisor> logger)
+        ILogger<InteractiveSearchCoordinator> logger)
     {
         private readonly IInteractiveInputStore _interactiveInputStore = interactiveInputStore;
         private readonly ISearchResolver _searchResolver = searchResolver;
         private readonly IClock _clock = clock;
-        private readonly ILogger<InteractiveRunSupervisor> _logger = logger;
+        private readonly ILogger<InteractiveSearchCoordinator> _logger = logger;
 
         [SuppressMessage(
             "Design",
@@ -111,14 +110,9 @@ namespace ThreeDTilesLink.Core.Pipeline
                 or ResoniteLinkNoResponseException
                 or ResoniteLinkDisconnectedException
                 or HttpRequestException
-                or JsonException
                 or TimeoutException
-                or NotSupportedException
                 or ObjectDisposedException
-                or WebSocketException
-                or UriFormatException
-                or InvalidOperationException
-                or OverflowException;
+                or WebSocketException;
         }
     }
 }
