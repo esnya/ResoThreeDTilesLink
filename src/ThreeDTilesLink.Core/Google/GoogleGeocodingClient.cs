@@ -22,18 +22,19 @@ namespace ThreeDTilesLink.Core.Google
 
             using HttpResponseMessage response = await _httpClient.GetAsync(
                 BuildRequestUri(normalizedApiKey, normalizedQuery),
+                HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken).ConfigureAwait(false);
 
-            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
+                string responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
                 throw new HttpRequestException(
                     $"Google geocoding HTTP {(int)response.StatusCode} {response.ReasonPhrase}. Body: {responseBody}",
                     null,
                     response.StatusCode);
             }
 
-            using var responseStream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(responseBody));
+            await using Stream responseStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             await using (responseStream.ConfigureAwait(false))
             {
                 using JsonDocument document = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken).ConfigureAwait(false);
