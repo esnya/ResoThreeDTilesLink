@@ -150,6 +150,8 @@ namespace ThreeDTilesLink.Core.Resonite
         private readonly ResoniteAssetImportPool _assetImportPool = new(
             assetImportWorkers > 0 ? assetImportWorkers : throw new ArgumentOutOfRangeException(nameof(assetImportWorkers), "Asset import worker count must be positive."),
             linkInterfaceFactory ?? (() => new LinkInterface()));
+        private readonly Lock _disposeLock = new();
+        private Task? _disposeTask;
 
         private bool _directClientInitialized;
         private Uri? _connectionUri;
@@ -738,12 +740,25 @@ namespace ThreeDTilesLink.Core.Resonite
             _ = EnsureSuccess(response);
         }
 
-        public async ValueTask DisposeAsync()
+        public ValueTask DisposeAsync()
+        {
+            lock (_disposeLock)
+            {
+                if (_disposeTask is null || _disposeTask.IsFaulted || _disposeTask.IsCanceled)
+                {
+                    _disposeTask = DisposeCoreAsync();
+                }
+
+                return new ValueTask(_disposeTask);
+            }
+        }
+
+        private async Task DisposeCoreAsync()
         {
             await DisconnectCoreAsync(CancellationToken.None).ConfigureAwait(false);
+            await _assetImportPool.DisposeAsync().ConfigureAwait(false);
             _connectionGate.Dispose();
             _streamPlacementGate.Dispose();
-            await _assetImportPool.DisposeAsync().ConfigureAwait(false);
         }
 
         private async Task DisconnectCoreAsync(CancellationToken cancellationToken)
