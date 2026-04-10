@@ -347,7 +347,13 @@ namespace ThreeDTilesLink.Core.Pipeline
 	                    CancellationToken shutdownToken = shutdownCts.Token;
                     if (completedSuccessfully && pendingFailure is null)
                     {
+                        try
+                        {
 	                        await _resoniteSession.DisconnectAsync(shutdownToken).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
+                        {
+                        }
 	                    }
 	                    else
 	                    {

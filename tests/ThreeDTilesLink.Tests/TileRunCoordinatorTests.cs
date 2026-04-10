@@ -1723,6 +1723,31 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task Run_Success_IgnoresDisconnectTimeoutCancellation()
+        {
+            var tileset = new Tileset(new Tile
+            {
+                Id = "root",
+                Children =
+                [
+                    new Tile { Id = "0", ContentUri = new Uri("https://example.com/a.glb") }
+                ]
+            });
+
+            var client = new FakeResoniteSession(failDisconnectWhenCanceled: true);
+            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+
+            RunSummary summary = await coordinator.RunAsync(
+                CreateRequest(dryRun: false),
+                CancellationToken.None);
+
+            _ = summary.StreamedMeshes.Should().Be(1);
+            _ = summary.FailedTiles.Should().Be(0);
+            _ = client.DisconnectCount.Should().Be(1);
+            _ = client.DisconnectCancellationObserved.Should().BeTrue();
+        }
+
+        [Fact]
         public async Task RunInteractive_RemovalFailure_DoesNotLivelock_AndKeepsRemainingVisibleTile()
         {
             var tileset = new Tileset(new Tile
@@ -2041,7 +2066,8 @@ namespace ThreeDTilesLink.Tests
             int? failOnRemoveNumber = null,
             bool failProgressUpdates = false,
             bool failLicenseUpdates = false,
-            bool failDisconnect = false) : IResoniteSession, IResoniteSessionMetadataPort
+            bool failDisconnect = false,
+            bool failDisconnectWhenCanceled = false) : IResoniteSession, IResoniteSessionMetadataPort
         {
             private readonly bool _failFirstSend = failFirstSend;
             private readonly string? _failOnNameContains = failOnNameContains;
@@ -2055,6 +2081,7 @@ namespace ThreeDTilesLink.Tests
             private readonly string? _failOnRemoveContains = failOnRemoveContains;
             private readonly int? _failOnRemoveNumber = failOnRemoveNumber;
             private readonly bool _failDisconnect = failDisconnect;
+            private readonly bool _failDisconnectWhenCanceled = failDisconnectWhenCanceled;
             private readonly FakeSessionMetadataPort _metadata = new(failProgressUpdates, failLicenseUpdates);
             private int _activeStreams;
             private int _maxConcurrentStreams;
@@ -2068,6 +2095,7 @@ namespace ThreeDTilesLink.Tests
             public int RemoveCount { get; private set; }
             public int RemoveAttemptCount => _removeAttempts;
             public bool LastDisconnectCancellationRequested { get; private set; }
+            public bool DisconnectCancellationObserved { get; private set; }
             public List<string> LicenseCredits => _metadata.LicenseCredits;
             public List<PlacedMeshPayload> Payloads { get; } = [];
             public List<string> RemovedSlotIds { get; } = [];
@@ -2167,7 +2195,25 @@ namespace ThreeDTilesLink.Tests
                     throw new InvalidOperationException("synthetic disconnect failure");
                 }
 
+                if (_failDisconnectWhenCanceled)
+                {
+                    return WaitForDisconnectCancellationAsync(cancellationToken);
+                }
+
                 return Task.CompletedTask;
+            }
+
+            private async Task WaitForDisconnectCancellationAsync(CancellationToken cancellationToken)
+            {
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    DisconnectCancellationObserved = true;
+                    throw;
+                }
             }
 
             private void UpdateMaxConcurrentStreams(int current)
