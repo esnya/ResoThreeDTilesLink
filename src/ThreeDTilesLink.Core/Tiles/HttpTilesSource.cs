@@ -47,9 +47,14 @@ namespace ThreeDTilesLink.Core.Tiles
             using HttpRequestMessage request = CreateRequest(tilesetUri, auth);
             RunPerformanceSummary? performanceSummary = _performanceSummary;
             DateTimeOffset startedAt = performanceSummary is null ? default : DateTimeOffset.UtcNow;
-            using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            using HttpResponseMessage response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
             await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
-            string json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            await using Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var reader = new StreamReader(contentStream);
+            string json = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
             Uri sourceUri = response.RequestMessage?.RequestUri ?? tilesetUri;
             _tilesetJsonCache[cacheKey] = new CachedTilesetJson(sourceUri, json);
             if (performanceSummary is not null)
@@ -65,9 +70,15 @@ namespace ThreeDTilesLink.Core.Tiles
             using HttpRequestMessage request = CreateRequest(contentUri, auth);
             RunPerformanceSummary? performanceSummary = _performanceSummary;
             DateTimeOffset startedAt = performanceSummary is null ? default : DateTimeOffset.UtcNow;
-            using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            using HttpResponseMessage response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
             await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
-            byte[] bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+            await using Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var buffer = new MemoryStream();
+            await contentStream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+            byte[] bytes = buffer.ToArray();
             if (performanceSummary is not null)
             {
                 performanceSummary.AddFetch(DateTimeOffset.UtcNow - startedAt);
@@ -123,7 +134,9 @@ namespace ThreeDTilesLink.Core.Tiles
                 return;
             }
 
-            string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            await using Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var reader = new StreamReader(contentStream);
+            string body = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
             throw new HttpRequestException(
                 $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}. Body: {body}",
                 null,

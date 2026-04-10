@@ -51,7 +51,8 @@ namespace ThreeDTilesLink.Core.Runtime
                     System.Net.DecompressionMethods.Deflate |
                     System.Net.DecompressionMethods.Brotli,
                 EnableMultipleHttp2Connections = true,
-                MaxConnectionsPerServer = System.Math.Max(32, maxConcurrentTileProcessing * 4)
+                MaxConnectionsPerServer = System.Math.Max(32, maxConcurrentTileProcessing * 4),
+                PooledConnectionLifetime = TimeSpan.FromMinutes(10)
             };
             #pragma warning restore CA2000
 
