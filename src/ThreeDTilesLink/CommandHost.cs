@@ -35,31 +35,34 @@ namespace ThreeDTilesLink
             TOptions options = invocation.Options!;
             using IHost host = CreateHost(options);
             string apiKey = host.Services.GetRequiredService<IOptions<GoogleMapsOptions>>().Value.ApiKey;
-            await using TileStreamingRuntime runtime = await TileStreamingRuntimeFactory.CreateAsync(
+            TileStreamingRuntime runtime = await TileStreamingRuntimeFactory.CreateAsync(
                 host.Services.GetRequiredService<ILoggerFactory>(),
                 host.Services.GetRequiredService<IOptions<RuntimeOptions>>()).ConfigureAwait(false);
-            return await executeAsync(
-                options,
-                runtime,
-                apiKey,
-                output,
-                cancellationToken).ConfigureAwait(false);
+            await using (runtime.ConfigureAwait(false))
+            {
+                return await executeAsync(
+                    options,
+                    runtime,
+                    apiKey,
+                    output,
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
 
         private static IHost CreateHost<TOptions>(TOptions options)
             where TOptions : ICommandRuntimeOptions
         {
             HostApplicationBuilder builder = Host.CreateApplicationBuilder();
-            builder.Logging.ClearProviders();
-            builder.Logging.SetMinimumLevel(options.LogLevel);
-            builder.Logging.AddSimpleConsole(consoleOptions =>
+            _ = builder.Logging.ClearProviders();
+            _ = builder.Logging.SetMinimumLevel(options.LogLevel);
+            _ = builder.Logging.AddSimpleConsole(consoleOptions =>
             {
                 consoleOptions.IncludeScopes = false;
                 consoleOptions.SingleLine = true;
                 consoleOptions.TimestampFormat = "HH:mm:ss ";
             });
 
-            builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            _ = builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Runtime:ContentWorkers"] = options.ContentWorkers.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["Runtime:ResoniteSendWorkers"] = options.ResoniteSendWorkers.ToString(System.Globalization.CultureInfo.InvariantCulture),
