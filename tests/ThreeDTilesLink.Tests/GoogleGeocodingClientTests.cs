@@ -196,14 +196,14 @@ namespace ThreeDTilesLink.Tests
             using var second = new RunPerformanceSummary();
 
             first.AddFetch(TimeSpan.FromMilliseconds(2.5));
-            await Task.Delay(5);
+            await WaitUntilAsync(() => first.FetchMilliseconds > 0);
 
             _ = first.FetchMilliseconds.Should().BeGreaterThan(0);
             _ = second.FetchMilliseconds.Should().Be(0);
             long firstBaseline = first.FetchMilliseconds;
 
             second.AddFetch(TimeSpan.FromMilliseconds(3.5));
-            await Task.Delay(5);
+            await WaitUntilAsync(() => second.FetchMilliseconds > 0);
 
             _ = second.FetchMilliseconds.Should().BeGreaterThan(0);
             _ = first.FetchMilliseconds.Should().Be(firstBaseline);
@@ -217,7 +217,10 @@ namespace ThreeDTilesLink.Tests
             summary.AddMetadataLicense(TimeSpan.FromMilliseconds(2.5));
             summary.AddMetadataProgress(TimeSpan.FromMilliseconds(3.5));
             summary.AddMetadataSync(TimeSpan.FromMilliseconds(7.5));
-            await Task.Delay(5);
+            await WaitUntilAsync(() =>
+                summary.MetadataLicenseMilliseconds > 0 &&
+                summary.MetadataProgressMilliseconds > 0 &&
+                summary.MetadataSyncMilliseconds > 0);
 
             _ = summary.MetadataLicenseMilliseconds.Should().BeGreaterThan(0);
             _ = summary.MetadataProgressMilliseconds.Should().BeGreaterThan(0);
@@ -226,6 +229,21 @@ namespace ThreeDTilesLink.Tests
             _ = summary.MetadataProgressCount.Should().Be(1);
             _ = summary.MetadataSyncCount.Should().Be(1);
             _ = summary.MetadataSyncMaxMilliseconds.Should().BeGreaterThan(0);
+        }
+
+        private static async Task WaitUntilAsync(Func<bool> condition, int maxIterations = 500)
+        {
+            for (int i = 0; i < maxIterations; i++)
+            {
+                if (condition())
+                {
+                    return;
+                }
+
+                await Task.Yield();
+            }
+
+            throw new TimeoutException("Timed out waiting for the measurement callback.");
         }
 
         private sealed class StubHttpMessageHandler(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK) : HttpMessageHandler

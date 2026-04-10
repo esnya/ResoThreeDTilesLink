@@ -723,10 +723,7 @@ namespace ThreeDTilesLink.Tests
                 new InteractiveRunInput(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal), RemoveOutOfRangeTiles: false),
                 cts.Token);
 
-            for (int i = 0; i < 50 && client.SendCount == 0; i++)
-            {
-                await Task.Delay(10);
-            }
+            await WaitUntilAsync(() => client.SendCount > 0);
 
             await cts.CancelAsync();
             InteractiveTileRunResult result = await runTask.ConfigureAwait(true);
@@ -773,10 +770,7 @@ namespace ThreeDTilesLink.Tests
                 new InteractiveRunInput(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal), RemoveOutOfRangeTiles: false),
                 cts.Token);
 
-            for (int i = 0; i < 50 && tilesSource.ContentFetchCount == 0; i++)
-            {
-                await Task.Delay(10);
-            }
+            await WaitUntilAsync(() => tilesSource.ContentFetchCount > 0);
 
             await cts.CancelAsync();
             InteractiveTileRunResult result = await runTask.ConfigureAwait(true);
@@ -1835,6 +1829,21 @@ namespace ThreeDTilesLink.Tests
         private static string StableId(string id)
         {
             return $"0:|{id.Length}:{id}";
+        }
+
+        private static async Task WaitUntilAsync(Func<bool> condition, int maxIterations = 500)
+        {
+            for (int i = 0; i < maxIterations; i++)
+            {
+                if (condition())
+                {
+                    return;
+                }
+
+                await Task.Yield();
+            }
+
+            throw new TimeoutException("Timed out waiting for the asynchronous operation to start.");
         }
 
         private static string StableId(string prefix, string id)

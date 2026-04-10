@@ -137,8 +137,9 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent"),
                 [StableId("a")] = new(StableId("a"), "a", StableId("p"), [StableId("p")], ["slot_a"], "Google; A")
             });
-            writerState.VisibleSinceByStableId[StableId("p")] = DateTimeOffset.UtcNow.AddSeconds(-10);
-            writerState.VisibleSinceByStableId[StableId("a")] = DateTimeOffset.UtcNow.AddSeconds(-10);
+            DateTimeOffset now = DateTimeOffset.UnixEpoch.AddSeconds(10);
+            writerState.VisibleSinceByStableId[StableId("p")] = now.AddSeconds(-10);
+            writerState.VisibleSinceByStableId[StableId("a")] = now.AddSeconds(-10);
 
             ResoniteReconcilerCore reconciler = CreateReconciler(core);
             DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
@@ -221,8 +222,9 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent"),
                 [StableId("a")] = new(StableId("a"), "a", StableId("p"), [StableId("p")], ["slot_a"], "Google; A")
             });
-            writerState.VisibleSinceByStableId[StableId("p")] = DateTimeOffset.UtcNow.AddSeconds(-10);
-            writerState.VisibleSinceByStableId[StableId("a")] = DateTimeOffset.UtcNow.AddSeconds(-10);
+            DateTimeOffset now = DateTimeOffset.UnixEpoch.AddSeconds(10);
+            writerState.VisibleSinceByStableId[StableId("p")] = now.AddSeconds(-10);
+            writerState.VisibleSinceByStableId[StableId("a")] = now.AddSeconds(-10);
 
             ResoniteReconcilerCore reconciler = CreateReconciler(core);
             DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
@@ -969,7 +971,7 @@ namespace ThreeDTilesLink.Tests
             writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
             writerState.AppliedProgressValue = 0f;
             writerState.AppliedProgressText = "stale";
-            writerState.LastMetadataSyncStartedAt = DateTimeOffset.UtcNow - TimeSpan.FromMilliseconds(500);
+            writerState.LastMetadataSyncStartedAt = DateTimeOffset.UnixEpoch.AddMilliseconds(500);
             _ = writerState.InFlightSendStableIds.Add(StableId("p1"));
 
             DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
@@ -1005,7 +1007,7 @@ namespace ThreeDTilesLink.Tests
             writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
             writerState.AppliedProgressValue = 0.42f;
             writerState.AppliedProgressText = "Running:";
-            DateTimeOffset now = DateTimeOffset.UtcNow;
+            DateTimeOffset now = DateTimeOffset.UnixEpoch.AddSeconds(1);
             writerState.LastMetadataSyncStartedAt = now - TimeSpan.FromMilliseconds(100);
             writerState.LastMetadataSyncProcessedTiles = 0;
             writerState.LastMetadataSyncProgressValue = 0.42f;
@@ -1045,7 +1047,7 @@ namespace ThreeDTilesLink.Tests
             writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
             writerState.AppliedProgressValue = 0.62f;
             writerState.AppliedProgressText = "Running:";
-            DateTimeOffset now = DateTimeOffset.UtcNow;
+            DateTimeOffset now = DateTimeOffset.UnixEpoch.AddSeconds(1);
             writerState.LastMetadataSyncStartedAt = now - TimeSpan.FromMilliseconds(500);
             writerState.LastMetadataSyncProcessedTiles = 10;
             writerState.LastMetadataSyncProgressValue = 0.62f;
@@ -1083,7 +1085,7 @@ namespace ThreeDTilesLink.Tests
             writerState.AppliedLicenseCredit = "Google Maps";
             writerState.AppliedProgressValue = 0.5f;
             writerState.AppliedProgressText = "Running:";
-            writerState.LastMetadataSyncStartedAt = DateTimeOffset.UtcNow;
+            writerState.LastMetadataSyncStartedAt = DateTimeOffset.UnixEpoch;
 
             DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
             WriterCommand? command = reconciler.PlanNextWriterCommand(
@@ -1119,7 +1121,7 @@ namespace ThreeDTilesLink.Tests
             writerState.AppliedLicenseCredit = "Google Maps";
             writerState.AppliedProgressValue = 0.5f;
             writerState.AppliedProgressText = "Running:";
-            writerState.LastMetadataSyncStartedAt = DateTimeOffset.UtcNow;
+            writerState.LastMetadataSyncStartedAt = DateTimeOffset.UnixEpoch;
 
             DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
             SyncSessionMetadataWriterCommand metadata = reconciler.PlanNextWriterCommand(
