@@ -36,10 +36,6 @@ static async Task<int> RunAsync(string[] args)
             _ => throw new InvalidOperationException($"Unsupported command: {route.Command}")
         };
     }
-    catch (OperationCanceledException)
-    {
-        return 0;
-    }
     catch (Exception ex)
     {
         await Console.Error.WriteLineAsync(ex.ToString()).ConfigureAwait(false);

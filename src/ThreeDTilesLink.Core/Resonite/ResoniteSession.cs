@@ -146,6 +146,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private readonly string _meshDumpDir = Path.Combine(Path.GetTempPath(), "3DTilesLink", "mesh-json");
         private readonly Dictionary<string, SlotProgressBinding> _progressBindingsByParentSlotId = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _connectionGate = new(1, 1);
+        private readonly SemaphoreSlim _requestGate = new(1, 1);
         private readonly SemaphoreSlim _streamPlacementGate = new(1, 1);
         private readonly ResoniteAssetImportPool _assetImportPool = new(
             assetImportWorkers > 0 ? assetImportWorkers : throw new ArgumentOutOfRangeException(nameof(assetImportWorkers), "Asset import worker count must be positive."),
@@ -758,6 +759,7 @@ namespace ThreeDTilesLink.Core.Resonite
             await DisconnectCoreAsync(CancellationToken.None).ConfigureAwait(false);
             await _assetImportPool.DisposeAsync().ConfigureAwait(false);
             _connectionGate.Dispose();
+            _requestGate.Dispose();
             _streamPlacementGate.Dispose();
         }
 
@@ -2128,49 +2130,57 @@ namespace ThreeDTilesLink.Core.Resonite
         {
             ArgumentNullException.ThrowIfNull(operation);
 
-            for (int attempt = 1; attempt <= LinkRequestMaxAttempts; attempt++)
+            await _requestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                LinkInterface link = await EnsureConnectedLinkAsync(cancellationToken).ConfigureAwait(false);
-                try
+                for (int attempt = 1; attempt <= LinkRequestMaxAttempts; attempt++)
                 {
-                    return await WaitForLinkRequestAsync(
-                        () => operation(link),
-                        timeout ?? DefaultLinkRequestTimeout,
-                        cancellationToken).ConfigureAwait(false);
+                    LinkInterface link = await EnsureConnectedLinkAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        return await WaitForLinkRequestAsync(
+                            () => operation(link),
+                            timeout ?? DefaultLinkRequestTimeout,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (TimeoutException ex)
+                        when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
+                    {
+                        await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (ObjectDisposedException ex)
+                        when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
+                    {
+                        await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (WebSocketException ex)
+                        when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
+                    {
+                        await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (ResoniteLinkNoResponseException ex)
+                        when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
+                    {
+                        await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (ResoniteLinkDisconnectedException ex)
+                        when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
+                    {
+                        await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (InvalidOperationException ex)
+                        when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
+                    {
+                        await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
+                    }
                 }
-                catch (TimeoutException ex)
-                    when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
-                {
-                    await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
-                }
-                catch (ObjectDisposedException ex)
-                    when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
-                {
-                    await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
-                }
-                catch (WebSocketException ex)
-                    when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
-                {
-                    await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
-                }
-                catch (ResoniteLinkNoResponseException ex)
-                    when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
-                {
-                    await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
-                }
-                catch (ResoniteLinkDisconnectedException ex)
-                    when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
-                {
-                    await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
-                }
-                catch (InvalidOperationException ex)
-                    when (allowReconnect && attempt < LinkRequestMaxAttempts && IsRecoverableTransportFailure(ex))
-                {
-                    await ReconnectTransportAsync(ex, cancellationToken).ConfigureAwait(false);
-                }
-            }
 
-            throw new InvalidOperationException("ResoniteLink request retry loop exited unexpectedly.");
+                throw new InvalidOperationException("ResoniteLink request retry loop exited unexpectedly.");
+            }
+            finally
+            {
+                _ = _requestGate.Release();
+            }
         }
 
         private static async Task<T> WaitForLinkRequestAsync<T>(
