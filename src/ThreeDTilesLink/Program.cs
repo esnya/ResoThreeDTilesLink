@@ -1,6 +1,5 @@
 using DotNetEnv;
 using System.Diagnostics.CodeAnalysis;
-using ThreeDTilesLink.Core.App;
 using ThreeDTilesLink.Core.CommandLine;
 
 int exitCode = await RunAsync(args).ConfigureAwait(false);
@@ -12,16 +11,8 @@ return exitCode;
     Justification = "The top-level command entrypoint converts any unexpected failure into a user-visible message and non-zero exit code.")]
 static async Task<int> RunAsync(string[] args)
 {
-    using var appCts = new CancellationTokenSource();
-    ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
-    {
-        eventArgs.Cancel = true;
-        _ = appCts.CancelAsync();
-    };
-
     try
     {
-        Console.CancelKeyPress += cancelHandler;
         _ = Env.TraversePath().NoClobber().Load();
 
         CommandInvocation<RootCommandRoute> rootInvocation = RootCommandLine.Parse(args);
@@ -37,19 +28,15 @@ static async Task<int> RunAsync(string[] args)
             RootCommandKind.Stream => await ThreeDTilesLink.CommandHost.RunAsync(
                 route.Arguments,
                 StreamCommandLine.Parse,
-                StreamCommandHandler.RunAsync,
-                Console.Out,
-                appCts.Token).ConfigureAwait(false),
+                Console.Out).ConfigureAwait(false),
             RootCommandKind.Interactive => await ThreeDTilesLink.CommandHost.RunAsync(
                 route.Arguments,
                 InteractiveCommandLine.Parse,
-                ConsoleInteractiveHost.RunAsync,
-                Console.Out,
-                appCts.Token).ConfigureAwait(false),
+                Console.Out).ConfigureAwait(false),
             _ => throw new InvalidOperationException($"Unsupported command: {route.Command}")
         };
     }
-    catch (OperationCanceledException) when (appCts.IsCancellationRequested)
+    catch (OperationCanceledException)
     {
         return 0;
     }
@@ -57,10 +44,6 @@ static async Task<int> RunAsync(string[] args)
     {
         await Console.Error.WriteLineAsync(ex.ToString()).ConfigureAwait(false);
         return 1;
-    }
-    finally
-    {
-        Console.CancelKeyPress -= cancelHandler;
     }
 }
 
