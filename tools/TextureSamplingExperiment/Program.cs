@@ -1,6 +1,7 @@
 // Experimental console tool; localized resources are unnecessary here.
 #pragma warning disable CA1303
 using System.Diagnostics.CodeAnalysis;
+using System.Net;
 using ThreeDTilesLink.Core.Geo;
 using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Mesh;
@@ -24,10 +25,7 @@ static async Task<int> RunAsync(string[] args)
             throw new InvalidOperationException("GOOGLE_MAPS_API_KEY is required.");
         }
 
-        using var httpClient = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(options.TimeoutSec)
-        };
+        using var httpClient = CreateHttpClient(options.TimeoutSec);
         var tilesSource = new HttpTilesSource(httpClient);
         var extractor = new GlbMeshExtractor();
         var selector = new TileSelector(new GeographicCoordinateTransformer());
@@ -75,9 +73,34 @@ static async Task<int> RunAsync(string[] args)
     }
     catch (Exception ex)
     {
-        await Console.Error.WriteLineAsync(ex.Message).ConfigureAwait(false);
+        await Console.Error.WriteLineAsync(ex.ToString()).ConfigureAwait(false);
         return 1;
     }
+}
+
+static HttpClient CreateHttpClient(int timeoutSec)
+{
+    if (timeoutSec <= 0)
+    {
+        throw new ArgumentOutOfRangeException(nameof(timeoutSec), "Timeout must be positive.");
+    }
+
+#pragma warning disable CA2000
+    var handler = new SocketsHttpHandler
+    {
+        AutomaticDecompression = DecompressionMethods.GZip |
+            DecompressionMethods.Deflate |
+            DecompressionMethods.Brotli,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10)
+    };
+#pragma warning restore CA2000
+
+    return new HttpClient(handler)
+    {
+        Timeout = TimeSpan.FromSeconds(timeoutSec),
+        DefaultRequestVersion = HttpVersion.Version20,
+        DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher
+    };
 }
 
 static void PrintSummary(
