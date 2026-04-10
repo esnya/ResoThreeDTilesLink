@@ -1,0 +1,4 @@
+interface:
+  display_name: "3D Tiles Interactive Live"
+  short_description: "Run live interactive regression checks"
+  default_prompt: "Use $three-dtiles-interactive-live to run the live interactive Resonite verification flow for this repo."

@@ -17,3 +17,5 @@ coverage/
 .env
 .codex
 .worktrees/
+__pycache__/
+*.pyc

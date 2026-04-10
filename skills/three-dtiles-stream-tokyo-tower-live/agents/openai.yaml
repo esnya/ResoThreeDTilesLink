@@ -1,0 +1,4 @@
+interface:
+  display_name: "3D Tiles Stream Tokyo Live"
+  short_description: "Run Tokyo Tower live stream regressions"
+  default_prompt: "Use $three-dtiles-stream-tokyo-tower-live to run the live Tokyo Tower stream regression check for this repo."
