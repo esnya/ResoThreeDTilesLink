@@ -1,5 +1,6 @@
 using System.Reflection;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -98,6 +99,77 @@ namespace ThreeDTilesLink.Tests
             _ = await FluentActions.Awaiting(() => executeTask).Should().ThrowAsync<InvalidOperationException>()
                 .WithMessage("boom");
             _ = lifetime.StopApplicationCalls.Should().Be(1);
+        }
+
+        [Fact]
+        public async Task AddThreeDTilesLinkRuntime_ResolvesInteractiveRunSupervisor()
+        {
+            var services = new ServiceCollection();
+            _ = services.AddLogging();
+            _ = services.AddSingleton<ICommandRuntimeOptions>(new InteractiveCommandOptions(
+                20d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                250,
+                800,
+                3000,
+                LogLevel.Information));
+
+            _ = services.AddThreeDTilesLinkRuntime(new InteractiveCommandOptions(
+                20d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                250,
+                800,
+                3000,
+                LogLevel.Information));
+
+            await using ServiceProvider provider = services.BuildServiceProvider();
+
+            Func<InteractiveRunSupervisor> act = () => provider.GetRequiredService<InteractiveRunSupervisor>();
+
+            _ = act.Should().NotThrow();
+        }
+
+        [Fact]
+        public void CommandHost_CreateHost_ResolvesInteractiveHostedService()
+        {
+            var options = new InteractiveCommandOptions(
+                20d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                250,
+                800,
+                3000,
+                LogLevel.Information);
+
+            MethodInfo? createHostDefinition = typeof(ThreeDTilesLink.CommandHost).GetMethod(
+                "CreateHost",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            _ = createHostDefinition.Should().NotBeNull();
+            MethodInfo createHost = createHostDefinition!.MakeGenericMethod(typeof(InteractiveCommandOptions));
+
+            using IHost host = (IHost)createHost.Invoke(null, [options, TextWriter.Null])!;
+
+            Func<IEnumerable<IHostedService>> act = () => host.Services.GetRequiredService<IEnumerable<IHostedService>>();
+
+            IEnumerable<IHostedService> services = act.Should().NotThrow().Subject;
+            _ = services.Should().ContainSingle(static service => service is InteractiveCommandHostedService);
         }
 
         private static Task InvokeExecuteAsync(object service, CancellationToken cancellationToken)
