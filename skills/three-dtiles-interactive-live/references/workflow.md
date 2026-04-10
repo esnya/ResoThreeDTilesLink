@@ -16,20 +16,35 @@
 3. Change the live fields sequentially in Resonite and verify each rerun from the captured stdout log.
 4. Stop the process before cleaning up the world again.
 
-## Standard Regression Exercise
+## Standard Coverage Guide
 
-- Set `Range` to a known value, usually `100`, and confirm the binding changed.
-- Set `Search` to `東京タワー` and wait for:
-  - `Search query changed`
-  - `Search resolved`
-  - `Run completed`
-- Set `Range` to `60` and wait for:
-  - `Selection input changed ... range=60.0m`
-  - `Run started ... range=60.0m`
-  - `Run completed`
-- Set `Search` to `東京駅` and wait for:
-  - `Search resolved: query=東京駅`
-  - `Run completed`
+- Initial run
+  Start from a clean session root and confirm the first resolved search or coordinate set leads to one normal `Run started` -> `Run completed` cycle.
+
+- Relocation by new target
+  Change `Search` to a clearly different place, or set a distant coordinate target directly, and confirm the rerun starts around the new target. This is the broad "jump somewhere else" case, distinct from the smaller overlap-focused moves below.
+
+- Range-only change
+  Keep location fixed and change only `Range`. Confirm the rerun is attributable to `Selection input changed ... range=...m`.
+
+- Move within range
+  Move the selection center by a smaller distance that should keep substantial overlap with the existing area. Confirm a rerun occurs and inspect whether retention/replacement behavior still looks healthy.
+
+- Move out of range
+  Move the selection center far enough that the previous area should no longer overlap materially. Confirm a rerun occurs and inspect whether the old area is replaced cleanly.
+
+Treat those five cases as the default coverage set for a substantial interactive regression pass.
+
+## Step Selection
+
+- Do not force one canonical edit sequence.
+  Choose the exact `Search` / `Latitude` / `Longitude` / `Range` changes that best isolate the behavior you need to test in the current session.
+
+- Prefer one-variable changes when you want attribution.
+  If the purpose is to validate a range-only or move-only reaction, change only that input and wait for completion before the next step.
+
+- Use `Search` when you need a human-meaningful relocation point.
+  Use direct coordinate edits when you need a controlled move size or exact overlap expectations.
 
 ## Invalid Procedure
 

@@ -17,10 +17,16 @@ Use it when you need the process PID plus stable stdout/stderr log files.
 2. Use `scripts/cleanup_sessions.py` before or after runs when you need an explicit packaged cleanup step.
 
 3. Use the startup logs as the primary truth source.
-After startup, change the live fields sequentially in Resonite and confirm `Search query changed`, `Search resolved`, `Run started`, and `Run completed` from the captured stdout log.
+After startup, drive the live fields from Resonite itself and confirm `Search query changed`, `Search resolved`, `Run started`, and `Run completed` from the captured stdout log.
 
-4. Read the reference doc when the run behaves unexpectedly.
-Use [references/workflow.md](./references/workflow.md) for log markers, failure modes, and the sequence rules that keep the test valid.
+4. Cover the standard interactive cases rather than a single hard-coded edit sequence.
+The default coverage set is: initial run, relocation by a new search or distant coordinate target, range-only change, move within range, and move out of range. Use that set as the baseline unless the user asks for a narrower or broader scenario.
+
+5. Choose the exact field edits on the spot.
+Do not treat one fixed sequence as canonical. Send the specific `Search` / `Latitude` / `Longitude` / `Range` changes that best isolate the behavior you need to verify, while keeping each step attributable in the logs.
+
+6. Read the reference doc when the run behaves unexpectedly.
+Use [references/workflow.md](./references/workflow.md) for the standard coverage matrix, log markers, failure modes, and the sequence rules that keep the test valid.
 
 ## Scripts
 
@@ -38,6 +44,7 @@ Return the script JSON plus the key facts:
 - interactive PID
 - stdout/stderr log paths
 - whether startup reached `Interactive input bindings attached`
+- which standard coverage cases were exercised
 - whether `Search resolved` appeared for each requested query
 - whether `Run completed` appeared for each requested rerun
 - whether the result came from the stable startup path plus manual sequential live edits
