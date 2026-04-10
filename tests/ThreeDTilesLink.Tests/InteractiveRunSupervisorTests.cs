@@ -663,7 +663,7 @@ namespace ThreeDTilesLink.Tests
             {
                 SearchValues = new Queue<string?>(["Asakusa", "Asakusa", "Asakusa"]),
                 SelectionInputValues = new Queue<SelectionInputValues?>([null, null, null]),
-                UpdateCoordinateFailures = new Queue<Exception?>([new InvalidOperationException("writeback failed")])
+                UpdateCoordinateFailures = new Queue<Exception?>([new HttpRequestException("writeback failed")])
             };
             var clock = new FakeClock { CancelAfterDelayCalls = 2 };
             var searchResolver = new FakeSearchResolver(new LocationSearchResult("Asakusa", 35.7147651d, 139.7966553d));
@@ -700,6 +700,7 @@ namespace ThreeDTilesLink.Tests
                 new FakeGeoReferenceResolver(),
                 clock,
                 new SelectionInputReader(watchStore, NullLogger<SelectionInputReader>.Instance),
+                NullLoggerFactory.Instance,
                 NullLogger<InteractiveRunSupervisor>.Instance);
         }
 

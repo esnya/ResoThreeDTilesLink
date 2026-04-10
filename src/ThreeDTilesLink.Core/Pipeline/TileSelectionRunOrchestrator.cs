@@ -335,26 +335,35 @@ namespace ThreeDTilesLink.Core.Pipeline
                 await TrySetFailureProgressAsync(request, ex).ConfigureAwait(false);
                 throw;
             }
-            finally
-            {
-                await workerCts.CancelAsync().ConfigureAwait(false);
-                await ObserveOutstandingTasksAsync(discoveryTasks.Values, writerTasks).ConfigureAwait(false);
+	            finally
+	            {
+	                await workerCts.CancelAsync().ConfigureAwait(false);
+	                await ObserveOutstandingTasksAsync(discoveryTasks.Values, writerTasks).ConfigureAwait(false);
 
                 if (!request.Output.DryRun && request.Output.ManageConnection)
                 {
+	                    using var shutdownCts = new CancellationTokenSource();
+	                    shutdownCts.CancelAfter(TimeSpan.FromSeconds(5));
+	                    CancellationToken shutdownToken = shutdownCts.Token;
                     if (completedSuccessfully && pendingFailure is null)
-                    {
-                        await _resoniteSession.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
-                    }
-                    else
                     {
                         try
                         {
-                            await _resoniteSession.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+	                        await _resoniteSession.DisconnectAsync(shutdownToken).ConfigureAwait(false);
                         }
-                        catch (OperationCanceledException)
+                        catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
                         {
                         }
+	                    }
+	                    else
+	                    {
+	                        try
+	                        {
+	                            await _resoniteSession.DisconnectAsync(shutdownToken).ConfigureAwait(false);
+	                        }
+	                        catch (OperationCanceledException)
+	                        {
+	                        }
                         catch (Exception ex)
                         {
                             s_disconnectFailedDuringFailure(_logger, ex);

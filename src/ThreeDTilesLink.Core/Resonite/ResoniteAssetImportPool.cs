@@ -103,8 +103,7 @@ namespace ThreeDTilesLink.Core.Resonite
 
             public async Task DisconnectAsync(CancellationToken cancellationToken)
             {
-                _ = cancellationToken;
-                await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
                     DisposeLink();

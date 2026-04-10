@@ -8,7 +8,7 @@ namespace ThreeDTilesLink.Core.Pipeline
     internal sealed class InteractiveSessionManager(
         ITileSelectionService tileRunCoordinator,
         IResoniteSession resoniteSession,
-        ILogger<InteractiveRunSupervisor> logger)
+        ILogger<InteractiveSessionManager> logger)
     {
         private static readonly Action<ILogger, string, string, Exception?> s_retainedSlotClearFailed =
             LoggerMessage.Define<string, string>(
@@ -18,7 +18,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         private readonly ITileSelectionService _tileRunCoordinator = tileRunCoordinator;
         private readonly IResoniteSession _resoniteSession = resoniteSession;
-        private readonly ILogger<InteractiveRunSupervisor> _logger = logger;
+        private readonly ILogger<InteractiveSessionManager> _logger = logger;
 
         internal Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {

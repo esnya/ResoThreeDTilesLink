@@ -15,7 +15,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly InteractiveActionApplier _actionApplier;
         private readonly ILogger<InteractiveRunSupervisor> _logger;
 
-        internal InteractiveRunSupervisor(
+        public InteractiveRunSupervisor(
             ITileSelectionService tileRunCoordinator,
             IResoniteSession resoniteSession,
             IInteractiveInputStore interactiveInputStore,
@@ -24,6 +24,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             IGeoReferenceResolver geoReferenceResolver,
             IClock clock,
             SelectionInputReader selectionInputReader,
+            ILoggerFactory loggerFactory,
             ILogger<InteractiveRunSupervisor> logger)
         {
             _interactiveInputStore = interactiveInputStore;
@@ -39,7 +40,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 searchResolver,
                 coordinateTransformer,
                 clock,
-                logger);
+                loggerFactory);
         }
 
         public async Task RunAsync(InteractiveRunRequest options, CancellationToken cancellationToken)
@@ -64,7 +65,9 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
             finally
             {
-                state = await _actionApplier.DisconnectAsync(state, CancellationToken.None).ConfigureAwait(false);
+                using var shutdownCts = new CancellationTokenSource();
+                shutdownCts.CancelAfter(TimeSpan.FromSeconds(5));
+                state = await _actionApplier.DisconnectAsync(state, shutdownCts.Token).ConfigureAwait(false);
             }
         }
 

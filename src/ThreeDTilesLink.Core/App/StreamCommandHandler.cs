@@ -1,7 +1,6 @@
 using ThreeDTilesLink.Core.CommandLine;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
-using ThreeDTilesLink.Core.Runtime;
 
 namespace ThreeDTilesLink.Core.App
 {
@@ -28,26 +27,6 @@ namespace ThreeDTilesLink.Core.App
                     options.ResonitePort,
                     options.DryRun),
                 apiKey);
-        }
-
-        internal static async Task<int> RunAsync(
-            StreamCommandOptions options,
-            TileStreamingRuntime runtime,
-            string apiKey,
-            TextWriter output,
-            CancellationToken cancellationToken)
-        {
-            ArgumentNullException.ThrowIfNull(options);
-            ArgumentNullException.ThrowIfNull(runtime);
-            ArgumentNullException.ThrowIfNull(output);
-
-            RunSummary summary = await runtime.RunAsync(
-                CreateRequest(options, apiKey, runtime.GeoReferenceResolver),
-                cancellationToken).ConfigureAwait(false);
-            await output.WriteLineAsync(
-                $"CandidateTiles={summary.CandidateTiles} ProcessedTiles={summary.ProcessedTiles} StreamedMeshes={summary.StreamedMeshes} FailedTiles={summary.FailedTiles}")
-                .ConfigureAwait(false);
-            return 0;
         }
     }
 }

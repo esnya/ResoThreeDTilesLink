@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ThreeDTilesLink.Core\ThreeDTilesLink.Core.csproj" />
+    <ProjectReference Include="..\..\src\ThreeDTilesLink\ThreeDTilesLink.csproj" />
   </ItemGroup>
 
 </Project>

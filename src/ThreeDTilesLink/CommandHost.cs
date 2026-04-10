@@ -1,6 +1,10 @@
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using ThreeDTilesLink.App;
 using ThreeDTilesLink.Core.App;
 using ThreeDTilesLink.Core.CommandLine;
-using ThreeDTilesLink.Core.Runtime;
 
 namespace ThreeDTilesLink
 {
@@ -9,14 +13,11 @@ namespace ThreeDTilesLink
         internal static async Task<int> RunAsync<TOptions>(
             IReadOnlyList<string> args,
             Func<IReadOnlyList<string>, CommandInvocation<TOptions>> parse,
-            Func<TOptions, TileStreamingRuntime, string, TextWriter, CancellationToken, Task<int>> executeAsync,
-            TextWriter output,
-            CancellationToken cancellationToken)
-            where TOptions : ICommandRuntimeOptions
+            TextWriter output)
+            where TOptions : class, ICommandRuntimeOptions
         {
             ArgumentNullException.ThrowIfNull(args);
             ArgumentNullException.ThrowIfNull(parse);
-            ArgumentNullException.ThrowIfNull(executeAsync);
             ArgumentNullException.ThrowIfNull(output);
 
             CommandInvocation<TOptions> invocation = parse(args);
@@ -27,24 +28,43 @@ namespace ThreeDTilesLink
             }
 
             TOptions options = invocation.Options!;
-            string apiKey = Environment.GetEnvironmentVariable("GOOGLE_MAPS_API_KEY") ?? string.Empty;
-#pragma warning disable CA2000
-            TileStreamingRuntimeHandle runtimeHandle = TileStreamingRuntimeFactory.Create(
-                options.LogLevel,
-                TimeSpan.FromSeconds(options.TimeoutSec),
-                options.ContentWorkers,
-                options.ResoniteSendWorkers,
-                options.MeasurePerformance);
-#pragma warning restore CA2000
-            await using (runtimeHandle.ConfigureAwait(false))
+            using IHost host = CreateHost(options, output);
+            CommandCompletion completion = host.Services.GetRequiredService<CommandCompletion>();
+            await host.RunAsync().ConfigureAwait(false);
+            return await completion.Completion.ConfigureAwait(false);
+        }
+
+        private static IHost CreateHost<TOptions>(TOptions options, TextWriter output)
+            where TOptions : class, ICommandRuntimeOptions
+        {
+            HostApplicationBuilder builder = Host.CreateApplicationBuilder();
+            _ = builder.Logging.ClearProviders();
+            _ = builder.Logging.SetMinimumLevel(options.LogLevel);
+            _ = builder.Logging.AddSimpleConsole(consoleOptions =>
             {
-                return await executeAsync(
-                    options,
-                    runtimeHandle.Runtime,
-                    apiKey,
-                    output,
-                    cancellationToken).ConfigureAwait(false);
-            }
+                consoleOptions.IncludeScopes = false;
+                consoleOptions.SingleLine = true;
+                consoleOptions.TimestampFormat = "HH:mm:ss ";
+            });
+
+            _ = builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["GoogleMaps:ApiKey"] = Environment.GetEnvironmentVariable("GOOGLE_MAPS_API_KEY")
+            });
+
+            _ = builder.Services
+                .AddOptions<GoogleMapsOptions>()
+                .Bind(builder.Configuration.GetSection("GoogleMaps"))
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
+
+            _ = builder.Services.AddSingleton(options);
+            _ = builder.Services.AddSingleton(output);
+            _ = builder.Services.AddSingleton<CommandCompletion>();
+            _ = builder.Services.AddThreeDTilesLinkRuntime(options);
+            _ = builder.Services.AddThreeDTilesLinkCommandHost(options);
+
+            return builder.Build();
         }
 
         internal static async Task WriteOutputAsync(TextWriter output, string text, bool writeToError)

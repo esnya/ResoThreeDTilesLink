@@ -12,11 +12,18 @@ namespace ThreeDTilesLink.Core.Pipeline
         ISearchResolver searchResolver,
         ICoordinateTransformer coordinateTransformer,
         IClock clock,
-        ILogger<InteractiveRunSupervisor> logger)
+        ILoggerFactory loggerFactory)
     {
         private readonly ICoordinateTransformer _coordinateTransformer = coordinateTransformer;
-        private readonly InteractiveSessionManager _sessionManager = new(tileRunCoordinator, resoniteSession, logger);
-        private readonly InteractiveSearchCoordinator _searchCoordinator = new(interactiveInputStore, searchResolver, clock, logger);
+        private readonly InteractiveSessionManager _sessionManager = new(
+            tileRunCoordinator,
+            resoniteSession,
+            loggerFactory.CreateLogger<InteractiveSessionManager>());
+        private readonly InteractiveSearchCoordinator _searchCoordinator = new(
+            interactiveInputStore,
+            searchResolver,
+            clock,
+            loggerFactory.CreateLogger<InteractiveSearchCoordinator>());
 
         internal Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
