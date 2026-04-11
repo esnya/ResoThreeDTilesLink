@@ -429,7 +429,7 @@ def run_stream_case(
     latitude: float,
     longitude: float,
     range_m: float,
-    host: str | None,
+    host: str | None = None,
     port: int | None,
     cleanup: bool,
     no_build: bool,
