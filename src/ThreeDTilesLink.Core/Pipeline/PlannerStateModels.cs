@@ -39,6 +39,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         bool UpdateProgressText,
         bool ProgressValueChanged,
         bool IsCompleted,
+        bool CompletionStateChanged,
         bool CadenceElapsed,
         bool ProcessedDeltaReached,
         bool ProgressDeltaReached,
@@ -49,6 +50,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         public bool ShouldSync =>
             HasChanges &&
             (UpdateLicense ||
+             CompletionStateChanged ||
              IsCompleted ||
              IsQuiescent ||
              (CadenceElapsed && (ProcessedDeltaReached || ProgressDeltaReached)));
