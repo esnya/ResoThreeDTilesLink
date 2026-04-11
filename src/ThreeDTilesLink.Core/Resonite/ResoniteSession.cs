@@ -76,6 +76,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 Level = LogLevel.Warning,
                 Message = "Failed to update mirrored string alias component {ComponentId}.")]
             public static partial void MirroredStringAliasUpdateFailed(ILogger logger, Exception exception, string componentId);
+
         }
 
         private const string SlotWorkerType = "[FrooxEngine]FrooxEngine.Slot";
@@ -336,68 +337,130 @@ namespace ThreeDTilesLink.Core.Resonite
                 throw new InvalidOperationException("Session root slot is not initialized.");
             }
 
-            DynamicVariableBinding latBinding = await AddDynamicFloatValueVariableAsync(
-                _sessionRootSlotId,
-                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveLatitudeVariableLocalName),
-                0f,
-                cancellationToken).ConfigureAwait(false);
-            DynamicVariableBinding lonBinding = await AddDynamicFloatValueVariableAsync(
-                _sessionRootSlotId,
-                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveLongitudeVariableLocalName),
-                0f,
-                cancellationToken).ConfigureAwait(false);
-            DynamicVariableBinding rangeBinding = await AddDynamicFloatValueVariableAsync(
-                _sessionRootSlotId,
-                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveRangeVariableLocalName),
-                0f,
-                cancellationToken).ConfigureAwait(false);
-            DynamicVariableBinding searchBinding = await AddDynamicStringValueVariableAsync(
-                _sessionRootSlotId,
-                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveSearchVariableLocalName),
-                string.Empty,
-                cancellationToken).ConfigureAwait(false);
+            DynamicVariableBinding latBinding = CreateDynamicFloatBindingSpec();
+            DynamicVariableBinding lonBinding = CreateDynamicFloatBindingSpec();
+            DynamicVariableBinding rangeBinding = CreateDynamicFloatBindingSpec();
+            DynamicVariableBinding searchBinding = CreateDynamicStringBindingSpec();
+            DynamicVariableBinding latAliasBinding = CreateDynamicFloatBindingSpec();
+            DynamicVariableBinding lonAliasBinding = CreateDynamicFloatBindingSpec();
+            DynamicVariableBinding rangeAliasBinding = CreateDynamicFloatBindingSpec();
+            DynamicVariableBinding searchAliasBinding = CreateDynamicStringBindingSpec();
 
-            DynamicVariableBinding latAliasBinding = await AddWorldFloatAliasAsync(
-                _sessionRootSlotId,
-                InteractiveLatitudeAliasPath,
-                latBinding.ValueFieldId,
-                writeBack: true,
-                cancellationToken).ConfigureAwait(false);
-            DynamicVariableBinding lonAliasBinding = await AddWorldFloatAliasAsync(
-                _sessionRootSlotId,
-                InteractiveLongitudeAliasPath,
-                lonBinding.ValueFieldId,
-                writeBack: true,
-                cancellationToken).ConfigureAwait(false);
-            DynamicVariableBinding rangeAliasBinding = await AddWorldFloatAliasAsync(
-                _sessionRootSlotId,
-                InteractiveRangeAliasPath,
-                rangeBinding.ValueFieldId,
-                writeBack: true,
-                cancellationToken).ConfigureAwait(false);
-            DynamicVariableBinding searchAliasBinding = await AddWorldStringAliasAsync(
-                _sessionRootSlotId,
-                InteractiveSearchAliasPath,
-                searchBinding.ValueFieldId,
-                writeBack: true,
-                cancellationToken).ConfigureAwait(false);
+            List<DataModelOperation> operations =
+            [
+                BuildAddComponentOperation(
+                    _sessionRootSlotId,
+                    latBinding.ComponentId,
+                    DynamicValueVariableFloatComponentType,
+                    BuildDynamicFloatValueVariableMembers(
+                        BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveLatitudeVariableLocalName),
+                        latBinding.ValueFieldId,
+                        0f)),
+                BuildAddComponentOperation(
+                    _sessionRootSlotId,
+                    lonBinding.ComponentId,
+                    DynamicValueVariableFloatComponentType,
+                    BuildDynamicFloatValueVariableMembers(
+                        BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveLongitudeVariableLocalName),
+                        lonBinding.ValueFieldId,
+                        0f)),
+                BuildAddComponentOperation(
+                    _sessionRootSlotId,
+                    rangeBinding.ComponentId,
+                    DynamicValueVariableFloatComponentType,
+                    BuildDynamicFloatValueVariableMembers(
+                        BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveRangeVariableLocalName),
+                        rangeBinding.ValueFieldId,
+                        0f)),
+                BuildAddComponentOperation(
+                    _sessionRootSlotId,
+                    searchBinding.ComponentId,
+                    DynamicValueVariableStringComponentType,
+                    BuildDynamicStringValueVariableMembers(
+                        BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveSearchVariableLocalName),
+                        searchBinding.ValueFieldId,
+                        string.Empty)),
+                BuildAddComponentOperation(
+                    _sessionRootSlotId,
+                    latAliasBinding.ComponentId,
+                    DynamicValueVariableFloatComponentType,
+                    BuildDynamicFloatValueVariableMembers(
+                        InteractiveLatitudeAliasPath,
+                        latAliasBinding.ValueFieldId,
+                        0f)),
+                BuildAddComponentOperation(
+                    _sessionRootSlotId,
+                    CreateComponentId(),
+                    ValueCopyFloatComponentType,
+                    BuildValueCopyMembers(latBinding.ValueFieldId, latAliasBinding.ValueFieldId, FloatFieldType, writeBack: true)),
+                BuildAddComponentOperation(
+                    _sessionRootSlotId,
+                    lonAliasBinding.ComponentId,
+                    DynamicValueVariableFloatComponentType,
+                    BuildDynamicFloatValueVariableMembers(
+                        InteractiveLongitudeAliasPath,
+                        lonAliasBinding.ValueFieldId,
+                        0f)),
+                BuildAddComponentOperation(
+                    _sessionRootSlotId,
+                    CreateComponentId(),
+                    ValueCopyFloatComponentType,
+                    BuildValueCopyMembers(lonBinding.ValueFieldId, lonAliasBinding.ValueFieldId, FloatFieldType, writeBack: true)),
+                BuildAddComponentOperation(
+                    _sessionRootSlotId,
+                    rangeAliasBinding.ComponentId,
+                    DynamicValueVariableFloatComponentType,
+                    BuildDynamicFloatValueVariableMembers(
+                        InteractiveRangeAliasPath,
+                        rangeAliasBinding.ValueFieldId,
+                        0f)),
+                BuildAddComponentOperation(
+                    _sessionRootSlotId,
+                    CreateComponentId(),
+                    ValueCopyFloatComponentType,
+                    BuildValueCopyMembers(rangeBinding.ValueFieldId, rangeAliasBinding.ValueFieldId, FloatFieldType, writeBack: true)),
+                BuildAddComponentOperation(
+                    _sessionRootSlotId,
+                    searchAliasBinding.ComponentId,
+                    DynamicValueVariableStringComponentType,
+                    BuildDynamicStringValueVariableMembers(
+                        InteractiveSearchAliasPath,
+                        searchAliasBinding.ValueFieldId,
+                        string.Empty)),
+                BuildAddComponentOperation(
+                    _sessionRootSlotId,
+                    CreateComponentId(),
+                    ValueCopyStringComponentType,
+                    BuildValueCopyMembers(searchBinding.ValueFieldId, searchAliasBinding.ValueFieldId, StringFieldType, writeBack: true))
+            ];
+
+            BatchResponse response = await ExecuteDataModelOperationBatchAsync(operations, cancellationToken).ConfigureAwait(false);
+
+            string latitudeComponentId = ResolveCreatedEntityId(response.Responses![0], latBinding.ComponentId);
+            string latitudeAliasComponentId = ResolveCreatedEntityId(response.Responses[4], latAliasBinding.ComponentId);
+            string longitudeComponentId = ResolveCreatedEntityId(response.Responses[1], lonBinding.ComponentId);
+            string longitudeAliasComponentId = ResolveCreatedEntityId(response.Responses[6], lonAliasBinding.ComponentId);
+            string rangeComponentId = ResolveCreatedEntityId(response.Responses[2], rangeBinding.ComponentId);
+            string rangeAliasComponentId = ResolveCreatedEntityId(response.Responses[8], rangeAliasBinding.ComponentId);
+            string searchComponentId = ResolveCreatedEntityId(response.Responses[3], searchBinding.ComponentId);
+            string searchAliasComponentId = ResolveCreatedEntityId(response.Responses[10], searchAliasBinding.ComponentId);
 
             return new InteractiveInputBinding(
-                latBinding.ComponentId,
+                latitudeComponentId,
                 DynamicValueVariableValueMemberName,
-                latAliasBinding.ComponentId,
+                latitudeAliasComponentId,
                 DynamicValueVariableValueMemberName,
-                lonBinding.ComponentId,
+                longitudeComponentId,
                 DynamicValueVariableValueMemberName,
-                lonAliasBinding.ComponentId,
+                longitudeAliasComponentId,
                 DynamicValueVariableValueMemberName,
-                rangeBinding.ComponentId,
+                rangeComponentId,
                 DynamicValueVariableValueMemberName,
-                rangeAliasBinding.ComponentId,
+                rangeAliasComponentId,
                 DynamicValueVariableValueMemberName,
-                searchBinding.ComponentId,
+                searchComponentId,
                 DynamicValueVariableValueMemberName,
-                searchAliasBinding.ComponentId,
+                searchAliasComponentId,
                 DynamicValueVariableValueMemberName);
         }
 
@@ -617,7 +680,7 @@ namespace ThreeDTilesLink.Core.Resonite
 
                 try
                 {
-                    await ExecuteDataModelOperationBatchAsync(operations, cancellationToken).ConfigureAwait(false);
+                    _ = await ExecuteDataModelOperationBatchAsync(operations, cancellationToken).ConfigureAwait(false);
                 }
                 catch
                 {
@@ -838,13 +901,17 @@ namespace ThreeDTilesLink.Core.Resonite
             return response.EntityId;
         }
 
-        private async Task ExecuteDataModelOperationBatchAsync(
+        private async Task<BatchResponse> ExecuteDataModelOperationBatchAsync(
             List<DataModelOperation> operations,
             CancellationToken cancellationToken = default)
         {
             if (operations.Count == 0)
             {
-                return;
+                return new BatchResponse
+                {
+                    Success = true,
+                    Responses = []
+                };
             }
 
             BatchResponse response = EnsureSuccess(Hooks?.RunDataModelOperationBatchAsync is { } batchOverride
@@ -866,6 +933,46 @@ namespace ThreeDTilesLink.Core.Resonite
                     throw new InvalidOperationException(
                         $"ResoniteLink batch operation failed at index {i}: {operationResponse.ErrorInfo}");
                 }
+            }
+
+            return response;
+        }
+
+        private async Task<BatchResponse?> TryExecuteDataModelOperationBatchAsync(
+            List<DataModelOperation> operations,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                return await ExecuteDataModelOperationBatchAsync(operations, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (ObjectDisposedException)
+            {
+                return null;
+            }
+            catch (ResoniteLinkNoResponseException)
+            {
+                return null;
+            }
+            catch (ResoniteLinkDisconnectedException)
+            {
+                return null;
+            }
+            catch (TimeoutException)
+            {
+                return null;
+            }
+            catch (WebSocketException)
+            {
+                return null;
+            }
+            catch (InvalidOperationException)
+            {
+                return null;
             }
         }
 
@@ -1580,38 +1687,89 @@ namespace ThreeDTilesLink.Core.Resonite
                     ["OnlyDirectBinding"] = new Field_bool { Value = true }
                 }).ConfigureAwait(false);
 
-            DynamicVariableBinding? progressValueBinding = await TryAddDynamicFloatValueVariableAsync(
-                parentSlotId,
-                BuildScopedVariablePath(BuildParentDynamicSpaceName(parentSlotId), ProgressValueVariableLocalName),
-                0f).ConfigureAwait(false);
+            DynamicVariableBinding progressValueBinding = CreateDynamicFloatBindingSpec();
+            DynamicVariableBinding progressTextBinding = CreateDynamicStringBindingSpec();
+            DynamicVariableBinding progressValueAliasBinding = CreateDynamicFloatBindingSpec();
+            DynamicVariableBinding progressTextAliasBinding = CreateDynamicStringBindingSpec();
+            string parentDynamicSpace = BuildParentDynamicSpaceName(parentSlotId);
 
-            DynamicVariableBinding? progressTextBinding = await TryAddDynamicStringValueVariableAsync(
-                parentSlotId,
-                BuildScopedVariablePath(BuildParentDynamicSpaceName(parentSlotId), ProgressTextVariableLocalName),
-                string.Empty).ConfigureAwait(false);
+            List<DataModelOperation> coreOperations =
+            [
+                BuildAddComponentOperation(
+                    parentSlotId,
+                    progressValueBinding.ComponentId,
+                    DynamicValueVariableFloatComponentType,
+                    BuildDynamicFloatValueVariableMembers(
+                        BuildScopedVariablePath(parentDynamicSpace, ProgressValueVariableLocalName),
+                        progressValueBinding.ValueFieldId,
+                        0f)),
+                BuildAddComponentOperation(
+                    parentSlotId,
+                    progressTextBinding.ComponentId,
+                    DynamicValueVariableStringComponentType,
+                    BuildDynamicStringValueVariableMembers(
+                        BuildScopedVariablePath(parentDynamicSpace, ProgressTextVariableLocalName),
+                        progressTextBinding.ValueFieldId,
+                        string.Empty))
+            ];
 
-            if (progressValueBinding is null || progressTextBinding is null)
+            BatchResponse coreResponse = await ExecuteDataModelOperationBatchAsync(coreOperations).ConfigureAwait(false);
+
+            string progressValueComponentId = ResolveCreatedEntityId(coreResponse.Responses![0], progressValueBinding.ComponentId);
+            string progressTextComponentId = ResolveCreatedEntityId(coreResponse.Responses[1], progressTextBinding.ComponentId);
+            string? progressValueAliasComponentId = null;
+            string? progressTextAliasComponentId = null;
+
+            List<DataModelOperation> aliasOperations =
+            [
+                BuildAddComponentOperation(
+                    parentSlotId,
+                    progressValueAliasBinding.ComponentId,
+                    DynamicValueVariableFloatComponentType,
+                    BuildDynamicFloatValueVariableMembers(
+                        BuildWorldProgressPath(),
+                        progressValueAliasBinding.ValueFieldId,
+                        0f)),
+                BuildAddComponentOperation(
+                    parentSlotId,
+                    CreateComponentId(),
+                    ValueCopyFloatComponentType,
+                    BuildValueCopyMembers(
+                        progressValueBinding.ValueFieldId,
+                        progressValueAliasBinding.ValueFieldId,
+                        FloatFieldType,
+                        writeBack: false)),
+                BuildAddComponentOperation(
+                    parentSlotId,
+                    progressTextAliasBinding.ComponentId,
+                    DynamicValueVariableStringComponentType,
+                    BuildDynamicStringValueVariableMembers(
+                        BuildWorldProgressTextPath(),
+                        progressTextAliasBinding.ValueFieldId,
+                        string.Empty)),
+                BuildAddComponentOperation(
+                    parentSlotId,
+                    CreateComponentId(),
+                    ValueCopyStringComponentType,
+                    BuildValueCopyMembers(
+                        progressTextBinding.ValueFieldId,
+                        progressTextAliasBinding.ValueFieldId,
+                        StringFieldType,
+                        writeBack: false))
+            ];
+
+            BatchResponse? aliasResponse = await TryExecuteDataModelOperationBatchAsync(aliasOperations).ConfigureAwait(false);
+            if (aliasResponse is not null)
             {
-                throw new InvalidOperationException($"Failed to create progress dynamic variable for slot {parentSlotId}.");
+                progressValueAliasComponentId = ResolveCreatedEntityId(aliasResponse.Responses![0], progressValueAliasBinding.ComponentId);
+                progressTextAliasComponentId = ResolveCreatedEntityId(aliasResponse.Responses[2], progressTextAliasBinding.ComponentId);
             }
 
-            DynamicVariableBinding? progressValueAliasBinding = await TryAddWorldFloatAliasAsync(
-                parentSlotId,
-                BuildWorldProgressPath(),
-                progressValueBinding.ValueFieldId,
-                writeBack: false).ConfigureAwait(false);
-
-            DynamicVariableBinding? progressTextAliasBinding = await TryAddWorldStringAliasAsync(
-                parentSlotId,
-                BuildWorldProgressTextPath(),
-                progressTextBinding.ValueFieldId,
-                writeBack: false).ConfigureAwait(false);
-
             var binding = new SlotProgressBinding(
-                progressValueBinding.ComponentId,
-                progressTextBinding.ComponentId,
-                progressValueAliasBinding?.ComponentId,
-                progressTextAliasBinding?.ComponentId);
+                progressValueComponentId,
+                progressTextComponentId,
+                progressValueAliasComponentId,
+                progressTextAliasComponentId);
             _progressBindingsByParentSlotId[parentSlotId] = binding;
             return binding;
         }
@@ -1926,6 +2084,19 @@ namespace ThreeDTilesLink.Core.Resonite
             };
         }
 
+        private static AddComponent BuildAddComponentOperation(
+            string slotId,
+            string componentId,
+            string componentType,
+            Dictionary<string, Member> members)
+        {
+            return new AddComponent
+            {
+                ContainerSlotId = slotId,
+                Data = BuildComponentData(componentId, componentType, members)
+            };
+        }
+
         private async Task<(string ComponentType, Dictionary<string, MemberDefinition> Members)> ResolveComponentDefinitionAsync(
             IEnumerable<string> componentTypeCandidates,
             CancellationToken cancellationToken)
@@ -2059,6 +2230,26 @@ namespace ThreeDTilesLink.Core.Resonite
             return $"{spaceName}/{variableName}";
         }
 
+        private static string CreateComponentId()
+        {
+            return $"t3dtile_comp_{Guid.NewGuid():N}";
+        }
+
+        private static string CreateFieldId()
+        {
+            return $"t3dtile_field_{Guid.NewGuid():N}";
+        }
+
+        private static DynamicVariableBinding CreateDynamicFloatBindingSpec()
+        {
+            return new DynamicVariableBinding(CreateComponentId(), CreateFieldId());
+        }
+
+        private static DynamicVariableBinding CreateDynamicStringBindingSpec()
+        {
+            return new DynamicVariableBinding(CreateComponentId(), CreateFieldId());
+        }
+
         private static Dictionary<string, Member> BuildDynamicFloatValueVariableMembers(
             string variablePath,
             string valueFieldId,
@@ -2111,6 +2302,13 @@ namespace ThreeDTilesLink.Core.Resonite
                 },
                 ["WriteBack"] = new Field_bool { Value = writeBack }
             };
+        }
+
+        private static string ResolveCreatedEntityId(Response response, string fallbackEntityId)
+        {
+            return response is NewEntityId { EntityId: { Length: > 0 } entityId }
+                ? entityId
+                : fallbackEntityId;
         }
 
         private static T EnsureSuccess<T>(T? response) where T : Response

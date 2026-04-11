@@ -1102,6 +1102,118 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void PlanWriterCommand_MetadataProgress_DoesNotRegressWhenBacklogExpands()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p0", "https://example.com/p0.glb", depth: 0, parentTileId: null, hasChildren: false, span: 120d, stableId: StableId("p0")),
+                CreateTile("p1", "https://example.com/p1.glb", depth: 0, parentTileId: null, hasChildren: false, span: 120d, stableId: StableId("p1"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0"),
+                [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
+            });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
+            writerState.AppliedProgressValue = 0.88f;
+            writerState.AppliedProgressText = "stale";
+            writerState.LastMetadataSyncStartedAt = DateTimeOffset.UnixEpoch;
+
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            WriterCommand? command = reconciler.PlanNextWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(16, 8, 1, 0),
+                dryRun: false,
+                allowRemoval: false,
+                allowSend: false);
+
+            SyncSessionMetadataWriterCommand metadata = command.Should().BeOfType<SyncSessionMetadataWriterCommand>().Subject;
+            _ = metadata.ProgressValue.Should().Be(0.88f);
+        }
+
+        [Fact]
+        public void PlanWriterCommand_MetadataProgress_AllowsRegressionWhenPreviouslyCompletedRunHasNewBacklog()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p0", "https://example.com/p0.glb", depth: 0, parentTileId: null, hasChildren: false, span: 120d, stableId: StableId("p0")),
+                CreateTile("p1", "https://example.com/p1.glb", depth: 0, parentTileId: null, hasChildren: false, span: 120d, stableId: StableId("p1"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0"),
+                [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
+            });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
+            writerState.AppliedProgressValue = 1f;
+            writerState.AppliedProgressText = "Completed: candidate=2 processed=2 streamed=2 failed=0";
+            writerState.LastMetadataSyncStartedAt = DateTimeOffset.UnixEpoch;
+
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            WriterCommand? command = reconciler.PlanNextWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(16, 8, 1, 0),
+                dryRun: false,
+                allowRemoval: false,
+                allowSend: false);
+
+            SyncSessionMetadataWriterCommand metadata = command.Should().BeOfType<SyncSessionMetadataWriterCommand>().Subject;
+            _ = metadata.ProgressValue.Should().BeLessThan(1f);
+            _ = metadata.ProgressValue.Should().BeLessThan(writerState.AppliedProgressValue);
+            _ = metadata.ProgressText.Should().Be("Running...");
+        }
+
+        [Fact]
+        public void PlanWriterCommand_MetadataProgress_ImmediatelySyncsWhenCompletionStateReverts()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p0", "https://example.com/p0.glb", depth: 0, parentTileId: null, hasChildren: false, span: 120d, stableId: StableId("p0")),
+                CreateTile("p1", "https://example.com/p1.glb", depth: 0, parentTileId: null, hasChildren: false, span: 120d, stableId: StableId("p1"))
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
+            WriterState writerState = new(new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
+            {
+                [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0"),
+                [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
+            });
+            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
+            writerState.AppliedProgressValue = 1f;
+            writerState.AppliedProgressText = "Completed: candidate=2 processed=2 streamed=2 failed=0";
+            DateTimeOffset now = DateTimeOffset.UnixEpoch.AddSeconds(1);
+            writerState.LastMetadataSyncStartedAt = now - TimeSpan.FromMilliseconds(100);
+            writerState.LastMetadataSyncProcessedTiles = 8;
+            writerState.LastMetadataSyncProgressValue = 1f;
+
+            DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
+            WriterCommand? command = reconciler.PlanNextWriterCommand(
+                facts,
+                writerState,
+                desired,
+                new ProgressSnapshot(16, 8, 1, 0),
+                dryRun: false,
+                allowRemoval: false,
+                allowSend: false,
+                now: now);
+
+            SyncSessionMetadataWriterCommand metadata = command.Should().BeOfType<SyncSessionMetadataWriterCommand>().Subject;
+            _ = metadata.ProgressText.Should().Be("Running...");
+            _ = metadata.ProgressValue.Should().BeLessThan(1f);
+        }
+
+        [Fact]
         public void PlanWriterCommand_MetadataProgress_UpdatesImmediatelyWhenLicenseChanges()
         {
             TraversalCore core = CreateCore(_ =>

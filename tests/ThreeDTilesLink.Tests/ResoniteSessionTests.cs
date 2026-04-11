@@ -392,6 +392,250 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task CreateInteractiveInputBindingAsync_UsesSingleBatchWithExplicitFieldReferences()
+        {
+            await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
+            SetPrivateField(session, "_sessionRootSlotId", "slot_session_root");
+
+            List<DataModelOperation>? capturedOperations = null;
+            session.Hooks = new ResoniteSession.TestHooks
+            {
+                RunDataModelOperationBatchAsync = (operations, _) =>
+                {
+                    capturedOperations = [.. operations];
+                    return Task.FromResult(new BatchResponse
+                    {
+                        Success = true,
+                        Responses = operations.Select(static _ => new Response { Success = true }).ToList()
+                    });
+                }
+            };
+
+            InteractiveInputBinding binding = await session.CreateInteractiveInputBindingAsync(CancellationToken.None);
+
+            _ = capturedOperations.Should().NotBeNull();
+            _ = capturedOperations.Should().HaveCount(12);
+
+            AddComponent latitudeVariable = capturedOperations![0].Should().BeOfType<AddComponent>().Subject;
+            AddComponent latitudeAliasVariable = capturedOperations[4].Should().BeOfType<AddComponent>().Subject;
+            AddComponent latitudeCopy = capturedOperations[5].Should().BeOfType<AddComponent>().Subject;
+            string latitudeFieldId = latitudeVariable.Data.Members["Value"].Should().BeOfType<Field_float>().Which.ID!;
+            string latitudeAliasFieldId = latitudeAliasVariable.Data.Members["Value"].Should().BeOfType<Field_float>().Which.ID!;
+            _ = latitudeCopy.Data.ComponentType.Should().Be("[FrooxEngine]FrooxEngine.ValueCopy<float>");
+            _ = latitudeCopy.Data.Members["Source"].Should().BeOfType<Reference>().Which.TargetID.Should().Be(latitudeFieldId);
+            _ = latitudeCopy.Data.Members["Target"].Should().BeOfType<Reference>().Which.TargetID.Should().Be(latitudeAliasFieldId);
+
+            AddComponent searchVariable = capturedOperations[3].Should().BeOfType<AddComponent>().Subject;
+            AddComponent searchAliasVariable = capturedOperations[10].Should().BeOfType<AddComponent>().Subject;
+            AddComponent searchCopy = capturedOperations[11].Should().BeOfType<AddComponent>().Subject;
+            string searchFieldId = searchVariable.Data.Members["Value"].Should().BeOfType<Field_string>().Which.ID!;
+            string searchAliasFieldId = searchAliasVariable.Data.Members["Value"].Should().BeOfType<Field_string>().Which.ID!;
+            _ = searchCopy.Data.ComponentType.Should().Be("[FrooxEngine]FrooxEngine.ValueCopy<string>");
+            _ = searchCopy.Data.Members["Source"].Should().BeOfType<Reference>().Which.TargetID.Should().Be(searchFieldId);
+            _ = searchCopy.Data.Members["Target"].Should().BeOfType<Reference>().Which.TargetID.Should().Be(searchAliasFieldId);
+
+            _ = binding.LatitudeComponentId.Should().Be(latitudeVariable.Data.ID);
+            _ = binding.LatitudeAliasComponentId.Should().Be(latitudeAliasVariable.Data.ID);
+            _ = binding.SearchComponentId.Should().Be(searchVariable.Data.ID);
+            _ = binding.SearchAliasComponentId.Should().Be(searchAliasVariable.Data.ID);
+        }
+
+        [Fact]
+        public async Task CreateInteractiveInputBindingAsync_UsesBatchResponseEntityIds_WhenTheyDifferFromRequestedIds()
+        {
+            await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
+            SetPrivateField(session, "_sessionRootSlotId", "slot_session_root");
+
+            session.Hooks = new ResoniteSession.TestHooks
+            {
+                RunDataModelOperationBatchAsync = (operations, _) =>
+                {
+                    return Task.FromResult(new BatchResponse
+                    {
+                        Success = true,
+                        Responses =
+                        [
+                            new NewEntityId { Success = true, EntityId = "lat_actual" },
+                            new NewEntityId { Success = true, EntityId = "lon_actual" },
+                            new NewEntityId { Success = true, EntityId = "range_actual" },
+                            new NewEntityId { Success = true, EntityId = "search_actual" },
+                            new NewEntityId { Success = true, EntityId = "lat_alias_actual" },
+                            new Response { Success = true },
+                            new NewEntityId { Success = true, EntityId = "lon_alias_actual" },
+                            new Response { Success = true },
+                            new NewEntityId { Success = true, EntityId = "range_alias_actual" },
+                            new Response { Success = true },
+                            new NewEntityId { Success = true, EntityId = "search_alias_actual" },
+                            new Response { Success = true }
+                        ]
+                    });
+                }
+            };
+
+            InteractiveInputBinding binding = await session.CreateInteractiveInputBindingAsync(CancellationToken.None);
+
+            _ = binding.LatitudeComponentId.Should().Be("lat_actual");
+            _ = binding.LongitudeComponentId.Should().Be("lon_actual");
+            _ = binding.RangeComponentId.Should().Be("range_actual");
+            _ = binding.SearchComponentId.Should().Be("search_actual");
+            _ = binding.LatitudeAliasComponentId.Should().Be("lat_alias_actual");
+            _ = binding.LongitudeAliasComponentId.Should().Be("lon_alias_actual");
+            _ = binding.RangeAliasComponentId.Should().Be("range_alias_actual");
+            _ = binding.SearchAliasComponentId.Should().Be("search_alias_actual");
+        }
+
+        [Fact]
+        public async Task EnsureProgressBindingAsync_UsesCoreAndAliasBatchesWithExplicitFieldReferences()
+        {
+            await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
+            List<List<DataModelOperation>> capturedBatches = [];
+
+            session.Hooks = new ResoniteSession.TestHooks
+            {
+                RunDataModelOperationBatchAsync = (operations, _) =>
+                {
+                    capturedBatches.Add([.. operations]);
+                    return Task.FromResult(new BatchResponse
+                    {
+                        Success = true,
+                        Responses = operations.Select(static _ => new Response { Success = true }).ToList()
+                    });
+                }
+            };
+
+            MethodInfo? ensureProgressBinding = typeof(ResoniteSession)
+                .GetMethod("EnsureProgressBindingAsync", BindingFlags.Instance | BindingFlags.NonPublic);
+            _ = ensureProgressBinding.Should().NotBeNull();
+
+            object? taskObject = ensureProgressBinding!.Invoke(session, ["slot_parent"]);
+            _ = taskObject.Should().NotBeNull();
+            await (Task)taskObject!;
+
+            _ = capturedBatches.Should().HaveCount(2);
+            _ = capturedBatches[0].Should().HaveCount(2);
+            _ = capturedBatches[1].Should().HaveCount(4);
+
+            AddComponent progressValueVariable = capturedBatches[0][0].Should().BeOfType<AddComponent>().Subject;
+            AddComponent progressValueAliasVariable = capturedBatches[1][0].Should().BeOfType<AddComponent>().Subject;
+            AddComponent progressValueCopy = capturedBatches[1][1].Should().BeOfType<AddComponent>().Subject;
+            string progressValueFieldId = progressValueVariable.Data.Members["Value"].Should().BeOfType<Field_float>().Which.ID!;
+            string progressValueAliasFieldId = progressValueAliasVariable.Data.Members["Value"].Should().BeOfType<Field_float>().Which.ID!;
+            _ = progressValueCopy.Data.Members["Source"].Should().BeOfType<Reference>().Which.TargetID.Should().Be(progressValueFieldId);
+            _ = progressValueCopy.Data.Members["Target"].Should().BeOfType<Reference>().Which.TargetID.Should().Be(progressValueAliasFieldId);
+
+            AddComponent progressTextVariable = capturedBatches[0][1].Should().BeOfType<AddComponent>().Subject;
+            AddComponent progressTextAliasVariable = capturedBatches[1][2].Should().BeOfType<AddComponent>().Subject;
+            AddComponent progressTextCopy = capturedBatches[1][3].Should().BeOfType<AddComponent>().Subject;
+            string progressTextFieldId = progressTextVariable.Data.Members["Value"].Should().BeOfType<Field_string>().Which.ID!;
+            string progressTextAliasFieldId = progressTextAliasVariable.Data.Members["Value"].Should().BeOfType<Field_string>().Which.ID!;
+            _ = progressTextCopy.Data.Members["Source"].Should().BeOfType<Reference>().Which.TargetID.Should().Be(progressTextFieldId);
+            _ = progressTextCopy.Data.Members["Target"].Should().BeOfType<Reference>().Which.TargetID.Should().Be(progressTextAliasFieldId);
+        }
+
+        [Fact]
+        public async Task EnsureProgressBindingAsync_UsesBatchResponseEntityIds_WhenTheyDifferFromRequestedIds()
+        {
+            await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
+
+            session.Hooks = new ResoniteSession.TestHooks
+            {
+                RunDataModelOperationBatchAsync = (operations, _) =>
+                {
+                    return Task.FromResult(new BatchResponse
+                    {
+                        Success = true,
+                        Responses = operations.Count switch
+                        {
+                            2 =>
+                            [
+                                new NewEntityId { Success = true, EntityId = "progress_value_actual" },
+                                new NewEntityId { Success = true, EntityId = "progress_text_actual" }
+                            ],
+                            4 =>
+                            [
+                                new NewEntityId { Success = true, EntityId = "progress_value_alias_actual" },
+                                new Response { Success = true },
+                                new NewEntityId { Success = true, EntityId = "progress_text_alias_actual" },
+                                new Response { Success = true }
+                            ],
+                            _ => throw new InvalidOperationException("Unexpected batch operation count.")
+                        }
+                    });
+                }
+            };
+
+            MethodInfo? ensureProgressBinding = typeof(ResoniteSession)
+                .GetMethod("EnsureProgressBindingAsync", BindingFlags.Instance | BindingFlags.NonPublic);
+            _ = ensureProgressBinding.Should().NotBeNull();
+
+            object? taskObject = ensureProgressBinding!.Invoke(session, ["slot_parent"]);
+            _ = taskObject.Should().NotBeNull();
+            object? binding = await AwaitTaskWithResultAsync(taskObject!);
+            _ = binding.Should().NotBeNull();
+
+            Type bindingType = binding!.GetType();
+            _ = bindingType.GetProperty("ProgressValueComponentId")!.GetValue(binding).Should().Be("progress_value_actual");
+            _ = bindingType.GetProperty("ProgressTextComponentId")!.GetValue(binding).Should().Be("progress_text_actual");
+            _ = bindingType.GetProperty("ProgressValueAliasComponentId")!.GetValue(binding).Should().Be("progress_value_alias_actual");
+            _ = bindingType.GetProperty("ProgressTextAliasComponentId")!.GetValue(binding).Should().Be("progress_text_alias_actual");
+        }
+
+        [Fact]
+        public async Task EnsureProgressBindingAsync_PreservesCoreBinding_WhenAliasBatchFails()
+        {
+            await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
+            int batchCallCount = 0;
+
+            session.Hooks = new ResoniteSession.TestHooks
+            {
+                RunDataModelOperationBatchAsync = (_, _) =>
+                {
+                    batchCallCount++;
+                    return Task.FromResult(batchCallCount switch
+                    {
+                        1 => new BatchResponse
+                        {
+                            Success = true,
+                            Responses =
+                            [
+                                new NewEntityId { Success = true, EntityId = "progress_value_actual" },
+                                new NewEntityId { Success = true, EntityId = "progress_text_actual" }
+                            ]
+                        },
+                        2 => new BatchResponse
+                        {
+                            Success = true,
+                            Responses =
+                            [
+                                new Response { Success = false, ErrorInfo = "alias failed" },
+                                new Response { Success = true },
+                                new Response { Success = true },
+                                new Response { Success = true }
+                            ]
+                        },
+                        _ => throw new InvalidOperationException("Unexpected extra batch call.")
+                    });
+                }
+            };
+
+            MethodInfo? ensureProgressBinding = typeof(ResoniteSession)
+                .GetMethod("EnsureProgressBindingAsync", BindingFlags.Instance | BindingFlags.NonPublic);
+            _ = ensureProgressBinding.Should().NotBeNull();
+
+            object? taskObject = ensureProgressBinding!.Invoke(session, ["slot_parent"]);
+            _ = taskObject.Should().NotBeNull();
+            object? binding = await AwaitTaskWithResultAsync(taskObject!);
+            _ = binding.Should().NotBeNull();
+
+            Type bindingType = binding!.GetType();
+            _ = bindingType.GetProperty("ProgressValueComponentId")!.GetValue(binding).Should().Be("progress_value_actual");
+            _ = bindingType.GetProperty("ProgressTextComponentId")!.GetValue(binding).Should().Be("progress_text_actual");
+            _ = bindingType.GetProperty("ProgressValueAliasComponentId")!.GetValue(binding).Should().BeNull();
+            _ = bindingType.GetProperty("ProgressTextAliasComponentId")!.GetValue(binding).Should().BeNull();
+            _ = batchCallCount.Should().Be(2);
+        }
+
+        [Fact]
         public async Task StreamPlacedMeshAsync_RemovesCreatedSlot_WhenBatchOperationFails()
         {
             await using var session = CreateStreamPlacedMeshSession();
@@ -526,6 +770,13 @@ namespace ThreeDTilesLink.Tests
             WritePngChunk(stream, "IDAT", Compress(scanlineData));
             WritePngChunk(stream, "IEND", []);
             return stream.ToArray();
+        }
+
+        private static async Task<object?> AwaitTaskWithResultAsync(object taskObject)
+        {
+            Task task = (Task)taskObject;
+            await task;
+            return task.GetType().GetProperty("Result")?.GetValue(task);
         }
 
         private static byte[] BuildPngHeader(int width, int height)

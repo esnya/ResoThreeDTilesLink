@@ -27,6 +27,7 @@ DISCOVER_PATTERN = re.compile(
     r"(?P<port>\d{2,5})\s+(?P<address>\d+\.\d+\.\d+\.\d+)\b"
 )
 TIMEOUT_EXIT_CODE = 124
+SESSION_DATA_REQUEST_JSON = '{"$type":"requestSessionData"}'
 
 
 def repo_root() -> Path:
@@ -119,7 +120,7 @@ def list_active_live_cli_processes(port: int) -> list[str]:
     return matches
 
 
-def discover_port(repo_path: Path) -> int:
+def discover_session(repo_path: Path) -> dict[str, Any]:
     output = invoke_resonite(repo_path, ["discover"], timeout=30)
     matches = list(DISCOVER_PATTERN.finditer(output))
     if len(matches) == 0:
@@ -129,14 +130,198 @@ def discover_port(repo_path: Path) -> int:
             "Multiple Resonite Link sessions were discovered. Re-run with --port to select the intended live session.\n"
             f"{output}"
         )
-    return int(matches[0].group("port"))
+    match = matches[0]
+    return {
+        "session_name": match.group("session_name").strip(),
+        "session_id": match.group("session_id"),
+        "port": int(match.group("port")),
+        "address": match.group("address"),
+    }
 
 
-def cleanup_sessions(repo_path: Path, port: int | None) -> None:
+def cleanup_sessions(repo_path: Path, host: str, port: int | None) -> None:
     args = ["cleanup-sessions"]
+    if host != "localhost":
+        args.append(host)
     if port is not None:
         args.extend(["-Port", str(port)])
     _ = invoke_resonite(repo_path, args, timeout=120)
+
+
+def probe_listener_from_host(port: int, *, hosts: list[str], timeout_s: float = 3.0) -> dict[str, Any]:
+    attempts: list[dict[str, Any]] = []
+    timeout_ms = max(1, int(timeout_s * 1000))
+    for host in hosts:
+        command = [
+            "pwsh.exe",
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            (
+                "$client = [System.Net.Sockets.TcpClient]::new();"
+                "try {"
+                f" $async = $client.ConnectAsync('{host}', {port});"
+                f" if (-not $async.Wait({timeout_ms})) {{ throw 'timed out'; }}"
+                " if (-not $client.Connected) { throw 'connect failed'; }"
+                " 'OK'"
+                "} finally {"
+                " $client.Dispose()"
+                "}"
+            ),
+        ]
+        result = run_process(command, cwd=repo_root(), timeout=timeout_s + 2)
+        if result.returncode == 0 and result.stdout.strip() == "OK":
+            return {
+                "ok": True,
+                "host": host,
+                "port": port,
+                "attempts": attempts,
+            }
+
+        error_text = (result.stderr.strip() or result.stdout.strip() or "unknown host-side probe failure")
+        attempts.append(
+            {
+                "host": host,
+                "port": port,
+                "error": error_text,
+            }
+        )
+
+    return {
+        "ok": False,
+        "port": port,
+        "attempts": attempts,
+    }
+
+
+def ensure_listener_ready(port: int, *, hosts: list[str]) -> dict[str, Any]:
+    probe = probe_listener_from_host(port, hosts=hosts)
+    if probe["ok"]:
+        return probe
+
+    formatted_attempts = "\n".join(
+        f"- host={attempt['host']} port={attempt['port']} error={attempt['error']}"
+        for attempt in probe["attempts"]
+    )
+    raise RuntimeError(
+        "Resonite Link listener preflight failed from the Windows host process for the selected port. "
+        "Do not trust UDP discovery alone; re-resolve the listener or pass the correct --host/--port.\n"
+        f"{formatted_attempts}"
+    )
+
+
+def probe_protocol_from_host(repo_path: Path, host: str, port: int, *, timeout_s: float = 10.0) -> dict[str, Any]:
+    timeout_sec = max(1, int(timeout_s))
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as handle:
+        handle.write(SESSION_DATA_REQUEST_JSON)
+        handle.flush()
+        payload_path = Path(handle.name)
+    try:
+        response = invoke_resonite(
+            repo_path,
+            [
+                "send-json",
+                host,
+                "-Port",
+                str(port),
+                "-TimeoutSec",
+                str(timeout_sec),
+                "-JsonFile",
+                wsl_to_windows(payload_path),
+                "-Compact",
+            ],
+            timeout=timeout_s + 5.0,
+        )
+    except (RuntimeError, subprocess.TimeoutExpired) as exc:
+        return {
+            "ok": False,
+            "host": host,
+            "port": port,
+            "error": str(exc).strip(),
+        }
+    finally:
+        payload_path.unlink(missing_ok=True)
+
+    response_text = response.strip()
+    response_json = extract_json_object(response_text)
+    if response_json is None:
+        return {
+            "ok": False,
+            "host": host,
+            "port": port,
+            "error": f"send-json completed but no JSON object could be parsed from output: {response_text}",
+        }
+
+    success = response_json.get("success")
+    response_type = response_json.get("$type")
+    if success is not True:
+        return {
+            "ok": False,
+            "host": host,
+            "port": port,
+            "error": f"send-json returned success={success!r}: {response_json}",
+        }
+    if response_type != "sessionData":
+        return {
+            "ok": False,
+            "host": host,
+            "port": port,
+            "error": f"unexpected response type {response_type!r}: {response_json}",
+        }
+
+    return {
+        "ok": True,
+        "host": host,
+        "port": port,
+        "response": response_text,
+        "response_json": response_json,
+    }
+
+
+def ensure_protocol_ready(repo_path: Path, host: str, port: int) -> dict[str, Any]:
+    probe = probe_protocol_from_host(repo_path, host, port)
+    if probe["ok"]:
+        return probe
+
+    raise RuntimeError(
+        "Resonite Link protocol preflight failed from the Windows host process after TCP connect succeeded. "
+        "The listener accepted the socket but did not answer a minimal send-json request.\n"
+        f"- host={host} port={port} error={probe['error']}"
+    )
+
+
+def unique_hosts(hosts: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for host in hosts:
+        normalized = host.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
+def resolve_candidate_hosts(host: str | None, discovered_session: dict[str, Any] | None) -> list[str]:
+    if host is not None:
+        return unique_hosts([host])
+
+    discovered_address = None if discovered_session is None else str(discovered_session.get("address") or "").strip()
+    return unique_hosts(["localhost", discovered_address] if discovered_address else ["localhost"])
+
+
+def extract_json_object(output: str) -> dict[str, Any] | None:
+    for line in reversed(output.splitlines()):
+        candidate = line.strip()
+        if not candidate.startswith("{") or not candidate.endswith("}"):
+            continue
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
 
 
 def percentile(values: list[float], ratio: float) -> float | None:
@@ -189,6 +374,7 @@ def parse_max_tile_id_length(stdout: str) -> int:
 
 def build_stream_command(
     repo_path: Path,
+    host: str,
     port: int,
     *,
     latitude: float,
@@ -217,6 +403,8 @@ def build_stream_command(
             f"{longitude}",
             "--range",
             f"{range_m}",
+            "--resonite-host",
+            host,
             "--resonite-port",
             f"{port}",
             "--log-level",
@@ -241,6 +429,7 @@ def run_stream_case(
     latitude: float,
     longitude: float,
     range_m: float,
+    host: str | None = None,
     port: int | None,
     cleanup: bool,
     no_build: bool,
@@ -252,7 +441,12 @@ def run_stream_case(
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    resolved_port = port if port is not None else discover_port(repo_path)
+    discovered_session = None if port is not None else discover_session(repo_path)
+    resolved_port = port if port is not None else int(discovered_session["port"])
+    candidate_hosts = resolve_candidate_hosts(host, discovered_session)
+    listener_probe = ensure_listener_ready(resolved_port, hosts=candidate_hosts)
+    resolved_host = str(listener_probe["host"])
+    protocol_probe = ensure_protocol_ready(repo_path, resolved_host, resolved_port)
     if cleanup:
         active_processes = list_active_live_cli_processes(resolved_port)
         if active_processes:
@@ -261,10 +455,11 @@ def run_stream_case(
                 "cleanup-sessions is unsafe while live stream/interactive processes are still running on the target port.\n"
                 f"Stop these processes or re-run with --skip-cleanup once the session is known clean:\n{formatted}"
             )
-        cleanup_sessions(repo_path, resolved_port)
+        cleanup_sessions(repo_path, resolved_host, resolved_port)
 
     script_body = build_stream_command(
         repo_path,
+        resolved_host,
         resolved_port,
         latitude=latitude,
         longitude=longitude,
@@ -298,7 +493,11 @@ def run_stream_case(
     except subprocess.TimeoutExpired:
         timed_out = True
         _ = run_process(["cmd.exe", "/c", f"taskkill /PID {process.pid} /T /F"], cwd=repo_path, timeout=30)
-        stdout_bytes, stderr_bytes = process.communicate()
+        try:
+            stdout_bytes, stderr_bytes = process.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            stdout_bytes, stderr_bytes = process.communicate(timeout=30)
         result = subprocess.CompletedProcess(
             args=process.args,
             returncode=TIMEOUT_EXIT_CODE,
@@ -323,7 +522,11 @@ def run_stream_case(
     return {
         "repo_path": str(repo_path),
         "label": label,
+        "host": resolved_host,
         "port": resolved_port,
+        "listener_probe": listener_probe,
+        "protocol_probe": protocol_probe,
+        "discovered_session": discovered_session,
         "stdout_log": str(stdout_path),
         "stderr_log": str(stderr_path),
         "elapsed_s": round(elapsed_s, 3),
@@ -366,6 +569,7 @@ def parse_args() -> argparse.Namespace:
         description="Run the standard live Tokyo Tower stream case and emit JSON summary.",
     )
     parser.add_argument("--repo-path", type=Path, default=repo_root())
+    parser.add_argument("--host")
     parser.add_argument("--port", type=int)
     parser.add_argument("--latitude", type=float, default=TOKYO_TOWER_LATITUDE)
     parser.add_argument("--longitude", type=float, default=TOKYO_TOWER_LONGITUDE)
@@ -389,6 +593,7 @@ def main() -> int:
             latitude=args.latitude,
             longitude=args.longitude,
             range_m=args.range_m,
+            host=args.host,
             port=args.port,
             cleanup=not args.skip_cleanup,
             no_build=args.no_build,

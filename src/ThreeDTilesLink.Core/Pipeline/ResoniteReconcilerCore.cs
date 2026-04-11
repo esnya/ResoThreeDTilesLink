@@ -514,6 +514,12 @@ namespace ThreeDTilesLink.Core.Pipeline
             float progressValue = backlog.PendingUnits == 0 || backlog.TotalUnits == 0
                 ? 1f
                 : System.Math.Clamp((float)progress.ProcessedTiles / backlog.TotalUnits, 0f, 1f);
+            bool previouslyCompleted = IsCompletedMetadata(writerState.AppliedProgressValue, writerState.AppliedProgressText);
+            if (writerState.AppliedProgressValue >= 0f &&
+                (!previouslyCompleted || backlog.PendingUnits == 0))
+            {
+                progressValue = System.Math.Max(progressValue, writerState.AppliedProgressValue);
+            }
             string progressText = backlog.PendingUnits == 0
                 ? $"Completed: candidate={progress.CandidateTiles} processed={progress.ProcessedTiles} streamed={progress.StreamedMeshes} failed={progress.FailedTiles}"
                 : "Running...";
@@ -521,6 +527,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             bool updateProgressText = !string.Equals(progressText, writerState.AppliedProgressText, StringComparison.Ordinal);
             bool progressValueChanged = System.Math.Abs(progressValue - writerState.AppliedProgressValue) > 0.0001f;
             bool isCompleted = IsCompletedMetadata(progressValue, progressText);
+            bool completionStateChanged = previouslyCompleted != isCompleted;
             bool cadenceElapsed = now - writerState.LastMetadataSyncStartedAt >= MetadataCadence;
             bool processedDeltaReached = progress.ProcessedTiles - writerState.LastMetadataSyncProcessedTiles >= MetadataProcessedDeltaThreshold;
             bool progressDeltaReached = writerState.LastMetadataSyncProgressValue < 0f ||
@@ -534,6 +541,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 updateProgressText,
                 progressValueChanged,
                 isCompleted,
+                completionStateChanged,
                 cadenceElapsed,
                 processedDeltaReached,
                 progressDeltaReached,
