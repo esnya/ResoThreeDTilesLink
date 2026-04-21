@@ -470,18 +470,12 @@
         "type": "Project",
         "dependencies": {
           "DotNetEnv": "[3.1.1, )",
+          "GeographicLib.NET": "[2.3.2, )",
           "Microsoft.Extensions.Hosting": "[10.0.0, )",
           "Microsoft.Extensions.Http": "[10.0.0, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.5, )",
           "Microsoft.Extensions.Logging.Console": "[10.0.5, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.0, )",
-          "ThreeDTilesLink.Core": "[1.0.0, )"
-        }
-      },
-      "threedtileslink.core": {
-        "type": "Project",
-        "dependencies": {
-          "GeographicLib.NET": "[2.3.2, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.5, )",
           "SharpGLTF.Core": "[1.0.6, )",
           "SixLabors.ImageSharp": "[3.1.11, )",
           "YellowDogMan.ResoniteLink": "[0.13.1, )"

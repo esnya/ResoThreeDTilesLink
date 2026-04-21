@@ -747,7 +747,7 @@ namespace ThreeDTilesLink.Tests
 
         private sealed class FakeTileRunCoordinator(
             Action<int> onRunStarted,
-            Func<int, TileRunRequest, InteractiveRunInput, CancellationToken, Task<InteractiveTileRunResult>>? interactiveHandler = null) : ITileRunCoordinator
+            Func<int, TileRunRequest, InteractiveRunInput, CancellationToken, Task<InteractiveTileRunResult>>? interactiveHandler = null) : ITileSelectionService
         {
             private readonly Action<int> _onRunStarted = onRunStarted;
             private readonly Func<int, TileRunRequest, InteractiveRunInput, CancellationToken, Task<InteractiveTileRunResult>>? _interactiveHandler = interactiveHandler;
@@ -992,3 +992,4 @@ namespace ThreeDTilesLink.Tests
         }
     }
 }
+

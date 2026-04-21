@@ -4,12 +4,12 @@ namespace ThreeDTilesLink.Core.Tiles
     /// Parsed root tileset metadata.
     /// </summary>
     /// <param name="Root">Root tile in the hierarchy.</param>
-    public sealed record Tileset(Tile Root);
+    internal sealed record Tileset(Tile Root);
 
     /// <summary>
     /// Describes a single 3D Tiles node.
     /// </summary>
-    public sealed class Tile
+    internal sealed class Tile
     {
         /// <summary>
         /// Internal display label for the node.
@@ -40,7 +40,7 @@ namespace ThreeDTilesLink.Core.Tiles
     /// <summary>
     /// 3D Tiles bounding volume forms.
     /// </summary>
-    public sealed class BoundingVolume
+    internal sealed class BoundingVolume
     {
         /// <summary>
         /// Geodetic region volume, if present.

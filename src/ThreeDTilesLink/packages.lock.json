@@ -14,6 +14,12 @@
           "Sprache": "2.3.1"
         }
       },
+      "GeographicLib.NET": {
+        "type": "Direct",
+        "requested": "[2.3.2, )",
+        "resolved": "2.3.2",
+        "contentHash": "b8slF2a3kkTiuU8Ca4C5cDm3/sZRPwcy6GYaDSsdwlqzb1UYm3lL56w/0m5q0kYAgjhC+EE7kBzD72bsJ4uYlw=="
+      },
       "Microsoft.Extensions.Hosting": {
         "type": "Direct",
         "requested": "[10.0.0, )",
@@ -58,6 +64,15 @@
           "Microsoft.Extensions.Options": "10.0.0"
         }
       },
+      "Microsoft.Extensions.Logging.Abstractions": {
+        "type": "Direct",
+        "requested": "[10.0.5, )",
+        "resolved": "10.0.5",
+        "contentHash": "9HOdqlDtPptVcmKAjsQ/Nr5Rxfq6FMYLdhvZh1lVmeKR738qeYecQD7+ldooXf+u2KzzR1kafSphWngIM3C6ug==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.5"
+        }
+      },
       "Microsoft.Extensions.Logging.Console": {
         "type": "Direct",
         "requested": "[10.0.5, )",
@@ -87,10 +102,23 @@
         "resolved": "7.0.0",
         "contentHash": "2lMTCQl5bGP4iv0JNkockPnyllC6eHLz+CoK2ICvalvHod+exXSxueu9hq+zNkU7bZBJf8wMfeRC/Edn8AGmEg=="
       },
-      "GeographicLib.NET": {
-        "type": "Transitive",
-        "resolved": "2.3.2",
-        "contentHash": "b8slF2a3kkTiuU8Ca4C5cDm3/sZRPwcy6GYaDSsdwlqzb1UYm3lL56w/0m5q0kYAgjhC+EE7kBzD72bsJ4uYlw=="
+      "SharpGLTF.Core": {
+        "type": "Direct",
+        "requested": "[1.0.6, )",
+        "resolved": "1.0.6",
+        "contentHash": "m3qIvUnpvRRfQ0fp0TFfpPk+vsHkCIOf/uIVJ19fe9dwa29KCO/PeHVXKAph8nsFxFLXitTIIqCa5W8JGLMhBg=="
+      },
+      "SixLabors.ImageSharp": {
+        "type": "Direct",
+        "requested": "[3.1.11, )",
+        "resolved": "3.1.11",
+        "contentHash": "JfPLyigLthuE50yi6tMt7Amrenr/fA31t2CvJyhy/kQmfulIBAqo5T/YFUSRHtuYPXRSaUHygFeh6Qd933EoSw=="
+      },
+      "YellowDogMan.ResoniteLink": {
+        "type": "Direct",
+        "requested": "[0.13.1, )",
+        "resolved": "0.13.1",
+        "contentHash": "t7H5pS9B2wIJq9FlXeufIrImp9v63fVFBsVht80/VaGayG6uTwtKyfFByPDhOrAhumMTOW/sTiEXrFQ4B8OyEA=="
       },
       "Microsoft.Extensions.Configuration": {
         "type": "Transitive",
@@ -247,14 +275,6 @@
           "Microsoft.Extensions.Options": "10.0.5"
         }
       },
-      "Microsoft.Extensions.Logging.Abstractions": {
-        "type": "Transitive",
-        "resolved": "10.0.5",
-        "contentHash": "9HOdqlDtPptVcmKAjsQ/Nr5Rxfq6FMYLdhvZh1lVmeKR738qeYecQD7+ldooXf+u2KzzR1kafSphWngIM3C6ug==",
-        "dependencies": {
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.5"
-        }
-      },
       "Microsoft.Extensions.Logging.Configuration": {
         "type": "Transitive",
         "resolved": "10.0.5",
@@ -343,16 +363,6 @@
           "Microsoft.NETCore.Platforms": "1.1.0"
         }
       },
-      "SharpGLTF.Core": {
-        "type": "Transitive",
-        "resolved": "1.0.6",
-        "contentHash": "m3qIvUnpvRRfQ0fp0TFfpPk+vsHkCIOf/uIVJ19fe9dwa29KCO/PeHVXKAph8nsFxFLXitTIIqCa5W8JGLMhBg=="
-      },
-      "SixLabors.ImageSharp": {
-        "type": "Transitive",
-        "resolved": "3.1.11",
-        "contentHash": "JfPLyigLthuE50yi6tMt7Amrenr/fA31t2CvJyhy/kQmfulIBAqo5T/YFUSRHtuYPXRSaUHygFeh6Qd933EoSw=="
-      },
       "Sprache": {
         "type": "Transitive",
         "resolved": "2.3.1",
@@ -362,21 +372,6 @@
         "type": "Transitive",
         "resolved": "10.0.0",
         "contentHash": "uaFRda9NjtbJRkdx311eXlAA3n2em7223c1A8d1VWyl+4FL9vkG7y2lpPfBU9HYdj/9KgdRNdn1vFK8ZYCYT/A=="
-      },
-      "YellowDogMan.ResoniteLink": {
-        "type": "Transitive",
-        "resolved": "0.13.1",
-        "contentHash": "t7H5pS9B2wIJq9FlXeufIrImp9v63fVFBsVht80/VaGayG6uTwtKyfFByPDhOrAhumMTOW/sTiEXrFQ4B8OyEA=="
-      },
-      "threedtileslink.core": {
-        "type": "Project",
-        "dependencies": {
-          "GeographicLib.NET": "[2.3.2, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.5, )",
-          "SharpGLTF.Core": "[1.0.6, )",
-          "SixLabors.ImageSharp": "[3.1.11, )",
-          "YellowDogMan.ResoniteLink": "[0.13.1, )"
-        }
       }
     }
   }

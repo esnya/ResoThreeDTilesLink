@@ -13,7 +13,7 @@ using ThreeDTilesLink.Core.Tiles;
 
 namespace ThreeDTilesLink.Tests
 {
-    public sealed class TileRunCoordinatorTests
+    public sealed class TileSelectionServiceTests
     {
         [Fact]
         public async Task Run_DryRun_ProcessesTilesWithoutSending()
@@ -29,7 +29,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: true), CancellationToken.None);
 
@@ -57,7 +57,7 @@ namespace ThreeDTilesLink.Tests
 
             var client = new FakeResoniteSession();
             var source = new FakeTilesSource(tileset);
-            TileRunCoordinator coordinator = CreateCoordinator(source, client);
+            TileSelectionService coordinator = CreateCoordinator(source, client);
 
             _ = await coordinator.RunAsync(CreateRequest(dryRun: true, apiKey: null), CancellationToken.None);
 
@@ -78,7 +78,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             _ = await coordinator.RunAsync(CreateRequest(dryRun: false, manageConnection: false, apiKey: null), CancellationToken.None);
 
@@ -99,7 +99,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failFirstSend: true);
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -131,7 +131,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, manageConnection: false), CancellationToken.None);
 
@@ -155,7 +155,7 @@ namespace ThreeDTilesLink.Tests
 
             var session = new FakeResoniteSession();
             var metadataPort = new FakeMetadataPort();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), session, metadataPort: metadataPort);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), session, metadataPort: metadataPort);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, manageConnection: false), CancellationToken.None);
 
@@ -180,7 +180,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             _ = await coordinator.RunAsync(CreateRequest(dryRun: false, manageConnection: false), CancellationToken.None);
 
@@ -210,7 +210,7 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(rootTileset, new Dictionary<string, Tileset>
                 {
                     ["https://example.com/nested.json"] = nestedTileset
@@ -238,7 +238,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -261,7 +261,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -287,7 +287,7 @@ namespace ThreeDTilesLink.Tests
 
             var client = new FakeResoniteSession();
             var extractor = new FakeExtractor(includeNormalsAndTangents: true);
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client, extractor);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client, extractor);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -319,7 +319,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -353,7 +353,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(rootTileset, new Dictionary<string, Tileset>
                 {
                     ["https://example.com/nested.json"] = nestedTileset
@@ -385,7 +385,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             {
                 [StableId("near")] = new(StableId("near"), "near", null, [], ["slot_existing"], "Google; Airbus")
@@ -425,7 +425,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             {
                 [StableId("far")] = new(StableId("far"), "far", null, [], ["slot_far"], "Google; Maxar")
@@ -465,7 +465,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             {
                 [StableId("far")] = new(StableId("far"), "far", null, [], ["slot_far"], "Google; Maxar")
@@ -500,7 +500,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             string coarseStableId = StableId("coarse");
             string childStableId = StableId("fine");
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
@@ -548,7 +548,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             string parentStableId = StableId("p");
             string childStableId = StableId("c");
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
@@ -590,7 +590,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             InteractiveTileRunResult initial = await coordinator.RunInteractiveAsync(
                 CreateRequest(dryRun: false, manageConnection: false, rangeM: 100d),
@@ -648,7 +648,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             InteractiveTileRunResult initial = await coordinator.RunInteractiveAsync(
                 CreateRequest(dryRun: false, manageConnection: false, rangeM: 100d),
@@ -702,7 +702,7 @@ namespace ThreeDTilesLink.Tests
                     Task cancelTask = cts.CancelAsync();
                 }
             });
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             string farStableId = StableId("far");
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             {
@@ -737,7 +737,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteSession(
                 streamDelay: TimeSpan.FromMilliseconds(50),
                 ignoreCancellationDuringStream: true);
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             Task<InteractiveTileRunResult> runTask = coordinator.RunInteractiveAsync(
                 CreateRequest(dryRun: false, manageConnection: false),
@@ -784,7 +784,7 @@ namespace ThreeDTilesLink.Tests
                 },
                 contentDelay: TimeSpan.FromMilliseconds(50),
                 ignoreCancellationDuringContent: true);
-            TileRunCoordinator coordinator = CreateCoordinator(tilesSource, new FakeResoniteSession());
+            TileSelectionService coordinator = CreateCoordinator(tilesSource, new FakeResoniteSession());
 
             Task<InteractiveTileRunResult> runTask = coordinator.RunInteractiveAsync(
                 CreateRequest(dryRun: true, manageConnection: false),
@@ -825,7 +825,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -868,7 +868,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(rootTileset, new Dictionary<string, Tileset>
                 {
                     ["https://example.com/nested.json"] = nestedTileset
@@ -907,7 +907,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failOnNameContains: "tile_c_m");
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -948,7 +948,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -994,7 +994,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(
                 CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d),
@@ -1020,7 +1020,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     tileset,
                     tileContentByUri: new Dictionary<string, byte[]>
@@ -1061,7 +1061,7 @@ namespace ThreeDTilesLink.Tests
                 });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     rootTileset,
                     new Dictionary<string, Tileset>
@@ -1118,7 +1118,7 @@ namespace ThreeDTilesLink.Tests
                 });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     rootTileset,
                     new Dictionary<string, Tileset>
@@ -1157,7 +1157,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     tileset,
                     tileContentByUri: new Dictionary<string, byte[]>
@@ -1204,7 +1204,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d), CancellationToken.None);
 
@@ -1242,7 +1242,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(
                 CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d),
@@ -1291,7 +1291,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteSession(
                 onStreamCompleted: (payload, _) => events.Add($"stream:{payload.Name}"),
                 onRemoveCompleted: slotId => events.Add($"remove:{slotId}"));
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(
                 CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d),
@@ -1375,7 +1375,7 @@ namespace ThreeDTilesLink.Tests
                 onContentFetched: uri => events.Add($"fetch:{uri.AbsoluteUri}"));
             var client = new FakeResoniteSession(
                 onRemoveCompleted: slotId => events.Add($"remove:{slotId}"));
-            TileRunCoordinator coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 2);
+            TileSelectionService coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 2);
 
             RunSummary summary = await coordinator.RunAsync(
                 CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d),
@@ -1417,7 +1417,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d), CancellationToken.None);
 
@@ -1442,7 +1442,7 @@ namespace ThreeDTilesLink.Tests
 
             var tilesSource = new FakeTilesSource(tileset, contentDelay: TimeSpan.FromMilliseconds(75));
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 4);
+            TileSelectionService coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 4);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: true), CancellationToken.None);
 
@@ -1466,7 +1466,7 @@ namespace ThreeDTilesLink.Tests
 
             var tilesSource = new FakeTilesSource(tileset, contentDelay: TimeSpan.FromMilliseconds(40));
             var client = new FakeResoniteSession(streamDelay: TimeSpan.FromMilliseconds(20));
-            TileRunCoordinator coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 3);
+            TileSelectionService coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 3);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -1488,7 +1488,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failOnSendNumber: 2);
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     tileset,
                     tileContentByUri: new Dictionary<string, byte[]>
@@ -1540,7 +1540,7 @@ namespace ThreeDTilesLink.Tests
                     ["tile_multi_m0"] = TimeSpan.FromMilliseconds(10),
                     ["tile_multi_m1"] = TimeSpan.FromMilliseconds(200)
                 });
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     tileset,
                     tileContentByUri: new Dictionary<string, byte[]>
@@ -1577,7 +1577,7 @@ namespace ThreeDTilesLink.Tests
                 failOnSendNumber: 2,
                 failOnRemoveContains: "slot_1_tile_multi_m0",
                 failOnRemoveNumber: 1);
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     tileset,
                     tileContentByUri: new Dictionary<string, byte[]>
@@ -1620,7 +1620,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteSession(
                 failOnNameContains: "tile_multi_m1",
                 failOnRemoveContains: "slot_");
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     tileset,
                     tileContentByUri: new Dictionary<string, byte[]>
@@ -1660,7 +1660,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failProgressUpdates: true);
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(
                 CreateRequest(dryRun: false, manageConnection: false),
@@ -1684,7 +1684,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failDisconnect: true);
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(tileset, rootFetchException: new InvalidOperationException("synthetic root fetch failure")),
                 client);
 
@@ -1708,7 +1708,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(tileset, contentDelay: TimeSpan.FromMilliseconds(200)),
                 client);
 
@@ -1734,7 +1734,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failDisconnectWhenCanceled: true);
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(
                 CreateRequest(dryRun: false),
@@ -1773,7 +1773,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failOnRemoveContains: "tile_p_m");
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             InteractiveTileRunResult result = await coordinator.RunInteractiveAsync(
                 CreateRequest(dryRun: false, manageConnection: false, bootstrapRangeMultiplier: 0.5d),
@@ -1795,7 +1795,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failOnRemoveContains: "slot_keep");
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             string stableId = StableId("retained");
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             {
@@ -1815,7 +1815,7 @@ namespace ThreeDTilesLink.Tests
         [Fact]
         public void Constructors_ExposeSeparateSessionMetadataPortDependency()
         {
-            Type[] coordinatorParameters = typeof(TileRunCoordinator)
+            Type[] coordinatorParameters = typeof(TileSelectionService)
                 .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                 .Single(ctor => ctor.GetParameters().Any(parameter => parameter.ParameterType == typeof(IResoniteSessionMetadataPort)))
                 .GetParameters()
@@ -1835,7 +1835,7 @@ namespace ThreeDTilesLink.Tests
                 typeof(IResoniteSessionMetadataPort));
         }
 
-        private static TileRunCoordinator CreateCoordinator(
+        private static TileSelectionService CreateCoordinator(
             ITilesSource tilesSource,
             FakeResoniteSession session,
             IGlbMeshExtractor? extractor = null,
@@ -1844,7 +1844,7 @@ namespace ThreeDTilesLink.Tests
         {
             var transformer = new PassThroughTransformer();
             var traversalCore = new TraversalCore(new TileSelector(transformer));
-            return new TileRunCoordinator(
+            return new TileSelectionService(
                 tilesSource,
                 traversalCore,
                 new ResoniteReconcilerCore(),
@@ -1853,7 +1853,7 @@ namespace ThreeDTilesLink.Tests
                 session,
                 metadataPort ?? session,
                 new GoogleTileLicenseCreditPolicy(),
-                NullLogger<TileRunCoordinator>.Instance,
+                NullLogger<TileSelectionService>.Instance,
                 maxConcurrentTileProcessing);
         }
 
@@ -2372,3 +2372,4 @@ namespace ThreeDTilesLink.Tests
         }
     }
 }
+

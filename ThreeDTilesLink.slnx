@@ -1,6 +1,5 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/ThreeDTilesLink.Core/ThreeDTilesLink.Core.csproj" />
     <Project Path="src/ThreeDTilesLink/ThreeDTilesLink.csproj" />
   </Folder>
   <Folder Name="/tests/">
