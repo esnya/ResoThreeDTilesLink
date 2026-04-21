@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using ThreeDTilesLink.Core.App;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Geo;
@@ -37,22 +38,24 @@ namespace ThreeDTilesLink.App
             _ = services.AddSingleton(licenseCreditPolicy);
             _ = services.AddSingleton(searchOptions);
 
-            _ = services.AddSingleton<ICoordinateTransformer, GeographicCoordinateTransformer>();
-            _ = services.AddSingleton<IGeoReferenceResolver, SeaLevelGeoReferenceResolver>();
-            _ = services.AddSingleton<ITileSelector, TileSelector>();
-            _ = services.AddSingleton<TraversalCore>();
-            _ = services.AddSingleton<ResoniteReconcilerCore>();
-            _ = services.AddSingleton<IGlbMeshExtractor, GlbMeshExtractor>();
-            _ = services.AddSingleton<IMeshPlacementService, MeshPlacementService>();
-            _ = services.AddSingleton<ISearchResolver, SearchResolver>();
-            _ = services.AddSingleton<IClock, SystemClock>();
-            _ = services.AddSingleton<SelectionInputReader>();
-            _ = services.AddSingleton<InteractiveRunSupervisor>();
-            _ = services.AddSingleton<ITilesetParser, TilesetParser>();
+            services.TryAddSingleton<ICoordinateTransformer, GeographicCoordinateTransformer>();
+            services.TryAddSingleton<IGeoReferenceResolver, SeaLevelGeoReferenceResolver>();
+            services.TryAddSingleton<ITileSelector, TileSelector>();
+            services.TryAddSingleton<TraversalCore>();
+            services.TryAddSingleton<ResoniteReconcilerCore>();
+            services.TryAddSingleton<IGlbMeshExtractor, GlbMeshExtractor>();
+            services.TryAddSingleton<IMeshPlacementService, MeshPlacementService>();
+            services.TryAddSingleton<ISearchResolver, SearchResolver>();
+            services.TryAddSingleton<IClock, SystemClock>();
+            services.TryAddSingleton<SelectionInputReader>();
+            services.TryAddSingleton<InteractiveRunSupervisor>();
+            services.TryAddSingleton<ITilesetParser, TilesetParser>();
+            services.TryAddSingleton<IB3dmGlbExtractor, B3dmGlbExtractor>();
+            services.TryAddSingleton<ITileContentDecoder, TileContentDecoder>();
 
             _ = services.AddHttpClient<HttpTilesSource>((_, client) => ConfigureHttpClient(client, runtimeOptions))
                 .ConfigurePrimaryHttpMessageHandler(() => CreateHttpHandler(runtimeOptions));
-            _ = services.AddSingleton<ITilesSource>(static provider => provider.GetRequiredService<HttpTilesSource>());
+            services.TryAddSingleton<ITilesSource>(static provider => provider.GetRequiredService<HttpTilesSource>());
 
             _ = services.AddHttpClient<GoogleGeocodingClient>((_, client) => ConfigureHttpClient(client, runtimeOptions))
                 .ConfigurePrimaryHttpMessageHandler(() => CreateHttpHandler(runtimeOptions));

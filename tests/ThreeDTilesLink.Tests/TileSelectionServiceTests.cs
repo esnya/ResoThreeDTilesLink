@@ -1984,18 +1984,17 @@ namespace ThreeDTilesLink.Tests
                             _ignoreCancellationDuringContent ? CancellationToken.None : cancellationToken).ConfigureAwait(false);
                     }
 
-                    FetchedNodeContent fetchedContent =
-                    TileContentClassifier.Classify(contentUri) switch
-                    {
-                        TileContentKind.Json => _nestedTilesets.TryGetValue(contentUri.AbsoluteUri, out Tileset? nested)
+                    FetchedNodeContent fetchedContent = contentUri.AbsolutePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                        ? _nestedTilesets.TryGetValue(contentUri.AbsoluteUri, out Tileset? nested)
                             ? new NestedTilesetFetchedContent(nested)
-                            : throw new InvalidOperationException($"Unknown nested tileset URI: {contentUri}"),
-                        TileContentKind.Glb => new GlbFetchedContent(
-                            _tileContentByUri.TryGetValue(contentUri.AbsoluteUri, out byte[]? content)
-                                ? content
-                                : [1, 2, 3, 4]),
-                        _ => new UnsupportedFetchedContent()
-                    };
+                            : throw new InvalidOperationException($"Unknown nested tileset URI: {contentUri}")
+                        : contentUri.AbsolutePath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) ||
+                            contentUri.AbsolutePath.EndsWith(".b3dm", StringComparison.OrdinalIgnoreCase)
+                            ? new GlbFetchedContent(
+                                _tileContentByUri.TryGetValue(contentUri.AbsoluteUri, out byte[]? content)
+                                    ? content
+                                    : [1, 2, 3, 4])
+                            : new UnsupportedFetchedContent();
                     _onContentFetched?.Invoke(contentUri);
                     return fetchedContent;
                 }

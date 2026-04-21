@@ -14,6 +14,7 @@ using ThreeDTilesLink.Core.Generic;
 using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
+using ThreeDTilesLink.Core.Tiles;
 
 namespace ThreeDTilesLink.Tests
 {
@@ -274,6 +275,36 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void CommandHost_BuildTileSourceOptions_PrefersFlatEnvOverridesOverSectionValues()
+        {
+            string? previousRoot = Environment.GetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI");
+            string? previousApiKey = Environment.GetEnvironmentVariable("TILE_SOURCE_API_KEY");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI", "https://env.example.com/root.json");
+                Environment.SetEnvironmentVariable("TILE_SOURCE_API_KEY", "env-key");
+                using var configuration = new ConfigurationManager();
+                _ = configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["TileSource:RootTilesetUri"] = "https://config.example.com/root.json",
+                    ["TileSource:ApiKey"] = "config-key"
+                });
+                _ = configuration.AddEnvironmentVariables();
+
+                TileSourceOptions tileSource = InvokeBuildTileSourceOptions(configuration);
+
+                _ = tileSource.RootTilesetUri.AbsoluteUri.Should().Be("https://env.example.com/root.json");
+                _ = tileSource.Access.ApiKey.Should().Be("env-key");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI", previousRoot);
+                Environment.SetEnvironmentVariable("TILE_SOURCE_API_KEY", previousApiKey);
+            }
+        }
+
+        [Fact]
         public void CommandHost_BuildSearchOptions_PrefersLegacyGoogleMapsEnvVarOverSectionValue()
         {
             const string envApiKey = "google-env-key";
@@ -299,6 +330,33 @@ namespace ThreeDTilesLink.Tests
             finally
             {
                 Environment.SetEnvironmentVariable("GOOGLE_MAPS_API_KEY", previousGoogleApiKey);
+            }
+        }
+
+        [Fact]
+        public void CommandHost_BuildSearchOptions_PrefersFlatSearchApiKeyEnvOverrideOverSectionValue()
+        {
+            string? previousSearchApiKey = Environment.GetEnvironmentVariable("SEARCH_API_KEY");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("SEARCH_API_KEY", "env-search-key");
+                using var configuration = new ConfigurationManager();
+                _ = configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Search:ApiKey"] = "config-search-key"
+                });
+                _ = configuration.AddEnvironmentVariables();
+
+                SearchOptions search = InvokeBuildSearchOptions(configuration, new TileSourceOptions(
+                    new Uri("https://plateau.example.com/root.json"),
+                    new TileSourceAccess(null, null)));
+
+                _ = search.ApiKey.Should().Be("env-search-key");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("SEARCH_API_KEY", previousSearchApiKey);
             }
         }
 
@@ -396,6 +454,42 @@ namespace ThreeDTilesLink.Tests
                 Environment.SetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI", previousRoot);
                 Environment.SetEnvironmentVariable("TILE_SOURCE_FILE_SCHEME_BASE_URI", previousFileBase);
             }
+        }
+
+        [Fact]
+        public async Task AddThreeDTilesLinkRuntime_PreservesPreRegisteredTileSource()
+        {
+            var services = new ServiceCollection();
+            _ = services.AddLogging();
+            var runtimeOptions = new StreamCommandOptions(
+                35.65858d,
+                139.745433d,
+                20d,
+                60d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                false,
+                LogLevel.Information);
+            var tileSource = new TileSourceOptions(
+                new Uri("https://plateau.example.com/root.json"),
+                new TileSourceAccess(null, null));
+            var fakeTilesSource = new PreRegisteredTilesSource();
+
+            _ = services.AddSingleton<ITilesSource>(fakeTilesSource);
+            _ = services.AddThreeDTilesLinkRuntime(
+                runtimeOptions,
+                tileSource,
+                ResoniteDestinationPolicyOptions.CreateDefault(),
+                new GenericTileLicenseCreditPolicy(),
+                new SearchOptions(null));
+            await using ServiceProvider provider = services.BuildServiceProvider();
+
+            _ = provider.GetRequiredService<ITilesSource>().Should().BeSameAs(fakeTilesSource);
         }
 
         [Fact]
@@ -530,6 +624,15 @@ namespace ThreeDTilesLink.Tests
             public Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken) => Task.FromResult<string?>(null);
 
             public Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken) => Task.CompletedTask;
+        }
+
+        private sealed class PreRegisteredTilesSource : ITilesSource
+        {
+            public Task<Tileset> FetchRootTilesetAsync(TileSourceOptions source, CancellationToken cancellationToken)
+                => throw new NotSupportedException();
+
+            public Task<FetchedNodeContent> FetchNodeContentAsync(Uri contentUri, TileSourceOptions source, CancellationToken cancellationToken)
+                => throw new NotSupportedException();
         }
 
         private sealed class FakeGeoReferenceResolver : IGeoReferenceResolver

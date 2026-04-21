@@ -23,7 +23,7 @@ namespace ThreeDTilesLink.Core.CommandLine
     {
         private static readonly CommandSpecification Specification = new(
             "dotnet run --project src/ThreeDTilesLink -- stream [options]",
-            "Fetch Google Photorealistic 3D Tiles around a center point and stream them to Resonite Link.",
+            "Fetch 3D Tiles around a center point and stream them to Resonite Link.",
             [
                 new("--latitude", CommandOptionValueKind.DecimalNumber, "Center latitude.", Required: true, Unit: "degrees"),
                 new("--longitude", CommandOptionValueKind.DecimalNumber, "Center longitude.", Required: true, Unit: "degrees"),

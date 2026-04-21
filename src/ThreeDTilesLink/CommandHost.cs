@@ -82,19 +82,19 @@ namespace ThreeDTilesLink
             string? sharedGoogleApiKey = ResolveSharedGoogleApiKey(configuration);
             string[] inheritedQueryParameters = ReadList(
                 configuration,
-                "TileSource:InheritedQueryParameters",
                 "TILE_SOURCE_INHERITED_QUERY_PARAMETERS",
+                "TileSource:InheritedQueryParameters",
                 "session");
-            string rootTilesetUriText = configuration["TileSource:RootTilesetUri"] ??
-                configuration["TILE_SOURCE_ROOT_TILESET_URI"] ??
+            string rootTilesetUriText = configuration["TILE_SOURCE_ROOT_TILESET_URI"] ??
+                configuration["TileSource:RootTilesetUri"] ??
                 googleRootTilesetUri.AbsoluteUri;
             if (!Uri.TryCreate(rootTilesetUriText, UriKind.Absolute, out Uri? rootTilesetUri))
             {
                 throw new InvalidOperationException($"Tile source root URI must be absolute: {rootTilesetUriText}");
             }
 
-            string? fileSchemeBaseUriText = configuration["TileSource:FileSchemeBaseUri"] ??
-                configuration["TILE_SOURCE_FILE_SCHEME_BASE_URI"];
+            string? fileSchemeBaseUriText = configuration["TILE_SOURCE_FILE_SCHEME_BASE_URI"] ??
+                configuration["TileSource:FileSchemeBaseUri"];
             Uri? fileSchemeBaseUri = null;
             if (!string.IsNullOrWhiteSpace(fileSchemeBaseUriText))
             {
@@ -117,11 +117,11 @@ namespace ThreeDTilesLink
             return new TileSourceOptions(
                 rootTilesetUri,
                 new TileSourceAccess(
-                    configuration["TileSource:ApiKey"] ??
                     configuration["TILE_SOURCE_API_KEY"] ??
+                    configuration["TileSource:ApiKey"] ??
                     sharedGoogleApiKey,
-                    configuration["TileSource:BearerToken"] ??
-                    configuration["TILE_SOURCE_BEARER_TOKEN"]),
+                    configuration["TILE_SOURCE_BEARER_TOKEN"] ??
+                    configuration["TileSource:BearerToken"]),
                 new TileSourceContentLinkOptions(fileSchemeBaseUri, normalizedInheritedQueryParameters));
         }
 
@@ -133,8 +133,8 @@ namespace ThreeDTilesLink
             ArgumentNullException.ThrowIfNull(tileSourceOptions);
 
             return new SearchOptions(
-                configuration["Search:ApiKey"] ??
                 configuration["SEARCH_API_KEY"] ??
+                configuration["Search:ApiKey"] ??
                 ResolveSharedGoogleApiKey(configuration) ??
                 ResolveSearchFallbackApiKey(tileSourceOptions));
         }
@@ -197,13 +197,13 @@ namespace ThreeDTilesLink
 
         private static string[] ReadList(
             ConfigurationManager configuration,
-            string sectionKey,
             string flatKey,
+            string sectionKey,
             params string[] fallbackValues)
         {
             ArgumentNullException.ThrowIfNull(configuration);
 
-            string? configured = configuration[sectionKey] ?? configuration[flatKey];
+            string? configured = configuration[flatKey] ?? configuration[sectionKey];
             if (string.IsNullOrWhiteSpace(configured))
             {
                 return fallbackValues;

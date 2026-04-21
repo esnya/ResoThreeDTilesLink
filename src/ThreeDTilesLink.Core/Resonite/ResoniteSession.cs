@@ -528,12 +528,12 @@ namespace ThreeDTilesLink.Core.Resonite
 
         public async Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken)
         {
-            if (string.IsNullOrWhiteSpace(_sessionLicenseComponentId) || string.IsNullOrWhiteSpace(creditString))
+            if (string.IsNullOrWhiteSpace(_sessionLicenseComponentId))
             {
                 return;
             }
 
-            string normalized = creditString.Trim();
+            string normalized = creditString?.Trim() ?? string.Empty;
             if (string.Equals(normalized, _sessionLicenseCreditText, StringComparison.Ordinal))
             {
                 await TryUpdateAliasStringMemberAsync(

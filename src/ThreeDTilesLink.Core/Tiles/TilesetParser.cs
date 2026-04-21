@@ -159,10 +159,27 @@ namespace ThreeDTilesLink.Core.Tiles
             var builder = new UriBuilder(fileSchemeBaseUri)
             {
                 Path = CombineBasePath(fileSchemeBaseUri.AbsolutePath, decodedPath),
-                Query = query
+                Query = MergeQuery(fileSchemeBaseUri.Query, query)
             };
 
             return builder.Uri;
+        }
+
+        private static string MergeQuery(string baseQuery, string contentQuery)
+        {
+            NameValueCollection merged = HttpUtility.ParseQueryString(baseQuery);
+            NameValueCollection content = HttpUtility.ParseQueryString(contentQuery);
+            foreach (string? key in content.AllKeys)
+            {
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                merged[key] = content[key];
+            }
+
+            return merged.ToString() ?? string.Empty;
         }
 
         private static string CombineBasePath(string basePath, string decodedPath)

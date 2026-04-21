@@ -11,10 +11,12 @@ namespace ThreeDTilesLink.Core.Tiles
     internal sealed class HttpTilesSource(
         HttpClient httpClient,
         ITilesetParser tilesetParser,
+        ITileContentDecoder tileContentDecoder,
         RunPerformanceSummary? performanceSummary = null) : ITilesSource
     {
         private readonly HttpClient _httpClient = httpClient;
         private readonly ITilesetParser _tilesetParser = tilesetParser;
+        private readonly ITileContentDecoder _tileContentDecoder = tileContentDecoder;
         private readonly RunPerformanceSummary? _performanceSummary = performanceSummary;
         private readonly ConcurrentDictionary<string, CachedTilesetJson> _tilesetJsonCache = new(StringComparer.Ordinal);
 
@@ -26,14 +28,14 @@ namespace ThreeDTilesLink.Core.Tiles
 
         public async Task<FetchedNodeContent> FetchNodeContentAsync(Uri contentUri, TileSourceOptions source, CancellationToken cancellationToken)
         {
-            return TileContentClassifier.Classify(contentUri) switch
+            if (TileContentClassifier.Classify(contentUri) == TileContentKind.Json)
             {
-                TileContentKind.Json => new NestedTilesetFetchedContent(
-                    await FetchTilesetCoreAsync(contentUri, source, cancellationToken).ConfigureAwait(false)),
-                TileContentKind.Glb => new GlbFetchedContent(
-                    await FetchBinaryContentAsync(contentUri, source, cancellationToken).ConfigureAwait(false)),
-                _ => new UnsupportedFetchedContent($"Unsupported tile content URI: {contentUri}")
-            };
+                return new NestedTilesetFetchedContent(
+                    await FetchTilesetCoreAsync(contentUri, source, cancellationToken).ConfigureAwait(false));
+            }
+
+            BinaryFetchResult fetched = await FetchBinaryContentAsync(contentUri, source, cancellationToken).ConfigureAwait(false);
+            return _tileContentDecoder.Decode(contentUri, fetched.Bytes, source, fetched.SourceUri);
         }
 
         private async Task<Tileset> FetchTilesetCoreAsync(Uri tilesetUri, TileSourceOptions source, CancellationToken cancellationToken)
@@ -66,7 +68,7 @@ namespace ThreeDTilesLink.Core.Tiles
             return _tilesetParser.Parse(json, source.ContentLinks, sourceUri);
         }
 
-        private async Task<byte[]> FetchBinaryContentAsync(Uri contentUri, TileSourceOptions source, CancellationToken cancellationToken)
+        private async Task<BinaryFetchResult> FetchBinaryContentAsync(Uri contentUri, TileSourceOptions source, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(source);
             using HttpRequestMessage request = CreateRequest(contentUri, source.Access);
@@ -81,12 +83,13 @@ namespace ThreeDTilesLink.Core.Tiles
             using var buffer = new MemoryStream();
             await contentStream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
             byte[] bytes = buffer.ToArray();
+            Uri sourceUri = response.RequestMessage?.RequestUri ?? contentUri;
             if (performanceSummary is not null)
             {
                 performanceSummary.AddFetch(DateTimeOffset.UtcNow - startedAt);
             }
 
-            return bytes;
+            return new BinaryFetchResult(sourceUri, bytes);
         }
 
         private static HttpRequestMessage CreateRequest(Uri uri, TileSourceAccess access)
@@ -162,5 +165,6 @@ namespace ThreeDTilesLink.Core.Tiles
         }
 
         private sealed record CachedTilesetJson(Uri SourceUri, string Json);
+        private sealed record BinaryFetchResult(Uri SourceUri, byte[] Bytes);
     }
 }

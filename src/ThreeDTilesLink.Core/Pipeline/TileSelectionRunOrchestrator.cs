@@ -47,7 +47,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             LoggerMessage.Define(
                 LogLevel.Information,
                 new EventId(2, "FetchingRootTileset"),
-                "Fetching root tileset from Google Map Tiles API.");
+                "Fetching root tileset from the configured tile source.");
 
         private static readonly Action<ILogger, Exception?> s_failedToSetInitialFetchProgress =
             LoggerMessage.Define(

@@ -8,11 +8,20 @@ namespace ThreeDTilesLink.Core.Tiles
         {
             ArgumentNullException.ThrowIfNull(contentUri);
 
-            return contentUri.AbsolutePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
-                ? TileContentKind.Json
-                : contentUri.AbsolutePath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase)
-                    ? TileContentKind.Glb
-                    : TileContentKind.Other;
+            string path = contentUri.AbsolutePath;
+            if (path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                return TileContentKind.Json;
+            }
+
+            if (path.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+            {
+                return TileContentKind.Glb;
+            }
+
+            return path.EndsWith(".b3dm", StringComparison.OrdinalIgnoreCase)
+                ? TileContentKind.B3dm
+                : TileContentKind.Other;
         }
     }
 }

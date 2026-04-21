@@ -4,6 +4,7 @@ namespace ThreeDTilesLink.Core.Models
     {
         Json = 0,
         Glb = 1,
-        Other = 2
+        B3dm = 2,
+        Other = 3
     }
 }
