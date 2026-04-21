@@ -1,6 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using ThreeDTilesLink.Core.App;
+using ThreeDTilesLink.App;
 using ThreeDTilesLink.Core.CommandLine;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
@@ -30,7 +30,7 @@ namespace ThreeDTilesLink.Tests
                 new Uri("https://tile.googleapis.com/v1/3dtiles/root.json"),
                 new TileSourceAccess("key", null));
 
-            var request = StreamCommandHandler.CreateRequest(options, tileSource, new FakeGeoReferenceResolver());
+            var request = CommandRequestFactory.CreateStreamRequest(options, tileSource, new FakeGeoReferenceResolver());
 
             _ = request.SelectionReference.Latitude.Should().Be(35.65858d);
             _ = request.SelectionReference.Longitude.Should().Be(139.745433d);
@@ -65,7 +65,7 @@ namespace ThreeDTilesLink.Tests
                 new Uri("https://tile.googleapis.com/v1/3dtiles/root.json"),
                 new TileSourceAccess("key", null));
 
-            var request = InteractiveCommandHandler.CreateRequest(options, tileSource, new SearchOptions("key"));
+            var request = CommandRequestFactory.CreateInteractiveRequest(options, tileSource, new SearchOptions("key"));
 
             _ = request.ResoniteHost.Should().Be("localhost");
             _ = request.ResonitePort.Should().Be(12000);

@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Hosting;
-using ThreeDTilesLink.Core.App;
 using ThreeDTilesLink.Core.CommandLine;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
@@ -37,7 +36,7 @@ namespace ThreeDTilesLink.App
             try
             {
                 RunSummary summary = await _tileSelectionService.RunAsync(
-                    StreamCommandHandler.CreateRequest(
+                    CommandRequestFactory.CreateStreamRequest(
                         _options,
                         _tileSource,
                         _geoReferenceResolver),
@@ -97,7 +96,7 @@ namespace ThreeDTilesLink.App
                     $"Interactive mode started. Input=session root slot values (Latitude/Longitude/Range/Search). Poll={_options.PollIntervalMs}ms Debounce={_options.DebounceMs}ms Throttle={_options.ThrottleMs}ms. Press Ctrl+C to stop.")
                     .ConfigureAwait(false);
                 await _interactiveRunSupervisor.RunAsync(
-                    InteractiveCommandHandler.CreateRequest(_options, _tileSource, _searchOptions),
+                    CommandRequestFactory.CreateInteractiveRequest(_options, _tileSource, _searchOptions),
                     stoppingToken).ConfigureAwait(false);
                 _completion.TrySetExitCode(0);
             }
