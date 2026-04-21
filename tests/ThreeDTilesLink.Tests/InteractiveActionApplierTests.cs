@@ -1,7 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using ThreeDTilesLink.Core.Contracts;
-using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
@@ -49,7 +48,10 @@ namespace ThreeDTilesLink.Tests
                 12345,
                 0d,
                 new TraversalOptions(400d, 30d),
-                ApiKey: "k",
+                new TileSourceOptions(
+                    new Uri("https://example.com/root.json"),
+                    new TileSourceAccess("k", null)),
+                Search: new SearchOptions("k"),
                 RemoveOutOfRange: false,
                 new WatchOptions(
                     TimeSpan.FromMilliseconds(250),

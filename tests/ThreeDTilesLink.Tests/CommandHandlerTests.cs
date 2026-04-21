@@ -26,8 +26,11 @@ namespace ThreeDTilesLink.Tests
                 false,
                 true,
                 LogLevel.Debug);
+            var tileSource = new TileSourceOptions(
+                new Uri("https://tile.googleapis.com/v1/3dtiles/root.json"),
+                new TileSourceAccess("key", null));
 
-            var request = StreamCommandHandler.CreateRequest(options, "key", new FakeGeoReferenceResolver());
+            var request = StreamCommandHandler.CreateRequest(options, tileSource, new FakeGeoReferenceResolver());
 
             _ = request.SelectionReference.Latitude.Should().Be(35.65858d);
             _ = request.SelectionReference.Longitude.Should().Be(139.745433d);
@@ -38,7 +41,8 @@ namespace ThreeDTilesLink.Tests
             _ = request.Output.Host.Should().Be("localhost");
             _ = request.Output.Port.Should().Be(12000);
             _ = request.Output.DryRun.Should().BeTrue();
-            _ = request.ApiKey.Should().Be("key");
+            _ = request.Source.Should().BeEquivalentTo(tileSource);
+            _ = request.Source.Access.ApiKey.Should().Be("key");
         }
 
         [Fact]
@@ -57,15 +61,18 @@ namespace ThreeDTilesLink.Tests
                 800,
                 3000,
                 LogLevel.Trace);
+            var tileSource = new TileSourceOptions(
+                new Uri("https://tile.googleapis.com/v1/3dtiles/root.json"),
+                new TileSourceAccess("key", null));
 
-            var request = InteractiveCommandHandler.CreateRequest(options, "key");
+            var request = InteractiveCommandHandler.CreateRequest(options, tileSource, new SearchOptions("key"));
 
             _ = request.ResoniteHost.Should().Be("localhost");
             _ = request.ResonitePort.Should().Be(12000);
             _ = request.HeightOffset.Should().Be(20d);
             _ = request.Traversal.RangeM.Should().Be(0d);
             _ = request.Traversal.DetailTargetM.Should().Be(25d);
-            _ = request.ApiKey.Should().Be("key");
+            _ = request.Search.ApiKey.Should().Be("key");
             _ = request.RemoveOutOfRange.Should().BeTrue();
             _ = request.Watch.PollInterval.Should().Be(TimeSpan.FromMilliseconds(250));
             _ = request.Watch.Debounce.Should().Be(TimeSpan.FromMilliseconds(800));

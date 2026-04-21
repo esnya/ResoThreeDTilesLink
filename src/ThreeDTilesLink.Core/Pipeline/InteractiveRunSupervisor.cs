@@ -194,7 +194,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             [LoggerMessage(EventId = 12, Level = LogLevel.Warning, Message = "Failed to disconnect Resonite Link cleanly.")]
             public static partial void DisconnectFailed(ILogger logger, Exception exception);
 
-            [LoggerMessage(EventId = 13, Level = LogLevel.Warning, Message = "Search query ignored because GOOGLE_MAPS_API_KEY is not set: query={Query}")]
+            [LoggerMessage(EventId = 13, Level = LogLevel.Warning, Message = "Search query ignored because no search API key is configured: query={Query}")]
             public static partial void SearchIgnored(ILogger logger, string query);
 
             [LoggerMessage(EventId = 14, Level = LogLevel.Warning, Message = "Search query returned no result: query={Query}")]

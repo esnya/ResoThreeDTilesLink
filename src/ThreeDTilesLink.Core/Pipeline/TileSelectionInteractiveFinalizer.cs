@@ -8,10 +8,12 @@ namespace ThreeDTilesLink.Core.Pipeline
     internal sealed class TileSelectionInteractiveFinalizer(
         IResoniteSession resoniteSession,
         IResoniteSessionMetadataPort sessionMetadataPort,
+        ILicenseCreditPolicy licenseCreditPolicy,
         ILogger logger)
     {
         private readonly IResoniteSession _resoniteSession = resoniteSession;
         private readonly IResoniteSessionMetadataPort _sessionMetadataPort = sessionMetadataPort;
+        private readonly ILicenseCreditPolicy _licenseCreditPolicy = licenseCreditPolicy;
         private readonly ILogger _logger = logger;
 
         private static readonly Action<ILogger, string, Exception?> s_rollbackStreamedSlotFailed =
@@ -156,10 +158,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return;
             }
 
-            var aggregator = new LicenseCreditAggregator();
+            var aggregator = new LicenseCreditAggregator(_licenseCreditPolicy);
             foreach (RetainedTileState retainedTile in retainedTiles.Values)
             {
-                IReadOnlyList<string> owners = LicenseCreditAggregator.ParseOwners(
+                IReadOnlyList<string> owners = aggregator.ParseOwners(
                     string.IsNullOrWhiteSpace(retainedTile.AssetCopyright)
                         ? []
                         : [retainedTile.AssetCopyright]);
@@ -169,7 +171,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             string built = aggregator.BuildCreditString();
             await _sessionMetadataPort.SetSessionLicenseCreditAsync(
-                string.IsNullOrWhiteSpace(built) ? "Google Maps" : built,
+                string.IsNullOrWhiteSpace(built) ? _licenseCreditPolicy.DefaultCredit : built,
                 cancellationToken).ConfigureAwait(false);
         }
 

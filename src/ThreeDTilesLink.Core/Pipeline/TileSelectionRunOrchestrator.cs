@@ -168,16 +168,6 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                GoogleTilesAuth auth;
-                try
-                {
-                    auth = await BuildAuthAsync(request).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    await TrySetFailureProgressAsync(request, ex).ConfigureAwait(false);
-                    throw;
-                }
                 if (!request.Output.DryRun && request.Output.ManageConnection)
                 {
                     s_connectingToResonite(_logger, request.Output.Host, request.Output.Port, null);
@@ -201,7 +191,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
                 }
 
-                Tiles.Tileset rootTileset = await _tilesSource.FetchRootTilesetAsync(auth, cancellationToken).ConfigureAwait(false);
+                Tiles.Tileset rootTileset = await _tilesSource.FetchRootTilesetAsync(request.Source, cancellationToken).ConfigureAwait(false);
                 facts = _traversalCore.Initialize(rootTileset, request, interactiveInput);
                 writerState = new WriterState(interactiveInput?.RetainedTiles, interactiveInput?.CleanupDebtTiles);
                 UpdateInteractiveState(interactiveContext, facts, writerState, counters);
@@ -233,7 +223,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                         MarkDiscoveryInFlight(facts, work);
                         discoveryTasks.Add(stableId, new DiscoveryTaskEntry(
                             work,
-                            ExecuteDiscoveryAsync(work, request, auth, workerCts.Token)));
+                            ExecuteDiscoveryAsync(work, request, workerCts.Token)));
                     }
 
                     DateTimeOffset planningTime = DateTimeOffset.UtcNow;
@@ -740,12 +730,16 @@ namespace ThreeDTilesLink.Core.Pipeline
         private async Task<DiscoveryCompletion> ExecuteDiscoveryAsync(
             DiscoveryWorkItem work,
             TileRunRequest request,
-            GoogleTilesAuth auth,
             CancellationToken cancellationToken)
         {
             try
             {
-                ContentProcessResult content = await _contentProcessor.ProcessAsync(work.Tile, auth, cancellationToken).ConfigureAwait(false);
+                FetchedNodeContent fetchedContent = await _tilesSource
+                    .FetchNodeContentAsync(work.Tile.ContentUri, request.Source, cancellationToken)
+                    .ConfigureAwait(false);
+                ContentProcessResult content = await _contentProcessor
+                    .ProcessAsync(fetchedContent, cancellationToken)
+                    .ConfigureAwait(false);
                 return content switch
                 {
                     NestedTilesetContentProcessResult nested => new NestedTilesetDiscovered(work.Tile, nested.Tileset),
@@ -1091,16 +1085,6 @@ namespace ThreeDTilesLink.Core.Pipeline
                     performanceSummary.AddMetadataSync(Stopwatch.GetElapsedTime(syncStartedAt));
                 }
             }
-        }
-
-        private static Task<GoogleTilesAuth> BuildAuthAsync(TileRunRequest request)
-        {
-            if (!string.IsNullOrWhiteSpace(request.ApiKey))
-            {
-                return Task.FromResult(new GoogleTilesAuth(request.ApiKey, null));
-            }
-
-            throw new InvalidOperationException("GOOGLE_MAPS_API_KEY is required for Google Map Tiles API requests.");
         }
 
         [SuppressMessage(

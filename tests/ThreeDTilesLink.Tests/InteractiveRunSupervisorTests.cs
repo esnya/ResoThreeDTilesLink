@@ -1,7 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using ThreeDTilesLink.Core.Contracts;
-using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
@@ -344,7 +343,8 @@ namespace ThreeDTilesLink.Tests
                 12000,
                 0d,
                 new TraversalOptions(500d, 40d),
-                string.Empty,
+                CreateTileSource(string.Empty),
+                new SearchOptions(string.Empty),
                 false,
                 new WatchOptions(
                     TimeSpan.FromMilliseconds(10),
@@ -711,12 +711,20 @@ namespace ThreeDTilesLink.Tests
                 12000,
                 0d,
                 new TraversalOptions(500d, 40d),
-                apiKey,
+                CreateTileSource(apiKey),
+                new SearchOptions(apiKey),
                 false,
                 new WatchOptions(
                     TimeSpan.FromMilliseconds(10),
                     TimeSpan.FromMilliseconds(10),
                     TimeSpan.Zero));
+        }
+
+        private static TileSourceOptions CreateTileSource(string? apiKey)
+        {
+            return new TileSourceOptions(
+                new Uri("https://example.com/root.json"),
+                new TileSourceAccess(apiKey, null));
         }
 
         private static async Task WaitForCancellationAsync(CancellationToken cancellationToken)

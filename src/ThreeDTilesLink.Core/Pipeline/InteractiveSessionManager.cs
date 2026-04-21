@@ -221,7 +221,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     options.ResonitePort,
                     false,
                     ManageConnection: false),
-                options.ApiKey);
+                options.TileSource);
         }
 
         private static Exception? TryGetNonCancellationFailure(Task task)

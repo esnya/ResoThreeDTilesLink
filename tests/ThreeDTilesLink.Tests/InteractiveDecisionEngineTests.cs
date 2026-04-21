@@ -1,5 +1,4 @@
 using FluentAssertions;
-using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
 

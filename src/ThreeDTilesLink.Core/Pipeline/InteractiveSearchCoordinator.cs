@@ -2,7 +2,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Net.WebSockets;
 using Microsoft.Extensions.Logging;
 using ThreeDTilesLink.Core.Contracts;
-using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Resonite;
 
@@ -29,7 +28,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             ResolveSearchAction action,
             CancellationToken cancellationToken)
         {
-            if (string.IsNullOrWhiteSpace(options.ApiKey))
+            if (string.IsNullOrWhiteSpace(options.Search.ApiKey))
             {
                 InteractiveRunSupervisor.Log.SearchIgnored(_logger, action.SearchText);
                 return MarkSearchHandled(state, action.SearchText);
@@ -37,7 +36,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                LocationSearchResult? result = await _searchResolver.SearchAsync(options.ApiKey, action.SearchText, cancellationToken).ConfigureAwait(false);
+                LocationSearchResult? result = await _searchResolver.SearchAsync(options.Search.ApiKey, action.SearchText, cancellationToken).ConfigureAwait(false);
                 if (result is null)
                 {
                     InteractiveRunSupervisor.Log.SearchNoResult(_logger, action.SearchText);

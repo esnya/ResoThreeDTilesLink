@@ -5,8 +5,7 @@ namespace ThreeDTilesLink.Core.Contracts
     internal interface IContentProcessor
     {
         Task<ContentProcessResult> ProcessAsync(
-            TileSelectionResult tile,
-            GoogleTilesAuth auth,
+            FetchedNodeContent content,
             CancellationToken cancellationToken);
     }
 }

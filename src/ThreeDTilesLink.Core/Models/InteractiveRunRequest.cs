@@ -5,7 +5,8 @@ namespace ThreeDTilesLink.Core.Models
         int ResonitePort,
         double HeightOffset,
         TraversalOptions Traversal,
-        string? ApiKey,
+        TileSourceOptions TileSource,
+        SearchOptions Search,
         bool RemoveOutOfRange,
         WatchOptions Watch);
 }

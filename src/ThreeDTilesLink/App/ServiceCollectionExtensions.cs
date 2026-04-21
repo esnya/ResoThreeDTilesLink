@@ -1,8 +1,6 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using ThreeDTilesLink.Core.App;
-using ThreeDTilesLink.Core.CommandLine;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Geo;
 using ThreeDTilesLink.Core.Google;
@@ -20,15 +18,21 @@ namespace ThreeDTilesLink.App
     {
         internal static IServiceCollection AddThreeDTilesLinkRuntime(
             this IServiceCollection services,
-            ICommandRuntimeOptions options)
+            ICommandRuntimeOptions runtimeOptions,
+            TileSourceOptions tileSourceOptions,
+            ResoniteDestinationPolicyOptions destinationPolicyOptions,
+            SearchOptions searchOptions)
         {
             ArgumentNullException.ThrowIfNull(services);
-            ArgumentNullException.ThrowIfNull(options);
+            ArgumentNullException.ThrowIfNull(runtimeOptions);
+            ArgumentNullException.ThrowIfNull(tileSourceOptions);
+            ArgumentNullException.ThrowIfNull(destinationPolicyOptions);
+            ArgumentNullException.ThrowIfNull(searchOptions);
 
-            if (options.MeasurePerformance)
-            {
-                _ = services.AddSingleton<RunPerformanceSummary>();
-            }
+            _ = services.AddSingleton(runtimeOptions);
+            _ = services.AddSingleton(tileSourceOptions);
+            _ = services.AddSingleton(destinationPolicyOptions);
+            _ = services.AddSingleton(searchOptions);
 
             _ = services.AddSingleton<ICoordinateTransformer, GeographicCoordinateTransformer>();
             _ = services.AddSingleton<IGeoReferenceResolver, SeaLevelGeoReferenceResolver>();
@@ -42,18 +46,22 @@ namespace ThreeDTilesLink.App
             _ = services.AddSingleton<IClock, SystemClock>();
             _ = services.AddSingleton<SelectionInputReader>();
             _ = services.AddSingleton<InteractiveRunSupervisor>();
+            _ = services.AddSingleton<ITilesetParser, TilesetParser>();
+            _ = services.AddSingleton<ILicenseCreditPolicy, GoogleTileLicenseCreditPolicy>();
 
-            _ = services.AddHttpClient<HttpTilesSource>((_, client) => ConfigureHttpClient(client, options))
-                .ConfigurePrimaryHttpMessageHandler(() => CreateHttpHandler(options));
+            _ = services.AddHttpClient<HttpTilesSource>((_, client) => ConfigureHttpClient(client, runtimeOptions))
+                .ConfigurePrimaryHttpMessageHandler(() => CreateHttpHandler(runtimeOptions));
             _ = services.AddSingleton<ITilesSource>(static provider => provider.GetRequiredService<HttpTilesSource>());
 
-            _ = services.AddHttpClient<GoogleGeocodingClient>((_, client) => ConfigureHttpClient(client, options))
-                .ConfigurePrimaryHttpMessageHandler(() => CreateHttpHandler(options));
+            _ = services.AddHttpClient<GoogleGeocodingClient>((_, client) => ConfigureHttpClient(client, runtimeOptions))
+                .ConfigurePrimaryHttpMessageHandler(() => CreateHttpHandler(runtimeOptions));
 
             _ = services.AddSingleton<ResoniteSession>(provider => new ResoniteSession(
                 new LinkInterface(),
+                provider.GetRequiredService<ILicenseCreditPolicy>(),
+                destinationPolicyOptions,
                 provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ResoniteSession>>(),
-                assetImportWorkers: options.ResoniteSendWorkers));
+                assetImportWorkers: runtimeOptions.ResoniteSendWorkers));
             _ = services.AddSingleton<IResoniteSession>(static provider => provider.GetRequiredService<ResoniteSession>());
             _ = services.AddSingleton<IResoniteSessionMetadataPort>(static provider => provider.GetRequiredService<ResoniteSession>());
             _ = services.AddSingleton<IInteractiveInputStore>(static provider => provider.GetRequiredService<ResoniteSession>());
@@ -66,39 +74,13 @@ namespace ThreeDTilesLink.App
                 provider.GetRequiredService<IMeshPlacementService>(),
                 provider.GetRequiredService<IResoniteSession>(),
                 provider.GetRequiredService<IResoniteSessionMetadataPort>(),
+                provider.GetRequiredService<ILicenseCreditPolicy>(),
                 provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TileSelectionService>>(),
-                options.ContentWorkers,
-                options.ResoniteSendWorkers,
+                runtimeOptions.ContentWorkers,
+                runtimeOptions.ResoniteSendWorkers,
                 provider.GetService<RunPerformanceSummary>()));
 
             return services;
-        }
-
-        [SuppressMessage(
-            "Design",
-            "CA2263:Prefer generic overload when type is known",
-            Justification = "Runtime command registration is selected from the parsed command option type.")]
-        internal static IServiceCollection AddThreeDTilesLinkCommandHost<TOptions>(
-            this IServiceCollection services,
-            TOptions options)
-            where TOptions : class, ICommandRuntimeOptions
-        {
-            ArgumentNullException.ThrowIfNull(services);
-            ArgumentNullException.ThrowIfNull(options);
-
-            if (options is StreamCommandOptions)
-            {
-                _ = services.AddHostedService<StreamCommandHostedService>();
-                return services;
-            }
-
-            if (options is InteractiveCommandOptions)
-            {
-                _ = services.AddHostedService<InteractiveCommandHostedService>();
-                return services;
-            }
-
-            throw new NotSupportedException($"Unsupported command option type: {typeof(TOptions).FullName}");
         }
 
         private static void ConfigureHttpClient(HttpClient client, ICommandRuntimeOptions options)

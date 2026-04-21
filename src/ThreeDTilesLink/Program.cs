@@ -26,12 +26,10 @@ static async Task<int> RunAsync(string[] args)
         return route.Command switch
         {
             RootCommandKind.Stream => await ThreeDTilesLink.CommandHost.RunAsync(
-                route.Arguments,
-                StreamCommandLine.Parse,
+                route,
                 Console.Out).ConfigureAwait(false),
             RootCommandKind.Interactive => await ThreeDTilesLink.CommandHost.RunAsync(
-                route.Arguments,
-                InteractiveCommandLine.Parse,
+                route,
                 Console.Out).ConfigureAwait(false),
             _ => throw new InvalidOperationException($"Unsupported command: {route.Command}")
         };

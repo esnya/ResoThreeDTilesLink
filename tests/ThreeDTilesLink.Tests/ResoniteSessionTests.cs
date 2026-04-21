@@ -9,6 +9,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using ResoniteLink;
 using ThreeDTilesLink.Core.Contracts;
+using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Resonite;
 
@@ -389,6 +390,56 @@ namespace ThreeDTilesLink.Tests
 
             AddComponent meshRenderer = capturedOperations[5].Should().BeOfType<AddComponent>().Subject;
             _ = meshRenderer.Data.ComponentType.Should().Be("[FrooxEngine]FrooxEngine.MeshRenderer");
+        }
+
+        [Fact]
+        public async Task StreamPlacedMeshAsync_HonorsDestinationPolicy_WhenTileProtectionIsDisabled()
+        {
+            await using var session = new ResoniteSession(
+                new LinkInterface(),
+                new GoogleTileLicenseCreditPolicy(),
+                ResoniteDestinationPolicyOptions.CreateGoogleDefaults() with
+                {
+                    ApplyAvatarProtectionToTileSlots = false,
+                    ApplyPackageExportProtectionToTileSlots = false
+                },
+                NullLogger<ResoniteSession>.Instance);
+            List<DataModelOperation>? capturedOperations = null;
+
+            SetPrivateField(session, "_sessionRootSlotId", "slot_session_root");
+            SetPrivateField(session, "_packageExportWarningSlotId", "slot_warning");
+            SetPrivateField(session, "_avatarProtectionUnavailable", true);
+            SetPrivateField(session, "_materialMemberDefinitions", new Dictionary<string, MemberDefinition>(StringComparer.Ordinal));
+            SetPrivateField(session, "_materialTextureFieldResolved", true);
+            SetPrivateField(session, "_materialTextureFieldName", null);
+
+            session.Hooks = new ResoniteSession.TestHooks
+            {
+                ImportMeshAssetAsync = static (_, _) => Task.FromResult(new AssetData
+                {
+                    Success = true,
+                    AssetURL = new Uri("resdb:///mesh")
+                }),
+                RunDataModelOperationBatchAsync = (operations, _) =>
+                {
+                    capturedOperations = [.. operations];
+                    return Task.FromResult(new BatchResponse
+                    {
+                        Success = true,
+                        Responses = operations.Select(static _ => new Response { Success = true }).ToList()
+                    });
+                }
+            };
+
+            _ = await session.StreamPlacedMeshAsync(CreatePlacedMeshPayload(), CancellationToken.None);
+
+            _ = capturedOperations.Should().NotBeNull();
+            _ = capturedOperations.Should().HaveCount(5);
+            _ = capturedOperations!
+                .OfType<AddComponent>()
+                .Select(static operation => operation.Data.ComponentType)
+                .Should()
+                .NotContain("[FrooxEngine]FrooxEngine.PackageExportable");
         }
 
         [Fact]

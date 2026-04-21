@@ -16,6 +16,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             IMeshPlacementService meshPlacementService,
             IResoniteSession resoniteSession,
             IResoniteSessionMetadataPort sessionMetadataPort,
+            ILicenseCreditPolicy licenseCreditPolicy,
             ILogger<TileRunCoordinator> logger,
             int maxConcurrentTileProcessing = 1)
         {
@@ -29,6 +30,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 meshPlacementService,
                 resoniteSession,
                 sessionMetadataPort,
+                licenseCreditPolicy,
                 logger,
                 maxConcurrentTileProcessing);
         }

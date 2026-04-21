@@ -13,6 +13,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         IMeshPlacementService meshPlacementService,
         IResoniteSession resoniteSession,
         IResoniteSessionMetadataPort sessionMetadataPort,
+        ILicenseCreditPolicy licenseCreditPolicy,
         ILogger logger,
         int maxConcurrentTileProcessing = 1,
         int maxConcurrentWriterSends = 1,
@@ -34,6 +35,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly TileSelectionInteractiveFinalizer _interactiveFinalizer = new(
             resoniteSession,
             sessionMetadataPort,
+            licenseCreditPolicy,
             logger);
 
         public async Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)

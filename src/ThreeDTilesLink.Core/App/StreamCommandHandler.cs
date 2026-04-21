@@ -8,10 +8,11 @@ namespace ThreeDTilesLink.Core.App
     {
         internal static TileRunRequest CreateRequest(
             StreamCommandOptions options,
-            string apiKey,
+            TileSourceOptions tileSource,
             IGeoReferenceResolver geoReferenceResolver)
         {
             ArgumentNullException.ThrowIfNull(options);
+            ArgumentNullException.ThrowIfNull(tileSource);
             ArgumentNullException.ThrowIfNull(geoReferenceResolver);
 
             GeoReference reference = geoReferenceResolver.Resolve(options.Latitude, options.Longitude, options.HeightOffset);
@@ -26,7 +27,7 @@ namespace ThreeDTilesLink.Core.App
                     options.ResoniteHost,
                     options.ResonitePort,
                     options.DryRun),
-                apiKey);
+                tileSource);
         }
     }
 }

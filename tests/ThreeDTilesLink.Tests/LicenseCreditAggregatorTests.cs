@@ -8,7 +8,7 @@ namespace ThreeDTilesLink.Tests
         [Fact]
         public void ParseOwners_NormalizesGoogleToGoogleMaps_AndDeduplicates()
         {
-            IReadOnlyList<string> owners = LicenseCreditAggregator.ParseOwners(
+            IReadOnlyList<string> owners = new LicenseCreditAggregator().ParseOwners(
             [
                 "Google; Maxar Technologies",
                 "Google Maps; Maxar Technologies"
@@ -21,7 +21,7 @@ namespace ThreeDTilesLink.Tests
         public void BuildCreditString_AlwaysKeepsGoogleMapsBasemapAttributionFirst()
         {
             var aggregator = new LicenseCreditAggregator();
-            IReadOnlyList<string> owners = LicenseCreditAggregator.ParseOwners(
+            IReadOnlyList<string> owners = aggregator.ParseOwners(
             [
                 "Airbus; Google"
             ]);

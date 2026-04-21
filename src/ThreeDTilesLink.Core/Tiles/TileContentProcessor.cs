@@ -4,26 +4,16 @@ using ThreeDTilesLink.Core.Models;
 namespace ThreeDTilesLink.Core.Tiles
 {
     internal sealed class TileContentProcessor(
-        ITilesSource tilesSource,
         IGlbMeshExtractor glbMeshExtractor,
         RunPerformanceSummary? performanceSummary = null) : IContentProcessor
     {
-        private readonly ITilesSource _tilesSource = tilesSource;
         private readonly IGlbMeshExtractor _glbMeshExtractor = glbMeshExtractor;
         private readonly RunPerformanceSummary? _performanceSummary = performanceSummary;
 
         public async Task<ContentProcessResult> ProcessAsync(
-            TileSelectionResult tile,
-            GoogleTilesAuth auth,
+            FetchedNodeContent content,
             CancellationToken cancellationToken)
         {
-            ArgumentNullException.ThrowIfNull(tile);
-            ArgumentNullException.ThrowIfNull(auth);
-
-            FetchedNodeContent content = await _tilesSource
-                .FetchNodeContentAsync(tile.ContentUri, auth, cancellationToken)
-                .ConfigureAwait(false);
-
             return content switch
             {
                 NestedTilesetFetchedContent nested => new NestedTilesetContentProcessResult(nested.Tileset),

@@ -5,9 +5,14 @@ namespace ThreeDTilesLink.Core.App
 {
     internal static class InteractiveCommandHandler
     {
-        internal static InteractiveRunRequest CreateRequest(InteractiveCommandOptions options, string apiKey)
+        internal static InteractiveRunRequest CreateRequest(
+            InteractiveCommandOptions options,
+            TileSourceOptions tileSource,
+            SearchOptions search)
         {
             ArgumentNullException.ThrowIfNull(options);
+            ArgumentNullException.ThrowIfNull(tileSource);
+            ArgumentNullException.ThrowIfNull(search);
 
             return new InteractiveRunRequest(
                 options.ResoniteHost,
@@ -16,7 +21,8 @@ namespace ThreeDTilesLink.Core.App
                 new TraversalOptions(
                     RangeM: 0d,
                     options.DetailTargetM),
-                apiKey,
+                tileSource,
+                search,
                 true,
                 new WatchOptions(
                     TimeSpan.FromMilliseconds(options.PollIntervalMs),

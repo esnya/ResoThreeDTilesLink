@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Threading;
 using ThreeDTilesLink.Core.Contracts;
+using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Mesh;
 using ThreeDTilesLink.Core.Models;
@@ -43,7 +44,7 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task Run_WithoutApiKey_ThrowsBeforeFetching()
+        public async Task Run_WithoutApiKey_DoesNotValidateSourceRequirementsInCoordinator()
         {
             var tileset = new Tileset(new Tile
             {
@@ -55,17 +56,17 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            var source = new FakeTilesSource(tileset);
+            TileRunCoordinator coordinator = CreateCoordinator(source, client);
 
-            Func<Task> act = () => coordinator.RunAsync(CreateRequest(dryRun: true, apiKey: null), CancellationToken.None);
+            _ = await coordinator.RunAsync(CreateRequest(dryRun: true, apiKey: null), CancellationToken.None);
 
-            _ = await act.Should().ThrowAsync<InvalidOperationException>()
-                .WithMessage("GOOGLE_MAPS_API_KEY is required*");
             _ = client.ConnectCount.Should().Be(0);
+            _ = source.ContentFetchCount.Should().Be(1);
         }
 
         [Fact]
-        public async Task Run_WithoutApiKey_UpdatesProgressText_WhenMetadataSurfaceExists()
+        public async Task Run_WithoutApiKey_DoesNotPublishCoordinatorFailureProgress()
         {
             var tileset = new Tileset(new Tile
             {
@@ -79,11 +80,9 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteSession();
             TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            Func<Task> act = () => coordinator.RunAsync(CreateRequest(dryRun: false, manageConnection: false, apiKey: null), CancellationToken.None);
+            _ = await coordinator.RunAsync(CreateRequest(dryRun: false, manageConnection: false, apiKey: null), CancellationToken.None);
 
-            _ = await act.Should().ThrowAsync<InvalidOperationException>()
-                .WithMessage("GOOGLE_MAPS_API_KEY is required*");
-            _ = client.ProgressUpdates.Should().Contain(update => update.ProgressText.StartsWith("Failed: GOOGLE_MAPS_API_KEY is required", StringComparison.Ordinal));
+            _ = client.ProgressUpdates.Should().NotContain(update => update.ProgressText.StartsWith("Failed:", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1849,10 +1848,11 @@ namespace ThreeDTilesLink.Tests
                 tilesSource,
                 traversalCore,
                 new ResoniteReconcilerCore(),
-                new TileContentProcessor(tilesSource, extractor ?? new FakeExtractor()),
+                new TileContentProcessor(extractor ?? new FakeExtractor()),
                 new MeshPlacementService(transformer),
                 session,
                 metadataPort ?? session,
+                new GoogleTileLicenseCreditPolicy(),
                 NullLogger<TileRunCoordinator>.Instance,
                 maxConcurrentTileProcessing);
         }
@@ -1869,7 +1869,9 @@ namespace ThreeDTilesLink.Tests
                 new GeoReference(0d, 0d, 0d),
                 new TraversalOptions(rangeM, 40d, bootstrapRangeMultiplier),
                 new ResoniteOutputOptions("127.0.0.1", 12345, dryRun, manageConnection),
-                apiKey);
+                new TileSourceOptions(
+                    new Uri("https://example.com/root.json"),
+                    new TileSourceAccess(apiKey, null)));
         }
 
         private static string StableId(string id)
@@ -1954,7 +1956,7 @@ namespace ThreeDTilesLink.Tests
 
             public int ContentFetchCount { get; private set; }
 
-            public Task<Tileset> FetchRootTilesetAsync(GoogleTilesAuth auth, CancellationToken cancellationToken)
+            public Task<Tileset> FetchRootTilesetAsync(TileSourceOptions source, CancellationToken cancellationToken)
             {
                 if (_rootFetchException is not null)
                 {
@@ -1964,7 +1966,7 @@ namespace ThreeDTilesLink.Tests
                 return Task.FromResult(_tileset);
             }
 
-            public async Task<FetchedNodeContent> FetchNodeContentAsync(Uri contentUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
+            public async Task<FetchedNodeContent> FetchNodeContentAsync(Uri contentUri, TileSourceOptions source, CancellationToken cancellationToken)
             {
                 int current = Interlocked.Increment(ref _activeContentFetches);
                 UpdateMaxConcurrentContentFetches(current);

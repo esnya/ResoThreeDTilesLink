@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Google
 {
@@ -140,9 +141,4 @@ namespace ThreeDTilesLink.Core.Google
                 : $"Google geocoding HTTP {(int)statusCode} {reasonPhrase}. Body preview: {bodyPreview}";
         }
     }
-
-    internal sealed record LocationSearchResult(
-        string FormattedAddress,
-        double Latitude,
-        double Longitude);
 }

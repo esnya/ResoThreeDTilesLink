@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
 using ThreeDTilesLink.Core.App;
 using ThreeDTilesLink.Core.CommandLine;
 using ThreeDTilesLink.Core.Contracts;
@@ -20,7 +19,7 @@ namespace ThreeDTilesLink.App
         StreamCommandOptions options,
         ITileSelectionService tileSelectionService,
         IGeoReferenceResolver geoReferenceResolver,
-        IOptions<GoogleMapsOptions> googleMapsOptions,
+        TileSourceOptions tileSource,
         TextWriter output,
         CommandCompletion completion,
         IHostApplicationLifetime lifetime) : BackgroundService
@@ -28,7 +27,7 @@ namespace ThreeDTilesLink.App
         private readonly StreamCommandOptions _options = options;
         private readonly ITileSelectionService _tileSelectionService = tileSelectionService;
         private readonly IGeoReferenceResolver _geoReferenceResolver = geoReferenceResolver;
-        private readonly IOptions<GoogleMapsOptions> _googleMapsOptions = googleMapsOptions;
+        private readonly TileSourceOptions _tileSource = tileSource;
         private readonly TextWriter _output = output;
         private readonly CommandCompletion _completion = completion;
         private readonly IHostApplicationLifetime _lifetime = lifetime;
@@ -40,7 +39,7 @@ namespace ThreeDTilesLink.App
                 RunSummary summary = await _tileSelectionService.RunAsync(
                     StreamCommandHandler.CreateRequest(
                         _options,
-                        _googleMapsOptions.Value.ApiKey,
+                        _tileSource,
                         _geoReferenceResolver),
                     stoppingToken).ConfigureAwait(false);
 
@@ -76,14 +75,16 @@ namespace ThreeDTilesLink.App
     internal sealed class InteractiveCommandHostedService(
         InteractiveCommandOptions options,
         InteractiveRunSupervisor interactiveRunSupervisor,
-        IOptions<GoogleMapsOptions> googleMapsOptions,
+        TileSourceOptions tileSource,
+        SearchOptions searchOptions,
         TextWriter output,
         CommandCompletion completion,
         IHostApplicationLifetime lifetime) : BackgroundService
     {
         private readonly InteractiveCommandOptions _options = options;
         private readonly InteractiveRunSupervisor _interactiveRunSupervisor = interactiveRunSupervisor;
-        private readonly IOptions<GoogleMapsOptions> _googleMapsOptions = googleMapsOptions;
+        private readonly TileSourceOptions _tileSource = tileSource;
+        private readonly SearchOptions _searchOptions = searchOptions;
         private readonly TextWriter _output = output;
         private readonly CommandCompletion _completion = completion;
         private readonly IHostApplicationLifetime _lifetime = lifetime;
@@ -96,7 +97,7 @@ namespace ThreeDTilesLink.App
                     $"Interactive mode started. Input=session root slot values (Latitude/Longitude/Range/Search). Poll={_options.PollIntervalMs}ms Debounce={_options.DebounceMs}ms Throttle={_options.ThrottleMs}ms. Press Ctrl+C to stop.")
                     .ConfigureAwait(false);
                 await _interactiveRunSupervisor.RunAsync(
-                    InteractiveCommandHandler.CreateRequest(_options, _googleMapsOptions.Value.ApiKey),
+                    InteractiveCommandHandler.CreateRequest(_options, _tileSource, _searchOptions),
                     stoppingToken).ConfigureAwait(false);
                 _completion.TrySetExitCode(0);
             }

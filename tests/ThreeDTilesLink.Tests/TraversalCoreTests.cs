@@ -1328,7 +1328,9 @@ namespace ThreeDTilesLink.Tests
                 new GeoReference(0d, 0d, 0d),
                 new TraversalOptions(rangeM, 40d, bootstrapRangeMultiplier),
                 new ResoniteOutputOptions("127.0.0.1", 12000, dryRun),
-                "k");
+                new TileSourceOptions(
+                    new Uri("https://example.com/root.json"),
+                    new TileSourceAccess("k", null)));
         }
 
         private static Tileset CreateRootTileset()

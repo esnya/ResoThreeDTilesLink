@@ -1,4 +1,5 @@
 using ThreeDTilesLink.Core.Contracts;
+using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Google
 {

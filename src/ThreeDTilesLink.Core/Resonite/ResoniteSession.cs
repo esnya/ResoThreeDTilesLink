@@ -8,13 +8,14 @@ using ResoniteLink;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using ThreeDTilesLink.Core.Contracts;
-using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Resonite
 {
     internal sealed partial class ResoniteSession(
         LinkInterface resoniteLink,
+        ILicenseCreditPolicy licenseCreditPolicy,
+        ResoniteDestinationPolicyOptions destinationPolicyOptions,
         ILogger<ResoniteSession> logger,
         Func<LinkInterface>? linkInterfaceFactory = null,
         int assetImportWorkers = 1) : IResoniteSession, IResoniteSessionMetadataPort, IInteractiveInputStore, IAsyncDisposable
@@ -100,7 +101,6 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string DynamicValueVariableValueMemberName = "Value";
         private const string StringFieldType = "[FrooxEngine]FrooxEngine.IField<string>";
         private const string FloatFieldType = "[FrooxEngine]FrooxEngine.IField<float>";
-        private const string GoogleTilesDynamicSpaceName = "Google3DTiles";
         private const string InteractiveLatitudeVariableLocalName = "Latitude";
         private const string InteractiveLongitudeVariableLocalName = "Longitude";
         private const string InteractiveRangeVariableLocalName = "Range";
@@ -109,16 +109,11 @@ namespace ThreeDTilesLink.Core.Resonite
         private const string InteractiveLongitudeAliasPath = "World/ThreeDTilesLink.Longitude";
         private const string InteractiveRangeAliasPath = "World/ThreeDTilesLink.Range";
         private const string InteractiveSearchAliasPath = "World/ThreeDTilesLink.Search";
-        private const string LicenseDynamicVariablePath = "World/ThreeDTilesLink.License";
-        private const string AttributionRequirementsVariableLocalName = "AttributionRequirements";
-        private const string AttributionRequirementsDynamicVariablePath = "World/ThreeDTilesLink.AttributionRequirements";
         private const string ProgressValueVariableLocalName = "Progress";
         private const string ProgressTextVariableLocalName = "ProgressText";
         private const string ProgressDynamicVariablePath = "World/ThreeDTilesLink.Progress";
         private const string ProgressTextDynamicVariablePath = "World/ThreeDTilesLink.ProgressText";
         private const string ParentDynamicSpaceNamePrefix = "ThreeDTilesLink.Parent";
-        private const string DefaultGoogleMapsCreditText = GoogleMapsCompliance.BasemapAttribution;
-        private const string PackageExportWarningSlotName = "EXPORT PROHIBITED: STREAMED GOOGLE 3D TILES";
         private const string MeshAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Mesh>";
         private const string MaterialAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.Material>";
         private const string TextureAssetProviderType = "[FrooxEngine]FrooxEngine.IAssetProvider<[FrooxEngine]FrooxEngine.ITexture2D>";
@@ -140,6 +135,8 @@ namespace ThreeDTilesLink.Core.Resonite
         }
 
         private LinkInterface _linkInterface = resoniteLink ?? throw new ArgumentNullException(nameof(resoniteLink));
+        private readonly ILicenseCreditPolicy _licenseCreditPolicy = licenseCreditPolicy ?? throw new ArgumentNullException(nameof(licenseCreditPolicy));
+        private readonly ResoniteDestinationPolicyOptions _destinationPolicyOptions = destinationPolicyOptions ?? throw new ArgumentNullException(nameof(destinationPolicyOptions));
         private readonly Func<LinkInterface> _linkInterfaceFactory = linkInterfaceFactory ?? (() => new LinkInterface());
         private readonly ILogger<ResoniteSession> _logger = logger;
         private readonly bool _dumpMeshJson = string.Equals(Environment.GetEnvironmentVariable("THREEDTILESLINK_DUMP_MESH_JSON")?.Trim(), "1", StringComparison.Ordinal) ||
@@ -170,6 +167,21 @@ namespace ThreeDTilesLink.Core.Resonite
         private bool _sessionDynamicSpaceInitialized;
 
         internal TestHooks? Hooks { get; set; }
+
+        internal ResoniteSession(
+            LinkInterface resoniteLink,
+            ILogger<ResoniteSession> logger,
+            Func<LinkInterface>? linkInterfaceFactory = null,
+            int assetImportWorkers = 1)
+            : this(
+                resoniteLink,
+                new Google.GoogleTileLicenseCreditPolicy(),
+                ResoniteDestinationPolicyOptions.CreateGoogleDefaults(),
+                logger,
+                linkInterfaceFactory,
+                assetImportWorkers)
+        {
+        }
 
         public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
@@ -237,8 +249,15 @@ namespace ThreeDTilesLink.Core.Resonite
                     cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 await AttachSessionMetadataAsync(_sessionRootSlotId, cancellationToken).ConfigureAwait(false);
-                await AttachAvatarProtectionAsync(_sessionRootSlotId, cancellationToken).ConfigureAwait(false);
-                await AttachPackageExportableAsync(_sessionRootSlotId, cancellationToken).ConfigureAwait(false);
+                if (_destinationPolicyOptions.ApplyAvatarProtectionToSessionRoot)
+                {
+                    await AttachAvatarProtectionAsync(_sessionRootSlotId, cancellationToken).ConfigureAwait(false);
+                }
+
+                if (_destinationPolicyOptions.ApplyPackageExportProtectionToSessionRoot)
+                {
+                    await AttachPackageExportableAsync(_sessionRootSlotId, cancellationToken).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException)
             {
@@ -353,7 +372,7 @@ namespace ThreeDTilesLink.Core.Resonite
                     latBinding.ComponentId,
                     DynamicValueVariableFloatComponentType,
                     BuildDynamicFloatValueVariableMembers(
-                        BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveLatitudeVariableLocalName),
+                        BuildScopedVariablePath(_destinationPolicyOptions.SessionDynamicSpaceName, InteractiveLatitudeVariableLocalName),
                         latBinding.ValueFieldId,
                         0f)),
                 BuildAddComponentOperation(
@@ -361,7 +380,7 @@ namespace ThreeDTilesLink.Core.Resonite
                     lonBinding.ComponentId,
                     DynamicValueVariableFloatComponentType,
                     BuildDynamicFloatValueVariableMembers(
-                        BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveLongitudeVariableLocalName),
+                        BuildScopedVariablePath(_destinationPolicyOptions.SessionDynamicSpaceName, InteractiveLongitudeVariableLocalName),
                         lonBinding.ValueFieldId,
                         0f)),
                 BuildAddComponentOperation(
@@ -369,7 +388,7 @@ namespace ThreeDTilesLink.Core.Resonite
                     rangeBinding.ComponentId,
                     DynamicValueVariableFloatComponentType,
                     BuildDynamicFloatValueVariableMembers(
-                        BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveRangeVariableLocalName),
+                        BuildScopedVariablePath(_destinationPolicyOptions.SessionDynamicSpaceName, InteractiveRangeVariableLocalName),
                         rangeBinding.ValueFieldId,
                         0f)),
                 BuildAddComponentOperation(
@@ -377,7 +396,7 @@ namespace ThreeDTilesLink.Core.Resonite
                     searchBinding.ComponentId,
                     DynamicValueVariableStringComponentType,
                     BuildDynamicStringValueVariableMembers(
-                        BuildScopedVariablePath(GoogleTilesDynamicSpaceName, InteractiveSearchVariableLocalName),
+                        BuildScopedVariablePath(_destinationPolicyOptions.SessionDynamicSpaceName, InteractiveSearchVariableLocalName),
                         searchBinding.ValueFieldId,
                         string.Empty)),
                 BuildAddComponentOperation(
@@ -542,9 +561,9 @@ namespace ThreeDTilesLink.Core.Resonite
                             ID = _sessionLicenseComponentId,
                             Members = new Dictionary<string, Member>
                             {
-                                ["RequireCredit"] = new Field_bool { Value = true },
+                                ["RequireCredit"] = new Field_bool { Value = _destinationPolicyOptions.RequireCredit },
                                 ["CreditString"] = new Field_string { Value = normalized },
-                                ["CanExport"] = new Field_bool { Value = false }
+                                ["CanExport"] = new Field_bool { Value = _destinationPolicyOptions.CanExport }
                             }
                         }
                     }),
@@ -631,8 +650,13 @@ namespace ThreeDTilesLink.Core.Resonite
                     throw new InvalidOperationException("Session root slot is not initialized.");
                 }
 
-                string warningSlotId = await EnsurePackageExportWarningSlotAsync(cancellationToken).ConfigureAwait(false);
-                await ResolveAvatarProtectionContextAsync(cancellationToken).ConfigureAwait(false);
+                string? warningSlotId = _destinationPolicyOptions.ApplyPackageExportProtectionToTileSlots
+                    ? await EnsurePackageExportWarningSlotAsync(cancellationToken).ConfigureAwait(false)
+                    : null;
+                if (_destinationPolicyOptions.ApplyAvatarProtectionToTileSlots)
+                {
+                    await ResolveAvatarProtectionContextAsync(cancellationToken).ConfigureAwait(false);
+                }
 
                 string tileSlotId = $"t3dtile_slot_{Guid.NewGuid():N}";
                 string staticMeshId = $"t3dtile_comp_{Guid.NewGuid():N}";
@@ -640,7 +664,8 @@ namespace ThreeDTilesLink.Core.Resonite
                 string materialId = $"t3dtile_comp_{Guid.NewGuid():N}";
                 string meshRendererId = $"t3dtile_comp_{Guid.NewGuid():N}";
                 string? staticTextureId = textureAsset is null ? null : $"t3dtile_comp_{Guid.NewGuid():N}";
-                string? avatarProtectionId = !_avatarProtectionUnavailable &&
+                string? avatarProtectionId = _destinationPolicyOptions.ApplyAvatarProtectionToTileSlots &&
+                    !_avatarProtectionUnavailable &&
                     !string.IsNullOrWhiteSpace(_avatarProtectionComponentType)
                     ? $"t3dtile_comp_{Guid.NewGuid():N}"
                     : null;
@@ -1607,13 +1632,13 @@ namespace ThreeDTilesLink.Core.Resonite
                 LicenseComponentType,
                 new Dictionary<string, Member>
                 {
-                    ["RequireCredit"] = new Field_bool { Value = true },
+                    ["RequireCredit"] = new Field_bool { Value = _destinationPolicyOptions.RequireCredit },
                     ["CreditString"] = new Field_string
                     {
                         ID = creditFieldId,
-                        Value = DefaultGoogleMapsCreditText
+                        Value = _licenseCreditPolicy.DefaultCredit
                     },
-                    ["CanExport"] = new Field_bool { Value = false }
+                    ["CanExport"] = new Field_bool { Value = _destinationPolicyOptions.CanExport }
                 },
                 cancellationToken).ConfigureAwait(false);
 
@@ -1623,11 +1648,11 @@ namespace ThreeDTilesLink.Core.Resonite
             }
 
             _sessionLicenseComponentId = licenseComponentId;
-            _sessionLicenseCreditText = DefaultGoogleMapsCreditText;
+            _sessionLicenseCreditText = _licenseCreditPolicy.DefaultCredit;
 
             DynamicVariableBinding? licenseAliasBinding = await TryAddWorldStringAliasAsync(
                 sessionRootSlotId,
-                LicenseDynamicVariablePath,
+                _destinationPolicyOptions.LicenseDynamicVariablePath,
                 creditFieldId,
                 writeBack: false,
                 cancellationToken).ConfigureAwait(false);
@@ -1635,14 +1660,16 @@ namespace ThreeDTilesLink.Core.Resonite
 
             DynamicVariableBinding? attributionRequirementsBinding = await TryAddDynamicStringValueVariableAsync(
                 sessionRootSlotId,
-                BuildScopedVariablePath(GoogleTilesDynamicSpaceName, AttributionRequirementsVariableLocalName),
-                GoogleMapsCompliance.AttributionRequirements,
+                BuildScopedVariablePath(
+                    _destinationPolicyOptions.SessionDynamicSpaceName,
+                    _destinationPolicyOptions.AttributionRequirementsVariableLocalName),
+                _licenseCreditPolicy.AttributionRequirements,
                 cancellationToken).ConfigureAwait(false);
             if (attributionRequirementsBinding is not null)
             {
                 _ = await TryAddWorldStringAliasAsync(
                     sessionRootSlotId,
-                    AttributionRequirementsDynamicVariablePath,
+                    _destinationPolicyOptions.AttributionRequirementsDynamicVariablePath,
                     attributionRequirementsBinding.ValueFieldId,
                     writeBack: false,
                     cancellationToken).ConfigureAwait(false);
@@ -1661,7 +1688,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 DynamicVariableSpaceComponentType,
                 new Dictionary<string, Member>
                 {
-                    ["SpaceName"] = new Field_string { Value = GoogleTilesDynamicSpaceName },
+                    ["SpaceName"] = new Field_string { Value = _destinationPolicyOptions.SessionDynamicSpaceName },
                     ["OnlyDirectBinding"] = new Field_bool { Value = true }
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -1880,7 +1907,7 @@ namespace ThreeDTilesLink.Core.Resonite
             }
 
             _packageExportWarningSlotId = await CreateSlotAsync(
-                PackageExportWarningSlotName,
+                _destinationPolicyOptions.PackageExportWarningSlotName,
                 _sessionRootSlotId,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             return _packageExportWarningSlotId;
@@ -1906,7 +1933,7 @@ namespace ThreeDTilesLink.Core.Resonite
         private List<DataModelOperation> BuildMeshPlacementBatchOperations(
             PlacedMeshPayload payload,
             string parentSlotId,
-            string warningSlotId,
+            string? warningSlotId,
             Uri meshAssetUri,
             Uri? textureAssetUri,
             string tileSlotId,
@@ -1973,14 +2000,18 @@ namespace ThreeDTilesLink.Core.Resonite
                 });
             }
 
-            operations.Add(new AddComponent
+            if (_destinationPolicyOptions.ApplyPackageExportProtectionToTileSlots &&
+                !string.IsNullOrWhiteSpace(warningSlotId))
             {
-                ContainerSlotId = tileSlotId,
-                Data = BuildComponentData(
-                    $"t3dtile_comp_{Guid.NewGuid():N}",
-                    PackageExportableComponentType,
-                    BuildPackageExportableMembers(warningSlotId))
-            });
+                operations.Add(new AddComponent
+                {
+                    ContainerSlotId = tileSlotId,
+                    Data = BuildComponentData(
+                        $"t3dtile_comp_{Guid.NewGuid():N}",
+                        PackageExportableComponentType,
+                        BuildPackageExportableMembers(warningSlotId))
+                });
+            }
 
             if (textureAssetUri is not null && !string.IsNullOrWhiteSpace(staticTextureId))
             {

@@ -1,11 +1,13 @@
+using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
 
 #pragma warning disable CA1822
 
 namespace ThreeDTilesLink.Core.Pipeline
 {
-    internal sealed class ResoniteReconcilerCore
+    internal sealed class ResoniteReconcilerCore(ILicenseCreditPolicy licenseCreditPolicy)
     {
+        private readonly ILicenseCreditPolicy _licenseCreditPolicy = licenseCreditPolicy;
         private static readonly TimeSpan MetadataCadence = TimeSpan.FromMilliseconds(250);
         private const int MetadataProcessedDeltaThreshold = 8;
         private const float MetadataProgressDeltaThreshold = 0.02f;
@@ -502,7 +504,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             return ancestors;
         }
 
-        private static DesiredMetadataState BuildDesiredMetadataState(
+        private DesiredMetadataState BuildDesiredMetadataState(
             DiscoveryFacts facts,
             WriterState writerState,
             DesiredView desiredView,
@@ -603,19 +605,24 @@ namespace ThreeDTilesLink.Core.Pipeline
         private static bool IsCompletedMetadata(float progressValue, string progressText)
             => progressValue >= 0.9999f || progressText.StartsWith("Completed:", StringComparison.Ordinal);
 
-        private static string BuildDesiredLicense(IEnumerable<RetainedTileState> visibleTiles)
+        private string BuildDesiredLicense(IEnumerable<RetainedTileState> visibleTiles)
         {
-            var aggregator = new LicenseCreditAggregator();
+            var aggregator = new LicenseCreditAggregator(_licenseCreditPolicy);
             foreach (RetainedTileState retainedTile in visibleTiles)
             {
-                IReadOnlyList<string> owners = LicenseCreditAggregator.ParseOwners(
+                IReadOnlyList<string> owners = aggregator.ParseOwners(
                     string.IsNullOrWhiteSpace(retainedTile.AssetCopyright) ? [] : [retainedTile.AssetCopyright]);
                 aggregator.RegisterOrder(owners);
                 _ = aggregator.Activate(owners);
             }
 
             string built = aggregator.BuildCreditString();
-            return string.IsNullOrWhiteSpace(built) ? "Google Maps" : built;
+            return string.IsNullOrWhiteSpace(built) ? _licenseCreditPolicy.DefaultCredit : built;
+        }
+
+        public ResoniteReconcilerCore()
+            : this(new Google.GoogleTileLicenseCreditPolicy())
+        {
         }
     }
 }
