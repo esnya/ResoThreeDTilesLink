@@ -144,20 +144,35 @@ namespace ThreeDTilesLink.Core.Tiles
             }
 
             string decodedPath = Uri.UnescapeDataString(uri.AbsolutePath);
-            var builder = new UriBuilder(fileSchemeBaseUri)
-            {
-                Path = decodedPath,
-                Query = uri.Query.TrimStart('?')
-            };
+            string query = uri.Query.TrimStart('?');
 
             if (decodedPath.Contains('?', StringComparison.Ordinal))
             {
                 int index = decodedPath.IndexOf('?', StringComparison.Ordinal);
-                builder.Path = decodedPath[..index];
-                builder.Query = decodedPath[(index + 1)..];
+                if (string.IsNullOrEmpty(query))
+                {
+                    query = decodedPath[(index + 1)..];
+                }
+                decodedPath = decodedPath[..index];
             }
 
+            var builder = new UriBuilder(fileSchemeBaseUri)
+            {
+                Path = CombineBasePath(fileSchemeBaseUri.AbsolutePath, decodedPath),
+                Query = query
+            };
+
             return builder.Uri;
+        }
+
+        private static string CombineBasePath(string basePath, string decodedPath)
+        {
+            string normalizedBasePath = string.IsNullOrWhiteSpace(basePath) ? "/" : basePath;
+            string normalizedContentPath = decodedPath.TrimStart('/');
+
+            return string.IsNullOrEmpty(normalizedContentPath)
+                ? normalizedBasePath
+                : $"{normalizedBasePath.TrimEnd('/')}/{normalizedContentPath}";
         }
 
         private static Uri InheritRequiredQueryParameters(

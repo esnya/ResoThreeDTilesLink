@@ -74,7 +74,7 @@ namespace ThreeDTilesLink
 
             Uri googleRootTilesetUri = new("https://tile.googleapis.com/v1/3dtiles/root.json");
             Uri googleFileSchemeBaseUri = new("https://tile.googleapis.com/");
-            string? sharedGoogleApiKey = configuration["GoogleMaps:ApiKey"] ?? configuration["GOOGLE_MAPS_API_KEY"];
+            string? sharedGoogleApiKey = ResolveSharedGoogleApiKey(configuration);
             string[] inheritedQueryParameters = ReadList(
                 configuration,
                 "TileSource:InheritedQueryParameters",
@@ -124,8 +124,15 @@ namespace ThreeDTilesLink
             return new SearchOptions(
                 configuration["Search:ApiKey"] ??
                 configuration["SEARCH_API_KEY"] ??
-                configuration["GoogleMaps:ApiKey"] ??
-                configuration["GOOGLE_MAPS_API_KEY"]);
+                ResolveSharedGoogleApiKey(configuration));
+        }
+
+        private static string? ResolveSharedGoogleApiKey(ConfigurationManager configuration)
+        {
+            ArgumentNullException.ThrowIfNull(configuration);
+
+            return configuration["GOOGLE_MAPS_API_KEY"] ??
+                configuration["GoogleMaps:ApiKey"];
         }
 
         private static string[] ReadList(

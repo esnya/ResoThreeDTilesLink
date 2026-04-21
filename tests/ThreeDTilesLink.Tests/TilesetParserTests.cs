@@ -115,14 +115,14 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public void Parse_UsesConfiguredFileSchemeBaseAndInheritedQueryParameters()
+        public void Parse_PreservesConfiguredFileSchemeBasePathAndInheritedQueryParameters()
         {
             var sourceUri = new Uri("https://plateau.example.com/tiles/root.json?sig=abc&unused=z");
             TileSourceOptions source = new(
                 sourceUri,
                 new TileSourceAccess(null, "token"),
                 new TileSourceContentLinkOptions(
-                    new Uri("https://cdn.plateau.example.com/"),
+                    new Uri("https://cdn.plateau.example.com/tiles/"),
                     ["sig"]));
             string json = """
                 {
@@ -136,7 +136,7 @@ namespace ThreeDTilesLink.Tests
 
             Tileset tileset = new TilesetParser().Parse(json, source.ContentLinks, sourceUri);
 
-            _ = tileset.Root.ContentUri!.AbsoluteUri.Should().Be("https://cdn.plateau.example.com/lod/leaf.glb?sig=abc");
+            _ = tileset.Root.ContentUri!.AbsoluteUri.Should().Be("https://cdn.plateau.example.com/tiles/lod/leaf.glb?sig=abc");
         }
     }
 }

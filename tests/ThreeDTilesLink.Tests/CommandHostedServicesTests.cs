@@ -1,5 +1,6 @@
 using System.Reflection;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -255,6 +256,60 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
+        [Fact]
+        public void CommandHost_BuildSearchOptions_PrefersLegacyGoogleMapsEnvVarOverSectionValue()
+        {
+            const string envApiKey = "google-env-key";
+            const string configApiKey = "google-config-key";
+            string? previousGoogleApiKey = Environment.GetEnvironmentVariable("GOOGLE_MAPS_API_KEY");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("GOOGLE_MAPS_API_KEY", envApiKey);
+                using var configuration = new ConfigurationManager();
+                _ = configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["GoogleMaps:ApiKey"] = configApiKey
+                });
+                _ = configuration.AddEnvironmentVariables();
+
+                SearchOptions search = InvokeBuildSearchOptions(configuration);
+
+                _ = search.ApiKey.Should().Be(envApiKey);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("GOOGLE_MAPS_API_KEY", previousGoogleApiKey);
+            }
+        }
+
+        [Fact]
+        public void CommandHost_BuildTileSourceOptions_PrefersLegacyGoogleMapsEnvVarOverSectionValue()
+        {
+            const string envApiKey = "google-env-key";
+            const string configApiKey = "google-config-key";
+            string? previousGoogleApiKey = Environment.GetEnvironmentVariable("GOOGLE_MAPS_API_KEY");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("GOOGLE_MAPS_API_KEY", envApiKey);
+                using var configuration = new ConfigurationManager();
+                _ = configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["GoogleMaps:ApiKey"] = configApiKey
+                });
+                _ = configuration.AddEnvironmentVariables();
+
+                TileSourceOptions tileSource = InvokeBuildTileSourceOptions(configuration);
+
+                _ = tileSource.Access.ApiKey.Should().Be(envApiKey);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("GOOGLE_MAPS_API_KEY", previousGoogleApiKey);
+            }
+        }
+
         private static Task InvokeExecuteAsync(object service, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(service);
@@ -264,6 +319,24 @@ namespace ThreeDTilesLink.Tests
                 BindingFlags.Instance | BindingFlags.NonPublic);
             _ = method.Should().NotBeNull();
             return (Task)method!.Invoke(service, [cancellationToken])!;
+        }
+
+        private static SearchOptions InvokeBuildSearchOptions(ConfigurationManager configuration)
+        {
+            MethodInfo? method = typeof(ThreeDTilesLink.CommandHost).GetMethod(
+                "BuildSearchOptions",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            _ = method.Should().NotBeNull();
+            return (SearchOptions)method!.Invoke(null, [configuration])!;
+        }
+
+        private static TileSourceOptions InvokeBuildTileSourceOptions(ConfigurationManager configuration)
+        {
+            MethodInfo? method = typeof(ThreeDTilesLink.CommandHost).GetMethod(
+                "BuildTileSourceOptions",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            _ = method.Should().NotBeNull();
+            return (TileSourceOptions)method!.Invoke(null, [configuration])!;
         }
 
         private sealed class ThrowingTileSelectionService(Exception exception) : ITileSelectionService
