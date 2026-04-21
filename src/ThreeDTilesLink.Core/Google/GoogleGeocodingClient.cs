@@ -12,7 +12,7 @@ namespace ThreeDTilesLink.Core.Google
             string normalizedApiKey = apiKey?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(normalizedApiKey))
             {
-                throw new ArgumentException("GOOGLE_MAPS_API_KEY is required for Google geocoding search.", nameof(apiKey));
+                throw new ArgumentException("A search API key is required for Google geocoding search.", nameof(apiKey));
             }
 
             string normalizedQuery = query?.Trim() ?? string.Empty;

@@ -21,17 +21,20 @@ namespace ThreeDTilesLink.App
             ICommandRuntimeOptions runtimeOptions,
             TileSourceOptions tileSourceOptions,
             ResoniteDestinationPolicyOptions destinationPolicyOptions,
+            ILicenseCreditPolicy licenseCreditPolicy,
             SearchOptions searchOptions)
         {
             ArgumentNullException.ThrowIfNull(services);
             ArgumentNullException.ThrowIfNull(runtimeOptions);
             ArgumentNullException.ThrowIfNull(tileSourceOptions);
             ArgumentNullException.ThrowIfNull(destinationPolicyOptions);
+            ArgumentNullException.ThrowIfNull(licenseCreditPolicy);
             ArgumentNullException.ThrowIfNull(searchOptions);
 
             _ = services.AddSingleton(runtimeOptions);
             _ = services.AddSingleton(tileSourceOptions);
             _ = services.AddSingleton(destinationPolicyOptions);
+            _ = services.AddSingleton(licenseCreditPolicy);
             _ = services.AddSingleton(searchOptions);
 
             _ = services.AddSingleton<ICoordinateTransformer, GeographicCoordinateTransformer>();
@@ -46,7 +49,6 @@ namespace ThreeDTilesLink.App
             _ = services.AddSingleton<SelectionInputReader>();
             _ = services.AddSingleton<InteractiveRunSupervisor>();
             _ = services.AddSingleton<ITilesetParser, TilesetParser>();
-            _ = services.AddSingleton<ILicenseCreditPolicy, GoogleTileLicenseCreditPolicy>();
 
             _ = services.AddHttpClient<HttpTilesSource>((_, client) => ConfigureHttpClient(client, runtimeOptions))
                 .ConfigurePrimaryHttpMessageHandler(() => CreateHttpHandler(runtimeOptions));

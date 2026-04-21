@@ -114,7 +114,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                 .OrderByDescending(value => _activeAttributionCounts[value])
                 .ThenBy(value => orderIndex[value]);
 
-            var credits = new List<string> { _policy.DefaultCredit };
+            var credits = new List<string>();
+            if (!string.IsNullOrWhiteSpace(_policy.DefaultCredit))
+            {
+                credits.Add(_policy.DefaultCredit);
+            }
+
             foreach (string attribution in ordered)
             {
                 if (string.Equals(attribution, _policy.DefaultCredit, StringComparison.Ordinal))

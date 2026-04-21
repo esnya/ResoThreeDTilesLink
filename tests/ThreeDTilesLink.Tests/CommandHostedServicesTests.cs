@@ -9,6 +9,7 @@ using ThreeDTilesLink.App;
 using ThreeDTilesLink.Core.App;
 using ThreeDTilesLink.Core.CommandLine;
 using ThreeDTilesLink.Core.Contracts;
+using ThreeDTilesLink.Core.Generic;
 using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
@@ -134,6 +135,7 @@ namespace ThreeDTilesLink.Tests
                 runtimeOptions,
                 tileSource,
                 destinationPolicy,
+                new GenericTileLicenseCreditPolicy(),
                 new SearchOptions("key"));
             await using ServiceProvider provider = services.BuildServiceProvider();
 
@@ -257,6 +259,20 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void CommandHost_BuildTileSourceOptions_DefaultsFileSchemeBaseToRootAuthority()
+        {
+            using var configuration = new ConfigurationManager();
+            _ = configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["TileSource:RootTilesetUri"] = "https://plateau.example.com/tiles/root.json"
+            });
+
+            TileSourceOptions tileSource = InvokeBuildTileSourceOptions(configuration);
+
+            _ = tileSource.ContentLinks.FileSchemeBaseUri!.AbsoluteUri.Should().Be("https://plateau.example.com/");
+        }
+
+        [Fact]
         public void CommandHost_BuildSearchOptions_PrefersLegacyGoogleMapsEnvVarOverSectionValue()
         {
             const string envApiKey = "google-env-key";
@@ -273,7 +289,9 @@ namespace ThreeDTilesLink.Tests
                 });
                 _ = configuration.AddEnvironmentVariables();
 
-                SearchOptions search = InvokeBuildSearchOptions(configuration);
+                SearchOptions search = InvokeBuildSearchOptions(configuration, new TileSourceOptions(
+                    new Uri("https://tile.googleapis.com/v1/3dtiles/root.json"),
+                    new TileSourceAccess("tile-key", null)));
 
                 _ = search.ApiKey.Should().Be(envApiKey);
             }
@@ -310,6 +328,75 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
+        [Fact]
+        public void CommandHost_BuildSearchOptions_FallsBackToGoogleTileSourceApiKey()
+        {
+            using var configuration = new ConfigurationManager();
+            TileSourceOptions tileSource = new(
+                new Uri("https://tile.googleapis.com/v1/3dtiles/root.json"),
+                new TileSourceAccess("tile-only-key", null));
+
+            SearchOptions search = InvokeBuildSearchOptions(configuration, tileSource);
+
+            _ = search.ApiKey.Should().Be("tile-only-key");
+        }
+
+        [Fact]
+        public void CommandHost_CreateHost_UsesNeutralPoliciesForNonGoogleTileSource()
+        {
+            const string rootUri = "https://plateau.example.com/tiles/root.json";
+            var options = new InteractiveCommandOptions(
+                20d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                250,
+                800,
+                3000,
+                LogLevel.Information);
+            string? previousRoot = Environment.GetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI");
+            string? previousFileBase = Environment.GetEnvironmentVariable("TILE_SOURCE_FILE_SCHEME_BASE_URI");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI", rootUri);
+                Environment.SetEnvironmentVariable("TILE_SOURCE_FILE_SCHEME_BASE_URI", null);
+
+                Type commandHostType = typeof(ThreeDTilesLink.CommandHost);
+                MethodInfo? resolveRegistrationDefinition = commandHostType.GetMethod(
+                    "ResolveRegistration",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                MethodInfo? createHostDefinition = commandHostType.GetMethod(
+                    "CreateHost",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                object commandKind = Enum.Parse(
+                    resolveRegistrationDefinition!.GetParameters()[0].ParameterType,
+                    "Interactive");
+                object registration = resolveRegistrationDefinition.Invoke(null, [commandKind])!;
+
+                using IHost host = (IHost)createHostDefinition!.Invoke(
+                    null,
+                    [registration, options, TextWriter.Null])!;
+
+                ResoniteDestinationPolicyOptions destinationPolicy = host.Services.GetRequiredService<ResoniteDestinationPolicyOptions>();
+                ILicenseCreditPolicy licenseCreditPolicy = host.Services.GetRequiredService<ILicenseCreditPolicy>();
+
+                _ = destinationPolicy.SessionDynamicSpaceName.Should().Be("ThreeDTilesLink");
+                _ = destinationPolicy.CanExport.Should().BeTrue();
+                _ = destinationPolicy.ApplyAvatarProtectionToTileSlots.Should().BeFalse();
+                _ = licenseCreditPolicy.Should().BeOfType<GenericTileLicenseCreditPolicy>();
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI", previousRoot);
+                Environment.SetEnvironmentVariable("TILE_SOURCE_FILE_SCHEME_BASE_URI", previousFileBase);
+            }
+        }
+
         private static Task InvokeExecuteAsync(object service, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(service);
@@ -321,13 +408,15 @@ namespace ThreeDTilesLink.Tests
             return (Task)method!.Invoke(service, [cancellationToken])!;
         }
 
-        private static SearchOptions InvokeBuildSearchOptions(ConfigurationManager configuration)
+        private static SearchOptions InvokeBuildSearchOptions(
+            ConfigurationManager configuration,
+            TileSourceOptions tileSourceOptions)
         {
             MethodInfo? method = typeof(ThreeDTilesLink.CommandHost).GetMethod(
                 "BuildSearchOptions",
                 BindingFlags.Static | BindingFlags.NonPublic);
             _ = method.Should().NotBeNull();
-            return (SearchOptions)method!.Invoke(null, [configuration])!;
+            return (SearchOptions)method!.Invoke(null, [configuration, tileSourceOptions])!;
         }
 
         private static TileSourceOptions InvokeBuildTileSourceOptions(ConfigurationManager configuration)

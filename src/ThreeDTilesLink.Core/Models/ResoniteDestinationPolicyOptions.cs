@@ -13,6 +13,22 @@ namespace ThreeDTilesLink.Core.Models
         bool ApplyAvatarProtectionToTileSlots = true,
         bool ApplyPackageExportProtectionToTileSlots = true)
     {
+        internal static ResoniteDestinationPolicyOptions CreateDefault()
+        {
+            return new ResoniteDestinationPolicyOptions(
+                SessionDynamicSpaceName: "ThreeDTilesLink",
+                LicenseDynamicVariablePath: "World/ThreeDTilesLink.License",
+                AttributionRequirementsVariableLocalName: "AttributionRequirements",
+                AttributionRequirementsDynamicVariablePath: "World/ThreeDTilesLink.AttributionRequirements",
+                PackageExportWarningSlotName: "ThreeDTilesLink Export Warning",
+                RequireCredit: false,
+                CanExport: true,
+                ApplyAvatarProtectionToSessionRoot: false,
+                ApplyPackageExportProtectionToSessionRoot: false,
+                ApplyAvatarProtectionToTileSlots: false,
+                ApplyPackageExportProtectionToTileSlots: false);
+        }
+
         internal static ResoniteDestinationPolicyOptions CreateGoogleDefaults()
         {
             return new ResoniteDestinationPolicyOptions(

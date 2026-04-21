@@ -5,6 +5,9 @@ using Microsoft.Extensions.Logging;
 using ThreeDTilesLink.App;
 using ThreeDTilesLink.Core.App;
 using ThreeDTilesLink.Core.CommandLine;
+using ThreeDTilesLink.Core.Contracts;
+using ThreeDTilesLink.Core.Generic;
+using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink
@@ -48,7 +51,9 @@ namespace ThreeDTilesLink
                 consoleOptions.TimestampFormat = "HH:mm:ss ";
             });
             TileSourceOptions tileSourceOptions = BuildTileSourceOptions(builder.Configuration);
-            SearchOptions searchOptions = BuildSearchOptions(builder.Configuration);
+            SearchOptions searchOptions = BuildSearchOptions(builder.Configuration, tileSourceOptions);
+            ILicenseCreditPolicy licenseCreditPolicy = CreateLicenseCreditPolicy(tileSourceOptions);
+            ResoniteDestinationPolicyOptions destinationPolicyOptions = CreateDestinationPolicyOptions(tileSourceOptions);
 
             if (options.MeasurePerformance)
             {
@@ -61,7 +66,8 @@ namespace ThreeDTilesLink
             _ = builder.Services.AddThreeDTilesLinkRuntime(
                 options,
                 tileSourceOptions,
-                ResoniteDestinationPolicyOptions.CreateGoogleDefaults(),
+                destinationPolicyOptions,
+                licenseCreditPolicy,
                 searchOptions);
             registration.Register(builder.Services);
 
@@ -73,7 +79,6 @@ namespace ThreeDTilesLink
             ArgumentNullException.ThrowIfNull(configuration);
 
             Uri googleRootTilesetUri = new("https://tile.googleapis.com/v1/3dtiles/root.json");
-            Uri googleFileSchemeBaseUri = new("https://tile.googleapis.com/");
             string? sharedGoogleApiKey = ResolveSharedGoogleApiKey(configuration);
             string[] inheritedQueryParameters = ReadList(
                 configuration,
@@ -89,8 +94,7 @@ namespace ThreeDTilesLink
             }
 
             string? fileSchemeBaseUriText = configuration["TileSource:FileSchemeBaseUri"] ??
-                configuration["TILE_SOURCE_FILE_SCHEME_BASE_URI"] ??
-                googleFileSchemeBaseUri.AbsoluteUri;
+                configuration["TILE_SOURCE_FILE_SCHEME_BASE_URI"];
             Uri? fileSchemeBaseUri = null;
             if (!string.IsNullOrWhiteSpace(fileSchemeBaseUriText))
             {
@@ -98,6 +102,10 @@ namespace ThreeDTilesLink
                 {
                     throw new InvalidOperationException($"Tile source file-scheme base URI must be absolute: {fileSchemeBaseUriText}");
                 }
+            }
+            else
+            {
+                fileSchemeBaseUri = BuildDefaultFileSchemeBaseUri(rootTilesetUri);
             }
 
             string[] normalizedInheritedQueryParameters = inheritedQueryParameters
@@ -117,14 +125,18 @@ namespace ThreeDTilesLink
                 new TileSourceContentLinkOptions(fileSchemeBaseUri, normalizedInheritedQueryParameters));
         }
 
-        private static SearchOptions BuildSearchOptions(ConfigurationManager configuration)
+        private static SearchOptions BuildSearchOptions(
+            ConfigurationManager configuration,
+            TileSourceOptions tileSourceOptions)
         {
             ArgumentNullException.ThrowIfNull(configuration);
+            ArgumentNullException.ThrowIfNull(tileSourceOptions);
 
             return new SearchOptions(
                 configuration["Search:ApiKey"] ??
                 configuration["SEARCH_API_KEY"] ??
-                ResolveSharedGoogleApiKey(configuration));
+                ResolveSharedGoogleApiKey(configuration) ??
+                ResolveSearchFallbackApiKey(tileSourceOptions));
         }
 
         private static string? ResolveSharedGoogleApiKey(ConfigurationManager configuration)
@@ -133,6 +145,54 @@ namespace ThreeDTilesLink
 
             return configuration["GOOGLE_MAPS_API_KEY"] ??
                 configuration["GoogleMaps:ApiKey"];
+        }
+
+        private static string? ResolveSearchFallbackApiKey(TileSourceOptions tileSourceOptions)
+        {
+            ArgumentNullException.ThrowIfNull(tileSourceOptions);
+
+            return IsGoogleTileSource(tileSourceOptions)
+                ? tileSourceOptions.Access.ApiKey
+                : null;
+        }
+
+        private static Uri BuildDefaultFileSchemeBaseUri(Uri rootTilesetUri)
+        {
+            ArgumentNullException.ThrowIfNull(rootTilesetUri);
+
+            return new Uri($"{rootTilesetUri.GetLeftPart(UriPartial.Authority)}/");
+        }
+
+        private static ILicenseCreditPolicy CreateLicenseCreditPolicy(TileSourceOptions tileSourceOptions)
+        {
+            ArgumentNullException.ThrowIfNull(tileSourceOptions);
+
+            return IsGoogleTileSource(tileSourceOptions)
+                ? new GoogleTileLicenseCreditPolicy()
+                : new GenericTileLicenseCreditPolicy();
+        }
+
+        private static ResoniteDestinationPolicyOptions CreateDestinationPolicyOptions(TileSourceOptions tileSourceOptions)
+        {
+            ArgumentNullException.ThrowIfNull(tileSourceOptions);
+
+            return IsGoogleTileSource(tileSourceOptions)
+                ? ResoniteDestinationPolicyOptions.CreateGoogleDefaults()
+                : ResoniteDestinationPolicyOptions.CreateDefault();
+        }
+
+        private static bool IsGoogleTileSource(TileSourceOptions tileSourceOptions)
+        {
+            ArgumentNullException.ThrowIfNull(tileSourceOptions);
+
+            return UriHostEquals(tileSourceOptions.RootTilesetUri, "tile.googleapis.com") ||
+                UriHostEquals(tileSourceOptions.ContentLinks.FileSchemeBaseUri, "tile.googleapis.com");
+        }
+
+        private static bool UriHostEquals(Uri? uri, string expectedHost)
+        {
+            return uri is not null &&
+                string.Equals(uri.Host, expectedHost, StringComparison.OrdinalIgnoreCase);
         }
 
         private static string[] ReadList(

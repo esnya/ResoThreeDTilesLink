@@ -29,10 +29,19 @@ GitHub Releases are the canonical changelog for this project. We do not keep a s
     - `GOOGLE_MAPS_API_KEY` is required
   - Free-text location search in Interactive (`World/ThreeDTilesLink.Search`): Google Geocoding API
     - `GOOGLE_MAPS_API_KEY` is required
+- Advanced tile-source overrides are available when you need a non-default root or auth surface
+  - `TILE_SOURCE_ROOT_TILESET_URI`
+  - `TILE_SOURCE_FILE_SCHEME_BASE_URI`
+  - `TILE_SOURCE_API_KEY`
+  - `TILE_SOURCE_BEARER_TOKEN`
+  - `TILE_SOURCE_INHERITED_QUERY_PARAMETERS`
+  - `SEARCH_API_KEY`
 - Enable Resonite Link in Resonite and confirm the destination port
 
 At startup, the app automatically loads `.env` with parent-directory discovery and does not overwrite existing environment variables.
 Use `.env.example` as the starting template when creating a local `.env`.
+For Google tile streaming and Google Geocoding search, prefer the shared `GOOGLE_MAPS_API_KEY`.
+Use the `TILE_SOURCE_*` and `SEARCH_API_KEY` overrides only when you need to separate tile fetch and search settings or point tile fetch at a different provider.
 
 ## Build
 
