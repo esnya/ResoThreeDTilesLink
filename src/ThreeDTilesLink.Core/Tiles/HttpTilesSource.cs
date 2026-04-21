@@ -42,7 +42,7 @@ namespace ThreeDTilesLink.Core.Tiles
             string cacheKey = BuildTilesetCacheKey(tilesetUri, source.Access);
             if (_tilesetJsonCache.TryGetValue(cacheKey, out CachedTilesetJson? cached))
             {
-                return _tilesetParser.Parse(cached.Json, source, cached.SourceUri);
+                return _tilesetParser.Parse(cached.Json, source.ContentLinks, cached.SourceUri);
             }
 
             using HttpRequestMessage request = CreateRequest(tilesetUri, source.Access);
@@ -63,7 +63,7 @@ namespace ThreeDTilesLink.Core.Tiles
                 performanceSummary.AddFetch(DateTimeOffset.UtcNow - startedAt);
             }
 
-            return _tilesetParser.Parse(json, source, sourceUri);
+            return _tilesetParser.Parse(json, source.ContentLinks, sourceUri);
         }
 
         private async Task<byte[]> FetchBinaryContentAsync(Uri contentUri, TileSourceOptions source, CancellationToken cancellationToken)

@@ -48,7 +48,7 @@ namespace ThreeDTilesLink
                 consoleOptions.TimestampFormat = "HH:mm:ss ";
             });
             TileSourceOptions tileSourceOptions = BuildTileSourceOptions(builder.Configuration);
-            SearchOptions searchOptions = BuildSearchOptions(builder.Configuration, tileSourceOptions);
+            SearchOptions searchOptions = BuildSearchOptions(builder.Configuration);
 
             if (options.MeasurePerformance)
             {
@@ -117,19 +117,15 @@ namespace ThreeDTilesLink
                 new TileSourceContentLinkOptions(fileSchemeBaseUri, normalizedInheritedQueryParameters));
         }
 
-        private static SearchOptions BuildSearchOptions(
-            ConfigurationManager configuration,
-            TileSourceOptions tileSourceOptions)
+        private static SearchOptions BuildSearchOptions(ConfigurationManager configuration)
         {
             ArgumentNullException.ThrowIfNull(configuration);
-            ArgumentNullException.ThrowIfNull(tileSourceOptions);
 
             return new SearchOptions(
                 configuration["Search:ApiKey"] ??
                 configuration["SEARCH_API_KEY"] ??
                 configuration["GoogleMaps:ApiKey"] ??
-                configuration["GOOGLE_MAPS_API_KEY"] ??
-                tileSourceOptions.Access.ApiKey);
+                configuration["GOOGLE_MAPS_API_KEY"]);
         }
 
         private static string[] ReadList(

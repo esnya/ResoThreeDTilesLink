@@ -9,21 +9,21 @@ namespace ThreeDTilesLink.Core.Tiles
 {
     internal sealed class TilesetParser : ITilesetParser
     {
-        public Tileset Parse(string json, TileSourceOptions source, Uri sourceUri)
+        public Tileset Parse(string json, TileSourceContentLinkOptions contentLinks, Uri sourceUri)
         {
-            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(contentLinks);
 
             var context = new ParseContext();
             using var doc = JsonDocument.Parse(json);
             JsonElement root = doc.RootElement;
             return !root.TryGetProperty("root", out JsonElement rootTile)
                 ? throw new InvalidOperationException("tileset root is missing.")
-                : new Tileset(ParseTile(rootTile, source, sourceUri, "0", "0", context));
+                : new Tileset(ParseTile(rootTile, contentLinks, sourceUri, "0", "0", context));
         }
 
         private static Tile ParseTile(
             JsonElement tileElement,
-            TileSourceOptions source,
+            TileSourceContentLinkOptions contentLinks,
             Uri sourceUri,
             string displayLabel,
             string stablePath,
@@ -37,7 +37,7 @@ namespace ThreeDTilesLink.Core.Tiles
                 {
                     children.Add(ParseTile(
                         child,
-                        source,
+                        contentLinks,
                         sourceUri,
                         $"{displayLabel}{EncodeDisplayIdSegment(index, context)}",
                         $"{stablePath}/{index}",
@@ -48,7 +48,7 @@ namespace ThreeDTilesLink.Core.Tiles
 
             IReadOnlyList<double>? transform = ParseDoubleArray(tileElement, "transform");
             BoundingVolume? bounding = ParseBoundingVolume(tileElement);
-            Uri? contentUri = ParseContentUri(tileElement, source, sourceUri);
+            Uri? contentUri = ParseContentUri(tileElement, contentLinks, sourceUri);
 
             return new Tile
             {
@@ -108,7 +108,7 @@ namespace ThreeDTilesLink.Core.Tiles
 
         private static Uri? ParseContentUri(
             JsonElement tileElement,
-            TileSourceOptions source,
+            TileSourceContentLinkOptions contentLinks,
             Uri sourceUri)
         {
             if (!tileElement.TryGetProperty("content", out JsonElement content) || content.ValueKind != JsonValueKind.Object)
@@ -131,8 +131,8 @@ namespace ThreeDTilesLink.Core.Tiles
                 ? absolute
                 : new Uri(sourceUri, raw);
 
-            Uri normalized = NormalizeContentUri(uri, source.ContentLinks.FileSchemeBaseUri);
-            return InheritRequiredQueryParameters(normalized, sourceUri, source.ContentLinks.InheritedQueryParameters);
+            Uri normalized = NormalizeContentUri(uri, contentLinks.FileSchemeBaseUri);
+            return InheritRequiredQueryParameters(normalized, sourceUri, contentLinks.InheritedQueryParameters);
         }
 
         private static Uri NormalizeContentUri(Uri uri, Uri? fileSchemeBaseUri)

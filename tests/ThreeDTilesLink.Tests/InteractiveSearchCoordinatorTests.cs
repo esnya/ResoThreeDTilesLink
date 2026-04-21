@@ -1,27 +1,23 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using ThreeDTilesLink.Core.Contracts;
-using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
 
 namespace ThreeDTilesLink.Tests
 {
-    public sealed class InteractiveActionApplierTests
+    public sealed class InteractiveSearchCoordinatorTests
     {
         [Fact]
-        public async Task ApplyAsync_RequeuesSearchFromFailureTime_WithoutDroppingPendingValues()
+        public async Task ResolveSearchAsync_RequeuesSearchFromFailureTime_WithoutDroppingPendingValues()
         {
             DateTimeOffset failureTime = DateTimeOffset.UnixEpoch.AddSeconds(42);
             var clock = new FakeClock(failureTime);
-            var applier = new InteractiveActionApplier(
-                new StubTileSelectionService(),
-                new StubResoniteSession(),
+            var coordinator = new InteractiveSearchCoordinator(
                 new ThrowingInteractiveInputStore(new HttpRequestException("synthetic input write failure")),
                 new FixedSearchResolver(new LocationSearchResult("Shibuya", 35.65858d, 139.745433d)),
-                new PassThroughTransformer(),
                 clock,
-                NullLoggerFactory.Instance);
+                NullLogger<InteractiveSearchCoordinator>.Instance);
             InteractiveLoopState state = InteractiveLoopState.CreateInitial() with
             {
                 InputBinding = CreateInputBinding(),
@@ -29,10 +25,10 @@ namespace ThreeDTilesLink.Tests
                 PendingValuesChangedAt = DateTimeOffset.UnixEpoch
             };
 
-            InteractiveLoopState next = await applier.ApplyAsync(
+            InteractiveLoopState next = await coordinator.ResolveSearchAsync(
                 state,
-                [new ResolveSearchAction("Shibuya")],
                 CreateOptions(),
+                new ResolveSearchAction("Shibuya"),
                 CancellationToken.None);
 
             _ = next.PendingSearch.Should().Be("Shibuya");
@@ -62,10 +58,10 @@ namespace ThreeDTilesLink.Tests
         private static InteractiveInputBinding CreateInputBinding()
         {
             return new InteractiveInputBinding(
-                "lat", "Value", "latAlias", "Value",
-                "lon", "Value", "lonAlias", "Value",
-                "range", "Value", "rangeAlias", "Value",
-                "search", "Value", "searchAlias", "Value");
+                "lat", "latAlias",
+                "lon", "lonAlias",
+                "range", "rangeAlias",
+                "search", "searchAlias");
         }
 
         private sealed class FakeClock(DateTimeOffset utcNow) : IClock
@@ -76,30 +72,6 @@ namespace ThreeDTilesLink.Tests
             {
                 return Task.CompletedTask;
             }
-        }
-
-        private sealed class StubTileSelectionService : ITileSelectionService
-        {
-            public Task<RunSummary> RunAsync(TileRunRequest request, CancellationToken cancellationToken)
-            {
-                throw new NotSupportedException();
-            }
-
-            public Task<InteractiveTileRunResult> RunInteractiveAsync(
-                TileRunRequest request,
-                InteractiveRunInput interactive,
-                CancellationToken cancellationToken)
-            {
-                throw new NotSupportedException();
-            }
-        }
-
-        private sealed class StubResoniteSession : IResoniteSession
-        {
-            public Task ConnectAsync(string host, int port, CancellationToken cancellationToken) => Task.CompletedTask;
-            public Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken) => Task.FromResult<string?>(null);
-            public Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken) => Task.CompletedTask;
-            public Task DisconnectAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         }
 
         private sealed class ThrowingInteractiveInputStore(Exception exception) : IInteractiveInputStore
@@ -135,13 +107,6 @@ namespace ThreeDTilesLink.Tests
             {
                 return Task.FromResult<LocationSearchResult?>(_result);
             }
-        }
-
-        private sealed class PassThroughTransformer : ICoordinateTransformer
-        {
-            public Vector3d GeographicToEcef(double latitudeDeg, double longitudeDeg, double height) => new(latitudeDeg, longitudeDeg, height);
-            public Vector3d EcefToEnu(Vector3d ecef, GeoReference reference) => ecef;
-            public Vector3d EnuToEun(Vector3d enu) => enu;
         }
     }
 }

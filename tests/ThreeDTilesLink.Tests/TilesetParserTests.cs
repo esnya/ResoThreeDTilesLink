@@ -40,7 +40,7 @@ namespace ThreeDTilesLink.Tests
                    }
                    """;
 
-            Tileset tileset = new TilesetParser().Parse(json, source, sourceUri);
+            Tileset tileset = new TilesetParser().Parse(json, source.ContentLinks, sourceUri);
 
             _ = tileset.Root.Id.Should().Be("0");
             _ = tileset.Root.Children[0].Id.Should().Be("00");
@@ -104,7 +104,7 @@ namespace ThreeDTilesLink.Tests
                    }
                    """;
 
-            Tileset tileset = new TilesetParser().Parse(json, source, sourceUri);
+            Tileset tileset = new TilesetParser().Parse(json, source.ContentLinks, sourceUri);
 
             _ = tileset.Root.Children[15].Id.Should().Be("0F");
             _ = tileset.Root.Children[16].Id.Should().Be("00");
@@ -134,7 +134,7 @@ namespace ThreeDTilesLink.Tests
                 }
                 """;
 
-            Tileset tileset = new TilesetParser().Parse(json, source, sourceUri);
+            Tileset tileset = new TilesetParser().Parse(json, source.ContentLinks, sourceUri);
 
             _ = tileset.Root.ContentUri!.AbsoluteUri.Should().Be("https://cdn.plateau.example.com/lod/leaf.glb?sig=abc");
         }

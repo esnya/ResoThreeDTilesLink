@@ -5,6 +5,6 @@ namespace ThreeDTilesLink.Core.Contracts
 {
     internal interface ITilesetParser
     {
-        Tileset Parse(string json, TileSourceOptions source, Uri sourceUri);
+        Tileset Parse(string json, TileSourceContentLinkOptions contentLinks, Uri sourceUri);
     }
 }

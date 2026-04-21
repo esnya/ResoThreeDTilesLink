@@ -312,21 +312,13 @@ namespace ThreeDTilesLink.Tests
             {
                 return Task.FromResult(new InteractiveInputBinding(
                     "latComponent",
-                    "Value",
                     "latAlias",
-                    "Value",
                     "lonComponent",
-                    "Value",
                     "lonAlias",
-                    "Value",
                     "rangeComponent",
-                    "Value",
                     "rangeAlias",
-                    "Value",
                     "searchComponent",
-                    "Value",
-                    "searchAlias",
-                    "Value"));
+                    "searchAlias"));
             }
 
             public Task<SelectionInputValues?> ReadInteractiveInputValuesAsync(InteractiveInputBinding binding, CancellationToken cancellationToken) => Task.FromResult<SelectionInputValues?>(null);

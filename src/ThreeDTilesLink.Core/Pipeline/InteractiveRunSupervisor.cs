@@ -12,7 +12,8 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly IGeoReferenceResolver _geoReferenceResolver;
         private readonly IClock _clock;
         private readonly SelectionInputReader _selectionInputReader;
-        private readonly InteractiveActionApplier _actionApplier;
+        private readonly InteractiveSessionManager _sessionManager;
+        private readonly InteractiveSearchCoordinator _searchCoordinator;
         private readonly ILogger<InteractiveRunSupervisor> _logger;
 
         public InteractiveRunSupervisor(
@@ -33,14 +34,15 @@ namespace ThreeDTilesLink.Core.Pipeline
             _clock = clock;
             _selectionInputReader = selectionInputReader;
             _logger = logger;
-            _actionApplier = new InteractiveActionApplier(
+            _sessionManager = new InteractiveSessionManager(
                 tileRunCoordinator,
                 resoniteSession,
+                loggerFactory.CreateLogger<InteractiveSessionManager>());
+            _searchCoordinator = new InteractiveSearchCoordinator(
                 interactiveInputStore,
                 searchResolver,
-                coordinateTransformer,
                 clock,
-                loggerFactory);
+                loggerFactory.CreateLogger<InteractiveSearchCoordinator>());
         }
 
         public async Task RunAsync(InteractiveRunRequest options, CancellationToken cancellationToken)
@@ -53,7 +55,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             try
             {
                 Log.ConnectingToResonite(_logger, options.ResoniteHost, options.ResonitePort);
-                await _actionApplier.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
+                await _sessionManager.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
                 state = state with { Connected = true };
                 state = await InitializeInputBindingAsync(state, cancellationToken).ConfigureAwait(false);
 
@@ -67,7 +69,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 using var shutdownCts = new CancellationTokenSource();
                 shutdownCts.CancelAfter(TimeSpan.FromSeconds(5));
-                state = await _actionApplier.DisconnectAsync(state, shutdownCts.Token).ConfigureAwait(false);
+                state = await _sessionManager.DisconnectAsync(state, shutdownCts.Token).ConfigureAwait(false);
             }
         }
 
@@ -85,7 +87,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             InteractiveRunRequest options,
             CancellationToken cancellationToken)
         {
-            state = await _actionApplier.FinalizeCompletedRunAsync(state, cancellationToken).ConfigureAwait(false);
+            state = await _sessionManager.FinalizeCompletedRunAsync(state, cancellationToken).ConfigureAwait(false);
 
             SelectionInputSnapshot snapshot = await _selectionInputReader.ReadAsync(state.InputBinding!, cancellationToken).ConfigureAwait(false);
             DateTimeOffset now = _clock.UtcNow;
@@ -100,7 +102,27 @@ namespace ThreeDTilesLink.Core.Pipeline
                 Overlaps);
             state = decision.State;
             LogInputChanges(previousState, state);
-            return await _actionApplier.ApplyAsync(state, decision.Actions, options, cancellationToken).ConfigureAwait(false);
+            return await ApplyActionsAsync(state, decision.Actions, options, cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task<InteractiveLoopState> ApplyActionsAsync(
+            InteractiveLoopState state,
+            IEnumerable<InteractiveAction> actions,
+            InteractiveRunRequest options,
+            CancellationToken cancellationToken)
+        {
+            foreach (InteractiveAction action in actions)
+            {
+                state = action switch
+                {
+                    ResolveSearchAction resolve => await _searchCoordinator.ResolveSearchAsync(state, options, resolve, cancellationToken).ConfigureAwait(false),
+                    CancelActiveRunAction => await _sessionManager.CancelActiveRunAsync(state).ConfigureAwait(false),
+                    StartRunAction start => await _sessionManager.StartRunAsync(state, options, start, cancellationToken).ConfigureAwait(false),
+                    _ => state
+                };
+            }
+
+            return state;
         }
 
         private void LogInputChanges(InteractiveLoopState previousState, InteractiveLoopState state)
