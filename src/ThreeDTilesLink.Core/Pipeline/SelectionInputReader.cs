@@ -21,7 +21,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             return new SelectionInputSnapshot(
                 searchText,
                 values,
-                StopRequested: rawValues is not null && values is null);
+                HasInvalidValues: rawValues is not null && values is null);
         }
 
         internal async Task<string?> TryReadInteractiveInputSearchAsync(InteractiveInputBinding inputBinding, CancellationToken cancellationToken)

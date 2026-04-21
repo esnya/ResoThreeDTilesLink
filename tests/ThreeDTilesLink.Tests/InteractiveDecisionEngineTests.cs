@@ -75,6 +75,29 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void Evaluate_ManualCoordinateChange_SupersedesPendingSearchResolution()
+        {
+            InteractiveLoopState state = InteractiveLoopState.CreateInitial() with
+            {
+                AwaitingResolvedCoordinates = new LocationSearchResult("resolved", 35.0, 139.0),
+                LastObservedValues = new SelectionInputValues(35.1f, 139.1f, 400f)
+            };
+            SelectionInputValues manualValues = new(35.2f, 139.2f, 450f);
+
+            InteractiveDecisionResult result = Evaluate(
+                state,
+                new SelectionInputSnapshot("Shibuya", manualValues),
+                debounce: TimeSpan.FromSeconds(1),
+                throttle: TimeSpan.FromSeconds(1),
+                now: DateTimeOffset.UnixEpoch.AddSeconds(2));
+
+            _ = result.Actions.Should().BeEmpty();
+            _ = result.State.AwaitingResolvedCoordinates.Should().BeNull();
+            _ = result.State.PendingValues.Should().Be(manualValues);
+            _ = result.State.PendingValuesChangedAt.Should().Be(DateTimeOffset.UnixEpoch.AddSeconds(2));
+        }
+
+        [Fact]
         public void Evaluate_ReflectsResolvedCoordinates_WhenObservedValuesMatchSearchResult()
         {
             SelectionInputValues values = new(35.0f, 139.0f, 400f);
@@ -98,7 +121,7 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public void Evaluate_StopRequested_CancelsActiveRun_AndClearsPendingValues()
+        public void Evaluate_InvalidValues_DoNotCancelActiveRun_AndClearPendingValues()
         {
             SelectionInputValues values = new(35f, 139f, 400f);
             using var cancellationSource = new CancellationTokenSource();
@@ -118,19 +141,20 @@ namespace ThreeDTilesLink.Tests
 
             InteractiveDecisionResult result = Evaluate(
                 state,
-                new SelectionInputSnapshot(null, null, StopRequested: true),
+                new SelectionInputSnapshot(null, null, HasInvalidValues: true),
                 debounce: TimeSpan.FromSeconds(1),
                 throttle: TimeSpan.FromSeconds(1),
                 now: DateTimeOffset.UnixEpoch.AddSeconds(2));
 
-            _ = result.Actions.Should().ContainSingle().Which.Should().BeOfType<CancelActiveRunAction>();
+            _ = result.Actions.Should().BeEmpty();
+            _ = result.State.ActiveRun.Should().NotBeNull();
             _ = result.State.LastObservedValues.Should().BeNull();
             _ = result.State.PendingValues.Should().BeNull();
             _ = result.State.PendingValuesChangedAt.Should().BeNull();
         }
 
         [Fact]
-        public void Evaluate_StopRequested_WithoutActiveRun_DoesNotScheduleActions()
+        public void Evaluate_InvalidValues_WithoutActiveRun_DoNotScheduleActions()
         {
             InteractiveLoopState state = InteractiveLoopState.CreateInitial() with
             {
@@ -141,7 +165,7 @@ namespace ThreeDTilesLink.Tests
 
             InteractiveDecisionResult result = Evaluate(
                 state,
-                new SelectionInputSnapshot(null, null, StopRequested: true),
+                new SelectionInputSnapshot(null, null, HasInvalidValues: true),
                 debounce: TimeSpan.FromSeconds(1),
                 throttle: TimeSpan.FromSeconds(1),
                 now: DateTimeOffset.UnixEpoch.AddSeconds(2));

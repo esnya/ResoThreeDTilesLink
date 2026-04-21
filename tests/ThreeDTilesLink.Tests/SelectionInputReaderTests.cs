@@ -95,6 +95,20 @@ namespace ThreeDTilesLink.Tests
             _ = logger.Entries.Should().BeEmpty();
         }
 
+        [Fact]
+        public async Task ReadAsync_FlagsInvalidValuesWithoutTreatingThemAsValidSelection()
+        {
+            var logger = new ListLogger<SelectionInputReader>();
+            var monitor = new SelectionInputReader(
+                new ValueInteractiveInputStore(new SelectionInputValues(35.0f, 139.0f, 0f)),
+                logger);
+
+            SelectionInputSnapshot snapshot = await monitor.ReadAsync(CreateInputBinding(), CancellationToken.None);
+
+            _ = snapshot.Values.Should().BeNull();
+            _ = snapshot.HasInvalidValues.Should().BeTrue();
+        }
+
         [Theory]
         [InlineData(float.NaN)]
         [InlineData(float.PositiveInfinity)]

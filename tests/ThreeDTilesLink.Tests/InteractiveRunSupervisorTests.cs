@@ -171,7 +171,7 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task RunAsync_InvalidInput_StopsByCancelingActiveRun_WithoutStartingReplacementRun()
+        public async Task RunAsync_InvalidInput_DoesNotCancelActiveRun_OrStartReplacementRun()
         {
             var session = new FakeSession();
             var watchStore = new FakeInteractiveInputStore
@@ -185,20 +185,14 @@ namespace ThreeDTilesLink.Tests
                 ])
             };
             var clock = new FakeClock { CancelAfterDelayCalls = 4 };
-            int canceledRuns = 0;
+            int completedRuns = 0;
             var coordinator = new FakeTileRunCoordinator(
                 onRunStarted: _ => { },
                 interactiveHandler: async (_, _, _, cancellationToken) =>
                 {
-                    try
-                    {
-                        await WaitForCancellationAsync(cancellationToken).ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        _ = Interlocked.Increment(ref canceledRuns);
-                        clock.RequestCancellation();
-                    }
+                    await clock.Delay(TimeSpan.FromMilliseconds(10), cancellationToken).ConfigureAwait(false);
+                    _ = Interlocked.Increment(ref completedRuns);
+                    clock.RequestCancellation();
 
                     return new InteractiveTileRunResult(
                         new RunSummary(0, 0, 0, 0),
@@ -214,7 +208,7 @@ namespace ThreeDTilesLink.Tests
             await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
 
             _ = coordinator.Requests.Should().ContainSingle();
-            _ = canceledRuns.Should().Be(1);
+            _ = completedRuns.Should().Be(1);
             _ = session.RemovedSlotIds.Should().BeEmpty();
         }
 

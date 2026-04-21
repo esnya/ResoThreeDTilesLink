@@ -37,7 +37,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             var actions = new List<InteractiveAction>();
             InteractiveLoopState next = ApplyObservedSearch(state, snapshot.SearchText, now);
-            next = ApplyObservedValues(next, snapshot.Values, snapshot.StopRequested, now, actions);
+            next = ApplyObservedValues(next, snapshot.Values, snapshot.HasInvalidValues, now);
 
             if (next.PendingSearch is not null &&
                 next.PendingSearchChangedAt is not null &&
@@ -139,17 +139,11 @@ namespace ThreeDTilesLink.Core.Pipeline
         private static InteractiveLoopState ApplyObservedValues(
             InteractiveLoopState state,
             SelectionInputValues? currentValues,
-            bool stopRequested,
-            DateTimeOffset now,
-            List<InteractiveAction> actions)
+            bool hasInvalidValues,
+            DateTimeOffset now)
         {
-            if (stopRequested)
+            if (hasInvalidValues)
             {
-                if (state.ActiveRun is not null)
-                {
-                    actions.Add(new CancelActiveRunAction());
-                }
-
                 return state with
                 {
                     LastObservedValues = null,
@@ -165,6 +159,10 @@ namespace ThreeDTilesLink.Core.Pipeline
                 {
                     state = state with { AwaitingResolvedCoordinates = null };
                     resolvedCoordinatesReflected = true;
+                }
+                else if (SelectionInputReader.HasMeaningfulChange(state.LastObservedValues, currentValues))
+                {
+                    state = state with { AwaitingResolvedCoordinates = null };
                 }
                 else
                 {

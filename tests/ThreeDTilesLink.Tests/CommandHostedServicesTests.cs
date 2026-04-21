@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -397,6 +398,42 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
+        [Fact]
+        public async Task Program_RunAsync_LoadsParentDotEnvBeforeHostConfiguration()
+        {
+            string tempRoot = Path.Combine(Path.GetTempPath(), $"ThreeDTilesLink.Tests.{Guid.NewGuid():N}");
+            string parentDir = Path.Combine(tempRoot, "parent");
+            string childDir = Path.Combine(parentDir, "child");
+            _ = Directory.CreateDirectory(childDir);
+            await File.WriteAllTextAsync(
+                Path.Combine(parentDir, ".env"),
+                "TILE_SOURCE_ROOT_TILESET_URI=not-an-absolute-uri" + Environment.NewLine);
+
+            try
+            {
+                using Process process = StartProgramProcess(
+                    childDir,
+                    "stream",
+                    "--latitude", "35.65858",
+                    "--longitude", "139.745433",
+                    "--range", "60",
+                    "--dry-run");
+
+                string stderr = await process.StandardError.ReadToEndAsync();
+                await process.WaitForExitAsync();
+
+                _ = process.ExitCode.Should().Be(1);
+                _ = stderr.Should().Contain("Tile source root URI must be absolute");
+            }
+            finally
+            {
+                if (Directory.Exists(tempRoot))
+                {
+                    Directory.Delete(tempRoot, recursive: true);
+                }
+            }
+        }
+
         private static Task InvokeExecuteAsync(object service, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(service);
@@ -426,6 +463,41 @@ namespace ThreeDTilesLink.Tests
                 BindingFlags.Static | BindingFlags.NonPublic);
             _ = method.Should().NotBeNull();
             return (TileSourceOptions)method!.Invoke(null, [configuration])!;
+        }
+
+        private static Process StartProgramProcess(string workingDirectory, params string[] arguments)
+        {
+            string appPath = GetAppAssemblyPath();
+            var startInfo = new ProcessStartInfo("dotnet")
+            {
+                WorkingDirectory = workingDirectory,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+                UseShellExecute = false
+            };
+            startInfo.ArgumentList.Add(appPath);
+            foreach (string argument in arguments)
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            _ = startInfo.Environment.Remove("TILE_SOURCE_ROOT_TILESET_URI");
+            _ = startInfo.Environment.Remove("TILE_SOURCE_FILE_SCHEME_BASE_URI");
+            _ = startInfo.Environment.Remove("TILE_SOURCE_API_KEY");
+            _ = startInfo.Environment.Remove("TILE_SOURCE_BEARER_TOKEN");
+            _ = startInfo.Environment.Remove("TILE_SOURCE_INHERITED_QUERY_PARAMETERS");
+            _ = startInfo.Environment.Remove("SEARCH_API_KEY");
+            _ = startInfo.Environment.Remove("GOOGLE_MAPS_API_KEY");
+
+            return Process.Start(startInfo)!;
+        }
+
+        private static string GetAppAssemblyPath()
+        {
+            string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+            string appPath = Path.Combine(root, "src", "ThreeDTilesLink", "bin", "Debug", "net10.0", "ThreeDTilesLink.dll");
+            _ = File.Exists(appPath).Should().BeTrue($"Expected built application at {appPath}");
+            return appPath;
         }
 
         private sealed class ThrowingTileSelectionService(Exception exception) : ITileSelectionService
