@@ -22,7 +22,7 @@ namespace ThreeDTilesLink.Tests
                 new GeoReference(0d, 0d, 0d),
                 new GeoReference(0d, 0d, 0d),
                 new TraversalOptions(500d, 40d, 4d),
-                new ResoniteOutputOptions("127.0.0.1", 12345, false, true),
+                new SceneOutputOptions("127.0.0.1", 12345, false, true),
                 new TileSourceOptions(
                     new Uri("https://plateau.example.com/root.json"),
                     new TileSourceAccess(null, null)));
@@ -41,10 +41,10 @@ namespace ThreeDTilesLink.Tests
 
             public Task DisconnectAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-            public Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
+            public Task<string?> StreamMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
                 => Task.FromResult<string?>(null);
 
-            public Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken) => Task.CompletedTask;
+            public Task RemoveNodeAsync(string nodeId, CancellationToken cancellationToken) => Task.CompletedTask;
         }
 
         private sealed class FakeMetadataPort : IResoniteSessionMetadataPort

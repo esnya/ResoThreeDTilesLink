@@ -6,27 +6,27 @@ using ThreeDTilesLink.Core.Models;
 namespace ThreeDTilesLink.Core.Pipeline
 {
     internal sealed class TileSelectionInteractiveFinalizer(
-        IResoniteSession resoniteSession,
-        IResoniteSessionMetadataPort sessionMetadataPort,
+        ISceneSession sceneSession,
+        ISceneMetadataSink metadataSink,
         ILicenseCreditPolicy licenseCreditPolicy,
         ILogger logger)
     {
-        private readonly IResoniteSession _resoniteSession = resoniteSession;
-        private readonly IResoniteSessionMetadataPort _sessionMetadataPort = sessionMetadataPort;
+        private readonly ISceneSession _sceneSession = sceneSession;
+        private readonly ISceneMetadataSink _metadataSink = metadataSink;
         private readonly ILicenseCreditPolicy _licenseCreditPolicy = licenseCreditPolicy;
         private readonly ILogger _logger = logger;
 
-        private static readonly Action<ILogger, string, Exception?> s_rollbackStreamedSlotFailed =
+        private static readonly Action<ILogger, string, Exception?> s_rollbackStreamedNodeFailed =
             LoggerMessage.Define<string>(
                 LogLevel.Warning,
-                new EventId(16, "RollbackStreamedSlotFailed"),
-                "Failed to rollback newly streamed slot {SlotId}.");
+                new EventId(16, "RollbackStreamedNodeFailed"),
+                "Failed to rollback newly streamed node {NodeId}.");
 
-        private static readonly Action<ILogger, string, string, Exception?> s_removeRetainedSlotFailed =
+        private static readonly Action<ILogger, string, string, Exception?> s_removeRetainedNodeFailed =
             LoggerMessage.Define<string, string>(
                 LogLevel.Warning,
-                new EventId(17, "RemoveRetainedSlotFailed"),
-                "Failed to remove retained slot {SlotId} for tile {TileId}.");
+                new EventId(17, "RemoveRetainedNodeFailed"),
+                "Failed to remove retained node {NodeId} for tile {TileId}.");
 
         public async Task<IReadOnlyDictionary<string, RetainedTileState>> CommitInteractiveChangesAsync(
             TileSelectionInteractiveExecutionContext interactiveContext,
@@ -47,15 +47,15 @@ namespace ThreeDTilesLink.Core.Pipeline
                     continue;
                 }
 
-                IReadOnlyList<string> failedSlotIds = await TryRemoveSlotsAsync(
+                IReadOnlyList<string> failedNodeIds = await TryRemoveNodesAsync(
                     retainedTile.TileId,
-                    retainedTile.SlotIds,
+                    retainedTile.NodeIds,
                     cancellationToken).ConfigureAwait(false);
-                if (failedSlotIds.Count > 0)
+                if (failedNodeIds.Count > 0)
                 {
                     failedRetainedTiles[stableId] = retainedTile with
                     {
-                        SlotIds = failedSlotIds
+                        NodeIds = failedNodeIds
                     };
                 }
             }
@@ -71,15 +71,15 @@ namespace ThreeDTilesLink.Core.Pipeline
             TileRunRequest request,
             TileSelectionInteractiveExecutionContext interactiveContext)
         {
-            foreach (string slotId in interactiveContext.GetNewSlotIds())
+            foreach (string nodeId in interactiveContext.GetNewNodeIds())
             {
                 try
                 {
-                    await _resoniteSession.RemoveSlotAsync(slotId, CancellationToken.None).ConfigureAwait(false);
+                    await _sceneSession.RemoveNodeAsync(nodeId, CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    s_rollbackStreamedSlotFailed(_logger, slotId, ex);
+                    s_rollbackStreamedNodeFailed(_logger, nodeId, ex);
                 }
             }
 
@@ -120,19 +120,19 @@ namespace ThreeDTilesLink.Core.Pipeline
         [SuppressMessage(
             "Reliability",
             "CA1031:DoNotCatchGeneralExceptionTypes",
-            Justification = "Best-effort retained slot removal captures failures for caller to handle.")]
-        public async Task<IReadOnlyList<string>> TryRemoveSlotsAsync(
+            Justification = "Best-effort retained node removal captures failures for caller to handle.")]
+        public async Task<IReadOnlyList<string>> TryRemoveNodesAsync(
             string tileId,
-            IReadOnlyList<string> slotIds,
+            IReadOnlyList<string> nodeIds,
             CancellationToken cancellationToken)
         {
-            var failedSlotIds = new List<string>();
+            var failedNodeIds = new List<string>();
 
-            foreach (string slotId in slotIds)
+            foreach (string nodeId in nodeIds)
             {
                 try
                 {
-                    await _resoniteSession.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
+                    await _sceneSession.RemoveNodeAsync(nodeId, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -140,12 +140,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
                 catch (Exception ex)
                 {
-                    s_removeRetainedSlotFailed(_logger, slotId, tileId, ex);
-                    failedSlotIds.Add(slotId);
+                    s_removeRetainedNodeFailed(_logger, nodeId, tileId, ex);
+                    failedNodeIds.Add(nodeId);
                 }
             }
 
-            return failedSlotIds;
+            return failedNodeIds;
         }
 
         public async Task ApplyFinalLicenseCreditAsync(
@@ -170,7 +170,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
 
             string built = aggregator.BuildCreditString();
-            await _sessionMetadataPort.SetSessionLicenseCreditAsync(
+            await _metadataSink.SetSessionLicenseCreditAsync(
                 string.IsNullOrWhiteSpace(built) ? _licenseCreditPolicy.DefaultCredit : built,
                 cancellationToken).ConfigureAwait(false);
         }

@@ -20,5 +20,5 @@ namespace ThreeDTilesLink.Core.Pipeline
         public long NextPreparedOrder { get; set; }
     }
 
-    internal sealed record TileSelectionSendMeshResult(string? SlotId, Exception? Error);
+    internal sealed record TileSelectionSendMeshResult(string? NodeId, Exception? Error);
 }

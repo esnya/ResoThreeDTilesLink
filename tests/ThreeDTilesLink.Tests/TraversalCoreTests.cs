@@ -56,7 +56,7 @@ namespace ThreeDTilesLink.Tests
 
             DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: true), interactive: null);
             WriterState writerState = new();
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             MarkPrepared(facts, "c", CreatePreparedContent("c"), order: 0);
             MarkPrepared(facts, "p", CreatePreparedContent("p", parentTileId: null, hasChildren: true), order: 1);
 
@@ -87,7 +87,7 @@ namespace ThreeDTilesLink.Tests
             {
                 [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             MarkPrepared(facts, "c", CreatePreparedContent("c"), order: 0);
 
             DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
@@ -141,7 +141,7 @@ namespace ThreeDTilesLink.Tests
             writerState.VisibleSinceByStableId[StableId("p")] = now.AddSeconds(-10);
             writerState.VisibleSinceByStableId[StableId("a")] = now.AddSeconds(-10);
 
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
 
             WriterCommand? removal = reconciler.PlanNextWriterCommand(
@@ -175,7 +175,7 @@ namespace ThreeDTilesLink.Tests
             });
             _ = writerState.InFlightSendStableIds.Add(StableId("g"));
 
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
 
             WriterCommand? removal = reconciler.PlanNextWriterCommand(
@@ -259,7 +259,7 @@ namespace ThreeDTilesLink.Tests
             writerState.VisibleSinceByStableId[StableId("p")] = now.AddSeconds(-10);
             writerState.VisibleSinceByStableId[StableId("a")] = now.AddSeconds(-10);
 
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
 
             WriterCommand? command = reconciler.PlanNextWriterCommand(
@@ -290,7 +290,7 @@ namespace ThreeDTilesLink.Tests
             {
                 [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             MarkPrepared(facts, "c", CreatePreparedContent("c", hasChildren: true), order: 1);
             MarkPrepared(
                 facts,
@@ -328,7 +328,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("c")] = new(StableId("c"), "c", StableId("p"), [StableId("p")], ["slot_child"], "Google; Child"),
                 [StableId("g")] = new(StableId("g"), "g", StableId("c"), [StableId("p"), StableId("c")], ["slot_grandchild"], "Google; Grandchild")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
 
             DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
             WriterCommand? writerCommand = reconciler.PlanNextWriterCommand(
@@ -433,7 +433,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("c0")] = new(StableId("c0"), "c0", StableId("p0"), [StableId("p0")], ["slot_c0"], "Google; c0"),
                 [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; p1")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             MarkPrepared(
                 facts,
                 "g0",
@@ -690,7 +690,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("g0")] = new(StableId("g0"), "g0", StableId("c0"), [StableId("p"), StableId("c0")], ["slot_g0"], "Google; Grandchild 0"),
                 [StableId("g1")] = new(StableId("g1"), "g1", StableId("c1"), [StableId("p"), StableId("c1")], ["slot_g1"], "Google; Grandchild 1")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
 
             DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
             WriterCommand? writerCommand = reconciler.PlanNextWriterCommand(
@@ -746,7 +746,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent"),
                 [StableId("g0")] = new(StableId("g0"), "g0", StableId("c0"), [StableId("p"), StableId("c0")], ["slot_g0"], "Google; Grandchild 0")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             MarkPrepared(
                 facts,
                 "g1",
@@ -790,7 +790,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("g0")] = new(StableId("g0"), "g0", StableId("c0"), [StableId("p"), StableId("c0")], ["slot_g0"], "Google; Grandchild 0"),
                 [StableId("g1")] = new(StableId("g1"), "g1", StableId("c1"), [StableId("p"), StableId("c1")], ["slot_g1"], "Google; Grandchild 1")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
 
             DesiredView desired = new(
                 new HashSet<string>([StableId("g0"), StableId("g1")], StringComparer.Ordinal),
@@ -826,7 +826,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("c0")] = new(StableId("c0"), "c0", StableId("p0"), [StableId("p0")], ["slot_c0"], "Google; Child 0"),
                 [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             _ = writerState.InFlightSendStableIds.Add(StableId("c1"));
 
             DesiredView desired = new(
@@ -863,7 +863,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent"),
                 [StableId("g0")] = new(StableId("g0"), "g0", StableId("c0"), [StableId("p"), StableId("c0")], ["slot_g0"], "Google; Grandchild 0")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             MarkPrepared(
                 facts,
                 "g1",
@@ -931,7 +931,7 @@ namespace ThreeDTilesLink.Tests
 
             DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false), interactive: null);
             WriterState writerState = new();
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
 
             DesiredView desired = core.ComputeDesiredView(facts, writerState.CreateSelectionState());
             WriterCommand? command = reconciler.PlanNextWriterCommand(
@@ -961,7 +961,7 @@ namespace ThreeDTilesLink.Tests
             {
                 [StableId("p")] = new(StableId("p"), "p", null, [], ["slot_parent"], "Google; Parent")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             MarkPrepared(
                 facts,
                 "g",
@@ -1000,7 +1000,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0"),
                 [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
             writerState.AppliedProgressValue = 0f;
             writerState.AppliedProgressText = "stale";
@@ -1036,7 +1036,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0"),
                 [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
             writerState.AppliedProgressValue = 0.42f;
             writerState.AppliedProgressText = "Running:";
@@ -1076,7 +1076,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0"),
                 [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
             writerState.AppliedProgressValue = 0.62f;
             writerState.AppliedProgressText = "Running:";
@@ -1116,7 +1116,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0"),
                 [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
             writerState.AppliedProgressValue = 0.88f;
             writerState.AppliedProgressText = "stale";
@@ -1151,7 +1151,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0"),
                 [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
             writerState.AppliedProgressValue = 1f;
             writerState.AppliedProgressText = "Completed: candidate=2 processed=2 streamed=2 failed=0";
@@ -1188,7 +1188,7 @@ namespace ThreeDTilesLink.Tests
                 [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0"),
                 [StableId("p1")] = new(StableId("p1"), "p1", null, [], ["slot_p1"], "Google; Parent 1")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             writerState.AppliedLicenseCredit = "Google Maps; Parent 0; Parent 1";
             writerState.AppliedProgressValue = 1f;
             writerState.AppliedProgressText = "Completed: candidate=2 processed=2 streamed=2 failed=0";
@@ -1226,7 +1226,7 @@ namespace ThreeDTilesLink.Tests
             {
                 [StableId("p0")] = new(StableId("p0"), "p0", null, [], ["slot_p0"], "Google; Parent 0")
             });
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             writerState.AppliedLicenseCredit = "Google Maps";
             writerState.AppliedProgressValue = 0.5f;
             writerState.AppliedProgressText = "Running:";
@@ -1262,7 +1262,7 @@ namespace ThreeDTilesLink.Tests
                 [],
                 ["slot_p0"],
                 "Google; Parent 0");
-            ResoniteReconcilerCore reconciler = CreateReconciler(core);
+            SceneReconcilerCore reconciler = CreateReconciler(core);
             writerState.AppliedLicenseCredit = "Google Maps";
             writerState.AppliedProgressValue = 0.5f;
             writerState.AppliedProgressText = "Running:";
@@ -1301,7 +1301,7 @@ namespace ThreeDTilesLink.Tests
             int streamedMeshes = 0;
             int failedTiles = 0;
 
-            ResoniteReconcilerCore.ApplyWriterCompletion(
+            SceneReconcilerCore.ApplyWriterCompletion(
                 facts,
                 writerState,
                 new SendTileCompleted(content, false, 1, ["slot_partial"], new InvalidOperationException("send failed")),
@@ -1319,7 +1319,7 @@ namespace ThreeDTilesLink.Tests
             return new TraversalCore(new FakeSelector(selectByPrefix));
         }
 
-        private static ResoniteReconcilerCore CreateReconciler(TraversalCore _) => new();
+        private static SceneReconcilerCore CreateReconciler(TraversalCore _) => new();
 
         private static TileRunRequest CreateRequest(bool dryRun, double bootstrapRangeMultiplier = 4d, double rangeM = 500d)
         {
@@ -1327,7 +1327,7 @@ namespace ThreeDTilesLink.Tests
                 new GeoReference(0d, 0d, 0d),
                 new GeoReference(0d, 0d, 0d),
                 new TraversalOptions(rangeM, 40d, bootstrapRangeMultiplier),
-                new ResoniteOutputOptions("127.0.0.1", 12000, dryRun),
+                new SceneOutputOptions("127.0.0.1", 12000, dryRun),
                 new TileSourceOptions(
                     new Uri("https://example.com/root.json"),
                     new TileSourceAccess("k", null)));

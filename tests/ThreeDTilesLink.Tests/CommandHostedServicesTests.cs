@@ -493,6 +493,48 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task AddThreeDTilesLinkRuntime_PreservesPreRegisteredScenePorts()
+        {
+            var services = new ServiceCollection();
+            _ = services.AddLogging();
+            var runtimeOptions = new StreamCommandOptions(
+                35.65858d,
+                139.745433d,
+                20d,
+                60d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                false,
+                LogLevel.Information);
+            var tileSource = new TileSourceOptions(
+                new Uri("https://plateau.example.com/root.json"),
+                new TileSourceAccess(null, null));
+            var fakeTilesSource = new PreRegisteredTilesSource();
+            var fakeSceneSession = new PreRegisteredSceneSession();
+            var fakeMetadataSink = new PreRegisteredSceneMetadataSink();
+
+            _ = services.AddSingleton<ITilesSource>(fakeTilesSource);
+            _ = services.AddSingleton<ISceneSession>(fakeSceneSession);
+            _ = services.AddSingleton<ISceneMetadataSink>(fakeMetadataSink);
+            _ = services.AddThreeDTilesLinkRuntime(
+                runtimeOptions,
+                tileSource,
+                ResoniteDestinationPolicyOptions.CreateDefault(),
+                new GenericTileLicenseCreditPolicy(),
+                new SearchOptions(null));
+            await using ServiceProvider provider = services.BuildServiceProvider();
+
+            _ = provider.GetRequiredService<ISceneSession>().Should().BeSameAs(fakeSceneSession);
+            _ = provider.GetRequiredService<ISceneMetadataSink>().Should().BeSameAs(fakeMetadataSink);
+            _ = provider.GetRequiredService<ITileSelectionService>().Should().NotBeNull();
+        }
+
+        [Fact]
         public async Task Program_RunAsync_LoadsParentDotEnvBeforeHostConfiguration()
         {
             string tempRoot = Path.Combine(Path.GetTempPath(), $"ThreeDTilesLink.Tests.{Guid.NewGuid():N}");
@@ -621,9 +663,9 @@ namespace ThreeDTilesLink.Tests
 
             public Task DisconnectAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-            public Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken) => Task.FromResult<string?>(null);
+            public Task<string?> StreamMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken) => Task.FromResult<string?>(null);
 
-            public Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken) => Task.CompletedTask;
+            public Task RemoveNodeAsync(string nodeId, CancellationToken cancellationToken) => Task.CompletedTask;
         }
 
         private sealed class PreRegisteredTilesSource : ITilesSource
@@ -633,6 +675,32 @@ namespace ThreeDTilesLink.Tests
 
             public Task<FetchedNodeContent> FetchNodeContentAsync(Uri contentUri, TileSourceOptions source, CancellationToken cancellationToken)
                 => throw new NotSupportedException();
+        }
+
+        private sealed class PreRegisteredSceneSession : ISceneSession
+        {
+            public Task ConnectAsync(string host, int port, CancellationToken cancellationToken) => Task.CompletedTask;
+
+            public Task DisconnectAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+            public Task<string?> StreamMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
+                => Task.FromResult<string?>("scene-node");
+
+            public Task RemoveNodeAsync(string nodeId, CancellationToken cancellationToken) => Task.CompletedTask;
+        }
+
+        private sealed class PreRegisteredSceneMetadataSink : ISceneMetadataSink
+        {
+            public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken) => Task.CompletedTask;
+
+            public Task SetProgressAsync(string? parentNodeId, float progress01, string progressText, CancellationToken cancellationToken)
+                => Task.CompletedTask;
+
+            public Task SetProgressValueAsync(string? parentNodeId, float progress01, CancellationToken cancellationToken)
+                => Task.CompletedTask;
+
+            public Task SetProgressTextAsync(string? parentNodeId, string progressText, CancellationToken cancellationToken)
+                => Task.CompletedTask;
         }
 
         private sealed class FakeGeoReferenceResolver : IGeoReferenceResolver

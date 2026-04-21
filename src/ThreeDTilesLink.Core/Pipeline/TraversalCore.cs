@@ -221,7 +221,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             ArgumentNullException.ThrowIfNull(writerState);
             return writerState.VisibleTiles
-                .Where(static pair => pair.Value.SlotIds.Count > 0)
+                .Where(static pair => pair.Value.NodeIds.Count > 0)
                 .ToDictionary(
                     static pair => pair.Key,
                     static pair => pair.Value,

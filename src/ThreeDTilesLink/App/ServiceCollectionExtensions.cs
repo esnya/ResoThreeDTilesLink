@@ -42,7 +42,7 @@ namespace ThreeDTilesLink.App
             services.TryAddSingleton<IGeoReferenceResolver, SeaLevelGeoReferenceResolver>();
             services.TryAddSingleton<ITileSelector, TileSelector>();
             services.TryAddSingleton<TraversalCore>();
-            services.TryAddSingleton<ResoniteReconcilerCore>();
+            services.TryAddSingleton<SceneReconcilerCore>();
             services.TryAddSingleton<IGlbMeshExtractor, GlbMeshExtractor>();
             services.TryAddSingleton<IMeshPlacementService, MeshPlacementService>();
             services.TryAddSingleton<ISearchResolver, SearchResolver>();
@@ -60,24 +60,26 @@ namespace ThreeDTilesLink.App
             _ = services.AddHttpClient<GoogleGeocodingClient>((_, client) => ConfigureHttpClient(client, runtimeOptions))
                 .ConfigurePrimaryHttpMessageHandler(() => CreateHttpHandler(runtimeOptions));
 
-            _ = services.AddSingleton<ResoniteSession>(provider => new ResoniteSession(
+            services.TryAddSingleton<ResoniteSession>(provider => new ResoniteSession(
                 new LinkInterface(),
                 provider.GetRequiredService<ILicenseCreditPolicy>(),
                 destinationPolicyOptions,
                 provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ResoniteSession>>(),
                 assetImportWorkers: runtimeOptions.ResoniteSendWorkers));
-            _ = services.AddSingleton<IResoniteSession>(static provider => provider.GetRequiredService<ResoniteSession>());
-            _ = services.AddSingleton<IResoniteSessionMetadataPort>(static provider => provider.GetRequiredService<ResoniteSession>());
-            _ = services.AddSingleton<IInteractiveInputStore>(static provider => provider.GetRequiredService<ResoniteSession>());
+            services.TryAddSingleton<ISceneSession>(static provider => provider.GetRequiredService<ResoniteSession>());
+            services.TryAddSingleton<ISceneMetadataSink>(static provider => provider.GetRequiredService<ResoniteSession>());
+            services.TryAddSingleton<IResoniteSession>(static provider => provider.GetRequiredService<ResoniteSession>());
+            services.TryAddSingleton<IResoniteSessionMetadataPort>(static provider => provider.GetRequiredService<ResoniteSession>());
+            services.TryAddSingleton<IInteractiveInputStore>(static provider => provider.GetRequiredService<ResoniteSession>());
 
             _ = services.AddSingleton<ITileSelectionService>(provider => new TileSelectionService(
                 provider.GetRequiredService<ITilesSource>(),
                 provider.GetRequiredService<TraversalCore>(),
-                provider.GetRequiredService<ResoniteReconcilerCore>(),
+                provider.GetRequiredService<SceneReconcilerCore>(),
                 provider.GetRequiredService<IGlbMeshExtractor>(),
                 provider.GetRequiredService<IMeshPlacementService>(),
-                provider.GetRequiredService<IResoniteSession>(),
-                provider.GetRequiredService<IResoniteSessionMetadataPort>(),
+                provider.GetRequiredService<ISceneSession>(),
+                provider.GetRequiredService<ISceneMetadataSink>(),
                 provider.GetRequiredService<ILicenseCreditPolicy>(),
                 provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TileSelectionService>>(),
                 runtimeOptions.ContentWorkers,

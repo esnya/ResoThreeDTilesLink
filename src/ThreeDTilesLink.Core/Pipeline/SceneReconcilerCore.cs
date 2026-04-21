@@ -5,7 +5,7 @@ using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Pipeline
 {
-    internal sealed class ResoniteReconcilerCore(ILicenseCreditPolicy licenseCreditPolicy)
+    internal sealed class SceneReconcilerCore(ILicenseCreditPolicy licenseCreditPolicy)
     {
         private readonly ILicenseCreditPolicy _licenseCreditPolicy = licenseCreditPolicy;
         private static readonly TimeSpan MetadataCadence = TimeSpan.FromMilliseconds(250);
@@ -132,8 +132,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                     _ = writerState.InFlightSendStableIds.Remove(stableId);
                     processedTiles++;
                     streamedMeshes += sent.StreamedMeshCount;
-                    bool hasRetainedPartialSlots = !sent.Succeeded && sent.SlotIds.Count > 0;
-                    bool shouldRetainVisibleSlots = sent.Succeeded || dryRun;
+                    bool hasRetainedPartialNodes = !sent.Succeeded && sent.NodeIds.Count > 0;
+                    bool shouldRetainVisibleNodes = sent.Succeeded || dryRun;
                     bool canRetrySendFailure = false;
 
                     if (!facts.Branches.TryGetValue(stableId, out TileBranchFact? fact))
@@ -152,13 +152,13 @@ namespace ThreeDTilesLink.Core.Pipeline
                         fact.CompleteSendFailureCount++;
                         canRetrySendFailure = fact.CanRetryCompleteSendFailure;
                         fact.SendFailed = !string.IsNullOrWhiteSpace(fact.Tile.ParentStableId) &&
-                            (!hasRetainedPartialSlots || !canRetrySendFailure);
+                            (!hasRetainedPartialNodes || !canRetrySendFailure);
                         if (!canRetrySendFailure)
                         {
                             fact.PrepareStatus = ContentDiscoveryStatus.Failed;
                             fact.PreparedContent = null;
                         }
-                        else if (!hasRetainedPartialSlots)
+                        else if (!hasRetainedPartialNodes)
                         {
                             fact.PrepareStatus = ContentDiscoveryStatus.Ready;
                         }
@@ -168,14 +168,14 @@ namespace ThreeDTilesLink.Core.Pipeline
                         fact.SendFailed = false;
                     }
 
-                    if (shouldRetainVisibleSlots)
+                    if (shouldRetainVisibleNodes)
                     {
                         writerState.VisibleTiles[stableId] = new RetainedTileState(
                             stableId,
                             sent.Content.Tile.TileId,
                             sent.Content.Tile.ParentStableId,
                             GetAncestorStableIds(facts, sent.Content.Tile.ParentStableId),
-                            sent.SlotIds,
+                            sent.NodeIds,
                             sent.Content.AssetCopyright);
                         if (!writerState.VisibleSinceByStableId.ContainsKey(stableId))
                         {
@@ -183,7 +183,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                         }
                     }
 
-                    if (hasRetainedPartialSlots)
+                    if (hasRetainedPartialNodes)
                     {
                         writerState.CleanupDebtTiles[stableId] = MergeRetainedTileState(
                             writerState.CleanupDebtTiles,
@@ -193,7 +193,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                                 sent.Content.Tile.TileId,
                                 sent.Content.Tile.ParentStableId,
                                 GetAncestorStableIds(facts, sent.Content.Tile.ParentStableId),
-                                sent.SlotIds,
+                                sent.NodeIds,
                                 sent.Content.AssetCopyright));
                     }
 
@@ -217,14 +217,14 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
                     else
                     {
-                        failedTiles += System.Math.Max(1, removed.FailedSlotCount);
+                        failedTiles += System.Math.Max(1, removed.FailedNodeCount);
                         _ = writerState.FailedRemovalStableIds.Add(removed.StableId);
-                        if (removed.RemainingSlotIds.Count > 0 &&
+                        if (removed.RemainingNodeIds.Count > 0 &&
                             writerState.VisibleTiles.TryGetValue(removed.StableId, out RetainedTileState? visibleTile))
                         {
                             writerState.VisibleTiles[removed.StableId] = visibleTile with
                             {
-                                SlotIds = removed.RemainingSlotIds
+                                NodeIds = removed.RemainingNodeIds
                             };
                         }
                     }
@@ -240,14 +240,14 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
                     else
                     {
-                        failedTiles += System.Math.Max(1, cleanup.FailedSlotCount);
+                        failedTiles += System.Math.Max(1, cleanup.FailedNodeCount);
                         _ = writerState.FailedCleanupStableIds.Add(cleanup.StableId);
-                        if (cleanup.RemainingSlotIds.Count > 0 &&
+                        if (cleanup.RemainingNodeIds.Count > 0 &&
                             writerState.CleanupDebtTiles.TryGetValue(cleanup.StableId, out RetainedTileState? cleanupTile))
                         {
                             writerState.CleanupDebtTiles[cleanup.StableId] = cleanupTile with
                             {
-                                SlotIds = cleanup.RemainingSlotIds
+                                NodeIds = cleanup.RemainingNodeIds
                             };
                         }
                     }
@@ -275,7 +275,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             return newTile with
             {
-                SlotIds = [.. existing.SlotIds.Concat(newTile.SlotIds).Distinct(StringComparer.Ordinal)]
+                NodeIds = [.. existing.NodeIds.Concat(newTile.NodeIds).Distinct(StringComparer.Ordinal)]
             };
         }
 
@@ -361,7 +361,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 if (cleanup is not null)
                 {
-                    return new CleanupTileWriterCommand(cleanup.StableId, cleanup.TileId, cleanup.SlotIds);
+                    return new CleanupTileWriterCommand(cleanup.StableId, cleanup.TileId, cleanup.NodeIds);
                 }
 
                 RetainedTileState? removal = writerState.VisibleTiles.Values
@@ -378,7 +378,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 if (removal is not null)
                 {
-                    return new RemoveTileWriterCommand(removal.StableId, removal.TileId, removal.SlotIds);
+                    return new RemoveTileWriterCommand(removal.StableId, removal.TileId, removal.NodeIds);
                 }
             }
 
@@ -620,7 +620,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             return string.IsNullOrWhiteSpace(built) ? _licenseCreditPolicy.DefaultCredit : built;
         }
 
-        public ResoniteReconcilerCore()
+        public SceneReconcilerCore()
             : this(new Google.GoogleTileLicenseCreditPolicy())
         {
         }

@@ -569,23 +569,23 @@ namespace ThreeDTilesLink.Core.Resonite
                 cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task SetProgressAsync(string? parentSlotId, float progress01, string progressText, CancellationToken cancellationToken)
+        public async Task SetProgressAsync(string? parentNodeId, float progress01, string progressText, CancellationToken cancellationToken)
         {
-            await SetProgressTextAsync(parentSlotId, progressText, cancellationToken).ConfigureAwait(false);
-            await SetProgressValueAsync(parentSlotId, progress01, cancellationToken).ConfigureAwait(false);
+            await SetProgressTextAsync(parentNodeId, progressText, cancellationToken).ConfigureAwait(false);
+            await SetProgressValueAsync(parentNodeId, progress01, cancellationToken).ConfigureAwait(false);
 
             if (System.Math.Clamp(progress01, 0f, 1f) >= 1f)
             {
-                await SetProgressTextAsync(parentSlotId, progressText, cancellationToken).ConfigureAwait(false);
+                await SetProgressTextAsync(parentNodeId, progressText, cancellationToken).ConfigureAwait(false);
             }
         }
 
-        public async Task SetProgressValueAsync(string? parentSlotId, float progress01, CancellationToken cancellationToken)
+        public async Task SetProgressValueAsync(string? parentNodeId, float progress01, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             float normalizedProgress = System.Math.Clamp(progress01, 0f, 1f);
-            string effectiveParentSlotId = ResolveEffectiveParentSlotId(parentSlotId);
+            string effectiveParentSlotId = ResolveEffectiveParentSlotId(parentNodeId);
             SlotProgressBinding binding = await EnsureProgressBindingAsync(effectiveParentSlotId).ConfigureAwait(false);
             await UpdateMirroredNumericMemberAsync(
                 binding.ProgressValueComponentId,
@@ -596,12 +596,12 @@ namespace ThreeDTilesLink.Core.Resonite
                 cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task SetProgressTextAsync(string? parentSlotId, string progressText, CancellationToken cancellationToken)
+        public async Task SetProgressTextAsync(string? parentNodeId, string progressText, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(progressText);
             cancellationToken.ThrowIfCancellationRequested();
 
-            string effectiveParentSlotId = ResolveEffectiveParentSlotId(parentSlotId);
+            string effectiveParentSlotId = ResolveEffectiveParentSlotId(parentNodeId);
             string normalizedText = progressText.Trim();
             SlotProgressBinding binding = await EnsureProgressBindingAsync(effectiveParentSlotId).ConfigureAwait(false);
             await UpdateMirroredStringMemberAsync(
@@ -613,7 +613,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
+        public async Task<string?> StreamMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(payload);
             if (payload.Vertices.Count == 0 || payload.Indices.Count == 0)
@@ -634,9 +634,9 @@ namespace ThreeDTilesLink.Core.Resonite
             await _streamPlacementGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                string? parentSlotId = string.IsNullOrWhiteSpace(payload.ParentSlotId)
+                string? parentSlotId = string.IsNullOrWhiteSpace(payload.ParentNodeId)
                     ? _sessionRootSlotId
-                    : payload.ParentSlotId;
+                    : payload.ParentNodeId;
                 if (string.IsNullOrWhiteSpace(parentSlotId))
                 {
                     throw new InvalidOperationException("Session root slot is not initialized.");
@@ -712,6 +712,9 @@ namespace ThreeDTilesLink.Core.Resonite
                 _ = _streamPlacementGate.Release();
             }
         }
+
+        internal Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
+            => StreamMeshAsync(payload, cancellationToken);
 
         private static ImportMeshRawData BuildImportMesh(PlacedMeshPayload payload, CancellationToken cancellationToken)
         {
@@ -805,7 +808,7 @@ namespace ThreeDTilesLink.Core.Resonite
                 cancellationToken).ConfigureAwait(false));
         }
 
-        public async Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken)
+        public async Task RemoveNodeAsync(string slotId, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(slotId))
             {
@@ -820,6 +823,9 @@ namespace ThreeDTilesLink.Core.Resonite
                     cancellationToken).ConfigureAwait(false);
             _ = EnsureSuccess(response);
         }
+
+        internal Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken)
+            => RemoveNodeAsync(slotId, cancellationToken);
 
         public ValueTask DisposeAsync()
         {
@@ -1002,7 +1008,7 @@ namespace ThreeDTilesLink.Core.Resonite
 
             try
             {
-                await RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
+                await RemoveNodeAsync(slotId, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

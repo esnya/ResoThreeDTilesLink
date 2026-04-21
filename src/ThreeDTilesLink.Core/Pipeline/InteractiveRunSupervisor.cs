@@ -18,7 +18,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public InteractiveRunSupervisor(
             ITileSelectionService tileRunCoordinator,
-            IResoniteSession resoniteSession,
+            ISceneSession sceneSession,
             IInteractiveInputStore interactiveInputStore,
             ISearchResolver searchResolver,
             ICoordinateTransformer coordinateTransformer,
@@ -36,7 +36,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             _logger = logger;
             _sessionManager = new InteractiveSessionManager(
                 tileRunCoordinator,
-                resoniteSession,
+                sceneSession,
                 loggerFactory.CreateLogger<InteractiveSessionManager>());
             _searchCoordinator = new InteractiveSearchCoordinator(
                 interactiveInputStore,

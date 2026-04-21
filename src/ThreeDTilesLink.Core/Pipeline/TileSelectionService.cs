@@ -8,11 +8,11 @@ namespace ThreeDTilesLink.Core.Pipeline
     internal sealed class TileSelectionService(
         ITilesSource tilesSource,
         TraversalCore traversalCore,
-        ResoniteReconcilerCore reconcilerCore,
+        SceneReconcilerCore reconcilerCore,
         IGlbMeshExtractor glbMeshExtractor,
         IMeshPlacementService meshPlacementService,
-        IResoniteSession resoniteSession,
-        IResoniteSessionMetadataPort sessionMetadataPort,
+        ISceneSession sceneSession,
+        ISceneMetadataSink metadataSink,
         ILicenseCreditPolicy licenseCreditPolicy,
         ILogger logger,
         int maxConcurrentTileProcessing = 1,
@@ -25,16 +25,16 @@ namespace ThreeDTilesLink.Core.Pipeline
             reconcilerCore,
             glbMeshExtractor,
             meshPlacementService,
-            resoniteSession,
-            sessionMetadataPort,
+            sceneSession,
+            metadataSink,
             logger,
             maxConcurrentTileProcessing,
             maxConcurrentWriterSends,
             performanceSummary);
 
         private readonly TileSelectionInteractiveFinalizer _interactiveFinalizer = new(
-            resoniteSession,
-            sessionMetadataPort,
+            sceneSession,
+            metadataSink,
             licenseCreditPolicy,
             logger);
 

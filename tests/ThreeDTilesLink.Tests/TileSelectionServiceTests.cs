@@ -398,7 +398,7 @@ namespace ThreeDTilesLink.Tests
 
             _ = client.SendCount.Should().Be(0);
             _ = result.VisibleTiles.Should().ContainKey(StableId("near"));
-            _ = result.VisibleTiles[StableId("near")].SlotIds.Should().ContainSingle().Which.Should().Be("slot_existing");
+            _ = result.VisibleTiles[StableId("near")].NodeIds.Should().ContainSingle().Which.Should().Be("slot_existing");
         }
 
         [Fact]
@@ -436,7 +436,7 @@ namespace ThreeDTilesLink.Tests
                 new InteractiveRunInput(retainedTiles, RemoveOutOfRangeTiles: false),
                 CancellationToken.None);
 
-            _ = client.RemovedSlotIds.Should().NotContain("slot_far");
+            _ = client.RemovedNodeIds.Should().NotContain("slot_far");
             _ = result.VisibleTiles.Should().ContainKey(StableId("near"));
             _ = result.VisibleTiles.Should().ContainKey(StableId("far"));
         }
@@ -476,7 +476,7 @@ namespace ThreeDTilesLink.Tests
                 new InteractiveRunInput(retainedTiles, RemoveOutOfRangeTiles: true),
                 CancellationToken.None);
 
-            _ = client.RemovedSlotIds.Should().Contain("slot_far");
+            _ = client.RemovedNodeIds.Should().Contain("slot_far");
             _ = result.VisibleTiles.Should().ContainKey(StableId("near"));
             _ = result.VisibleTiles.Should().NotContainKey(StableId("far"));
         }
@@ -514,7 +514,7 @@ namespace ThreeDTilesLink.Tests
                 CancellationToken.None);
 
             _ = client.SendCount.Should().Be(1);
-            _ = client.RemovedSlotIds.Should().Contain("slot_fine");
+            _ = client.RemovedNodeIds.Should().Contain("slot_fine");
             _ = result.VisibleTiles.Should().ContainKey(coarseStableId);
             _ = result.VisibleTiles.Should().NotContainKey(childStableId);
             _ = result.SelectedTileStableIds.Should().Contain(coarseStableId);
@@ -715,7 +715,7 @@ namespace ThreeDTilesLink.Tests
                 cts.Token);
 
             _ = client.SendCount.Should().Be(1);
-            _ = client.RemovedSlotIds.Should().BeEmpty();
+            _ = client.RemovedNodeIds.Should().BeEmpty();
             _ = result.VisibleTiles.Should().ContainKey(StableId("near-a"));
             _ = result.VisibleTiles.Should().ContainKey(farStableId);
             _ = result.VisibleTiles.Should().NotContainKey(StableId("near-b"));
@@ -831,7 +831,7 @@ namespace ThreeDTilesLink.Tests
 
             _ = summary.FailedTiles.Should().Be(0);
             _ = client.Payloads.Should().OnlyContain(payload => !payload.Name.Contains("tile_p_m", StringComparison.Ordinal));
-            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_c_m", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().NotContain(id => id.Contains("tile_c_m", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -879,7 +879,7 @@ namespace ThreeDTilesLink.Tests
 
             _ = summary.FailedTiles.Should().Be(0);
             _ = client.Payloads.Should().OnlyContain(payload => !payload.Name.Contains("tile_p_m", StringComparison.Ordinal));
-            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -912,7 +912,7 @@ namespace ThreeDTilesLink.Tests
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = summary.FailedTiles.Should().BeGreaterThanOrEqualTo(1);
-            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -955,7 +955,7 @@ namespace ThreeDTilesLink.Tests
             _ = summary.StreamedMeshes.Should().Be(2);
             _ = client.Payloads.Should().HaveCount(2);
             _ = client.Payloads[0].Name.Should().Contain("tile_c_");
-            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1212,7 +1212,7 @@ namespace ThreeDTilesLink.Tests
             _ = client.Payloads.Should().HaveCount(2);
             _ = client.Payloads[0].Name.Should().Contain("tile_p_");
             _ = client.Payloads[1].Name.Should().Contain("tile_c_");
-            _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1252,7 +1252,7 @@ namespace ThreeDTilesLink.Tests
             _ = client.Payloads.Should().ContainSingle();
             _ = client.Payloads[0].Name.Should().Contain("tile_c_");
             _ = client.Payloads[0].Name.Should().NotContain("tile_p_");
-            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1302,7 +1302,7 @@ namespace ThreeDTilesLink.Tests
             _ = client.Payloads[0].Name.Should().Contain("tile_p_");
             _ = client.Payloads[1].Name.Should().Contain("tile_c");
             _ = client.Payloads[2].Name.Should().Contain("tile_c");
-            _ = client.RemovedSlotIds.Should().ContainSingle(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().ContainSingle(id => id.Contains("tile_p_m", StringComparison.Ordinal));
 
             int parentStreamIndex = events.FindIndex(entry => entry.Contains("stream:tile_p_", StringComparison.Ordinal));
             int firstChildStreamIndex = events.FindIndex(entry => entry.Contains("stream:tile_c0_", StringComparison.Ordinal));
@@ -1510,8 +1510,8 @@ namespace ThreeDTilesLink.Tests
             _ = result.Summary.StreamedMeshes.Should().Be(2);
             _ = result.Summary.FailedTiles.Should().Be(1);
             _ = result.VisibleTiles.Should().ContainKey(StableId("multi"));
-            _ = result.VisibleTiles[StableId("multi")].SlotIds.Should().HaveCount(2);
-            _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_multi_", StringComparison.Ordinal));
+            _ = result.VisibleTiles[StableId("multi")].NodeIds.Should().HaveCount(2);
+            _ = client.RemovedNodeIds.Should().Contain(id => id.Contains("tile_multi_", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1558,7 +1558,7 @@ namespace ThreeDTilesLink.Tests
                 cancellation.Token);
 
             _ = await act.Should().ThrowAsync<OperationCanceledException>();
-            _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_multi_m0", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().Contain(id => id.Contains("tile_multi_m0", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1601,7 +1601,7 @@ namespace ThreeDTilesLink.Tests
             _ = result.Summary.StreamedMeshes.Should().Be(3);
             _ = result.Summary.FailedTiles.Should().Be(1);
             _ = result.VisibleTiles.Should().ContainKey(StableId("multi"));
-            _ = result.VisibleTiles[StableId("multi")].SlotIds.Should().HaveCount(2);
+            _ = result.VisibleTiles[StableId("multi")].NodeIds.Should().HaveCount(2);
             _ = result.CleanupDebtTiles.Should().NotContainKey(StableId("multi"));
         }
 
@@ -1644,7 +1644,7 @@ namespace ThreeDTilesLink.Tests
             _ = result.Summary.FailedTiles.Should().Be(3);
             _ = result.VisibleTiles.Should().NotContainKey(StableId("multi"));
             _ = result.CleanupDebtTiles.Should().ContainKey(StableId("multi"));
-            _ = result.CleanupDebtTiles[StableId("multi")].SlotIds.Should().HaveCount(2);
+            _ = result.CleanupDebtTiles[StableId("multi")].NodeIds.Should().HaveCount(2);
         }
 
         [Fact]
@@ -1807,9 +1807,9 @@ namespace ThreeDTilesLink.Tests
                 new InteractiveRunInput(retainedTiles, RemoveOutOfRangeTiles: true),
                 CancellationToken.None);
 
-            _ = client.RemovedSlotIds.Should().Contain("slot_remove");
+            _ = client.RemovedNodeIds.Should().Contain("slot_remove");
             _ = result.VisibleTiles.Should().ContainKey(stableId);
-            _ = result.VisibleTiles[stableId].SlotIds.Should().Equal("slot_keep");
+            _ = result.VisibleTiles[stableId].NodeIds.Should().Equal("slot_keep");
         }
 
         [Fact]
@@ -1817,29 +1817,29 @@ namespace ThreeDTilesLink.Tests
         {
             Type[] coordinatorParameters = typeof(TileSelectionService)
                 .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                .Single(ctor => ctor.GetParameters().Any(parameter => parameter.ParameterType == typeof(IResoniteSessionMetadataPort)))
+                .Single(ctor => ctor.GetParameters().Any(parameter => parameter.ParameterType == typeof(ISceneMetadataSink)))
                 .GetParameters()
                 .Select(parameter => parameter.ParameterType)
                 .ToArray();
             Type[] selectionParameters = typeof(TileSelectionService)
                 .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                 .Select(static ctor => ctor.GetParameters().Select(static parameter => parameter.ParameterType).ToArray())
-                .FirstOrDefault(static parameters => parameters.Contains(typeof(IResoniteSessionMetadataPort)))
+                .FirstOrDefault(static parameters => parameters.Contains(typeof(ISceneMetadataSink)))
                 ?? [];
 
             _ = coordinatorParameters.Should().ContainInOrder(
-                typeof(IResoniteSession),
-                typeof(IResoniteSessionMetadataPort));
+                typeof(ISceneSession),
+                typeof(ISceneMetadataSink));
             _ = selectionParameters.Should().ContainInOrder(
-                typeof(IResoniteSession),
-                typeof(IResoniteSessionMetadataPort));
+                typeof(ISceneSession),
+                typeof(ISceneMetadataSink));
         }
 
         private static TileSelectionService CreateCoordinator(
             ITilesSource tilesSource,
             FakeResoniteSession session,
             IGlbMeshExtractor? extractor = null,
-            IResoniteSessionMetadataPort? metadataPort = null,
+            ISceneMetadataSink? metadataPort = null,
             int maxConcurrentTileProcessing = 1)
         {
             var transformer = new PassThroughTransformer();
@@ -1847,7 +1847,7 @@ namespace ThreeDTilesLink.Tests
             return new TileSelectionService(
                 tilesSource,
                 traversalCore,
-                new ResoniteReconcilerCore(),
+                new SceneReconcilerCore(new GoogleTileLicenseCreditPolicy()),
                 extractor ?? new FakeExtractor(),
                 new MeshPlacementService(transformer),
                 session,
@@ -1868,7 +1868,7 @@ namespace ThreeDTilesLink.Tests
                 new GeoReference(0d, 0d, 0d),
                 new GeoReference(0d, 0d, 0d),
                 new TraversalOptions(rangeM, 40d, bootstrapRangeMultiplier),
-                new ResoniteOutputOptions("127.0.0.1", 12345, dryRun, manageConnection),
+                new SceneOutputOptions("127.0.0.1", 12345, dryRun, manageConnection),
                 new TileSourceOptions(
                     new Uri("https://example.com/root.json"),
                     new TileSourceAccess(apiKey, null)));
@@ -2099,7 +2099,7 @@ namespace ThreeDTilesLink.Tests
             public bool DisconnectCancellationObserved { get; private set; }
             public List<string> LicenseCredits => _metadata.LicenseCredits;
             public List<PlacedMeshPayload> Payloads { get; } = [];
-            public List<string> RemovedSlotIds { get; } = [];
+            public List<string> RemovedNodeIds { get; } = [];
             public List<(string? ParentSlotId, float Progress01, string ProgressText)> ProgressUpdates => _metadata.ProgressUpdates;
 
             public Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
@@ -2128,7 +2128,7 @@ namespace ThreeDTilesLink.Tests
                 return _metadata.SetProgressTextAsync(parentSlotId, progressText, cancellationToken);
             }
 
-            public async Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
+            public async Task<string?> StreamMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
             {
                 int current = Interlocked.Increment(ref _activeStreams);
                 UpdateMaxConcurrentStreams(current);
@@ -2170,20 +2170,20 @@ namespace ThreeDTilesLink.Tests
                 }
             }
 
-            public Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken)
+            public Task RemoveNodeAsync(string nodeId, CancellationToken cancellationToken)
             {
                 int removeSlotNumber = Interlocked.Increment(ref _removeSlotNumber);
                 _ = Interlocked.Increment(ref _removeAttempts);
                 if (!string.IsNullOrWhiteSpace(_failOnRemoveContains) &&
-                    slotId.Contains(_failOnRemoveContains, StringComparison.Ordinal) &&
+                    nodeId.Contains(_failOnRemoveContains, StringComparison.Ordinal) &&
                     (_failOnRemoveNumber is null || removeSlotNumber == _failOnRemoveNumber.Value))
                 {
                     throw new InvalidOperationException("synthetic remove failure");
                 }
 
                 RemoveCount++;
-                RemovedSlotIds.Add(slotId);
-                _onRemoveCompleted?.Invoke(slotId);
+                RemovedNodeIds.Add(nodeId);
+                _onRemoveCompleted?.Invoke(nodeId);
                 return Task.CompletedTask;
             }
 

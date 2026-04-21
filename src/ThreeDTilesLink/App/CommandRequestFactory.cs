@@ -23,7 +23,7 @@ namespace ThreeDTilesLink.App
                 new TraversalOptions(
                     options.RangeM,
                     options.DetailTargetM),
-                new ResoniteOutputOptions(
+                new SceneOutputOptions(
                     options.ResoniteHost,
                     options.ResonitePort,
                     options.DryRun),

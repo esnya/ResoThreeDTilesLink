@@ -31,7 +31,7 @@ namespace ThreeDTilesLink.Tests
             _ = coordinator.Requests.Should().ContainSingle();
             _ = coordinator.Requests[0].Traversal.RangeM.Should().Be(400d);
             _ = coordinator.Requests[0].Output.ManageConnection.Should().BeFalse();
-            _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().BeNull();
+            _ = coordinator.Requests[0].Output.ParentNodeId.Should().BeNull();
         }
 
         [Fact]
@@ -58,8 +58,8 @@ namespace ThreeDTilesLink.Tests
             await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
 
             _ = coordinator.Requests.Should().HaveCount(2);
-            _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().Be(coordinator.Requests[1].Output.MeshParentSlotId);
-            _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().BeNull();
+            _ = coordinator.Requests[0].Output.ParentNodeId.Should().Be(coordinator.Requests[1].Output.ParentNodeId);
+            _ = coordinator.Requests[0].Output.ParentNodeId.Should().BeNull();
             _ = coordinator.Requests[1].SelectionReference.Latitude.Should().Be(36d);
             _ = coordinator.Requests[1].SelectionReference.Longitude.Should().Be(140d);
             _ = coordinator.Requests[1].PlacementReference.Latitude.Should().Be(35d);
@@ -90,9 +90,9 @@ namespace ThreeDTilesLink.Tests
             await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
 
             _ = coordinator.Requests.Should().HaveCount(2);
-            _ = session.RemovedSlotIds.Should().BeEmpty();
-            _ = coordinator.Requests[0].Output.MeshParentSlotId.Should().BeNull();
-            _ = coordinator.Requests[1].Output.MeshParentSlotId.Should().BeNull();
+            _ = session.RemovedNodeIds.Should().BeEmpty();
+            _ = coordinator.Requests[0].Output.ParentNodeId.Should().BeNull();
+            _ = coordinator.Requests[1].Output.ParentNodeId.Should().BeNull();
             _ = coordinator.Requests[1].SelectionReference.Latitude.Should().Be(40d);
             _ = coordinator.Requests[1].SelectionReference.Longitude.Should().Be(100d);
             _ = coordinator.Requests[1].PlacementReference.Latitude.Should().Be(40d);
@@ -145,7 +145,7 @@ namespace ThreeDTilesLink.Tests
             _ = coordinator.RetainedTileInputs.Should().HaveCount(2);
             _ = coordinator.RetainedTileInputs[1].Should().ContainKey(partialStableId);
             _ = coordinator.CheckpointInputs[1].Should().BeNull();
-            _ = session.RemovedSlotIds.Should().BeEmpty();
+            _ = session.RemovedNodeIds.Should().BeEmpty();
             _ = coordinator.Requests[1].PlacementReference.Latitude.Should().Be(35d);
             _ = coordinator.Requests[1].PlacementReference.Longitude.Should().Be(139d);
         }
@@ -167,7 +167,7 @@ namespace ThreeDTilesLink.Tests
 
             await supervisor.RunAsync(CreateRequest(apiKey: string.Empty), cts.Token);
 
-            _ = session.RemovedSlotIds.Should().BeEmpty();
+            _ = session.RemovedNodeIds.Should().BeEmpty();
         }
 
         [Fact]
@@ -209,7 +209,7 @@ namespace ThreeDTilesLink.Tests
 
             _ = coordinator.Requests.Should().ContainSingle();
             _ = completedRuns.Should().Be(1);
-            _ = session.RemovedSlotIds.Should().BeEmpty();
+            _ = session.RemovedNodeIds.Should().BeEmpty();
         }
 
         [Fact]
@@ -399,7 +399,7 @@ namespace ThreeDTilesLink.Tests
             _ = coordinator.RetainedTileInputs.Should().HaveCount(2);
             _ = coordinator.RetainedTileInputs[1].Should().BeEmpty();
             _ = coordinator.CheckpointInputs[1].Should().BeNull();
-            _ = session.RemovedSlotIds.Should().Contain("slot_partial");
+            _ = session.RemovedNodeIds.Should().Contain("slot_partial");
         }
 
         [Fact]
@@ -452,7 +452,7 @@ namespace ThreeDTilesLink.Tests
             _ = coordinator.Requests[0].PlacementReference.Longitude.Should().Be(139d);
             _ = coordinator.Requests[1].PlacementReference.Latitude.Should().Be(35d);
             _ = coordinator.Requests[1].PlacementReference.Longitude.Should().Be(139d);
-            _ = session.RemovedSlotIds.Should().BeEmpty();
+            _ = session.RemovedNodeIds.Should().BeEmpty();
         }
 
         [Fact]
@@ -790,7 +790,7 @@ namespace ThreeDTilesLink.Tests
 
         private sealed class FakeSession : IResoniteSession
         {
-            public List<string> RemovedSlotIds { get; } = [];
+            public List<string> RemovedNodeIds { get; } = [];
             public List<bool> DisconnectCancellationTokens { get; } = [];
             public int DisconnectCalls { get; private set; }
             public bool ThrowOnCanceledDisconnect { get; init; }
@@ -800,14 +800,14 @@ namespace ThreeDTilesLink.Tests
                 return Task.CompletedTask;
             }
 
-            public Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
+            public Task<string?> StreamMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
             {
                 return Task.FromResult<string?>("mesh_slot");
             }
 
-            public Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken)
+            public Task RemoveNodeAsync(string nodeId, CancellationToken cancellationToken)
             {
-                RemovedSlotIds.Add(slotId);
+                RemovedNodeIds.Add(nodeId);
                 return Task.CompletedTask;
             }
 

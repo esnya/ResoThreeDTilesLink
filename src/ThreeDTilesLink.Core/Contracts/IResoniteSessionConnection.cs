@@ -1,8 +1,6 @@
 namespace ThreeDTilesLink.Core.Contracts
 {
-    internal interface IResoniteSessionConnection
+    internal interface IResoniteSessionConnection : ISceneConnection
     {
-        Task ConnectAsync(string host, int port, CancellationToken cancellationToken);
-        Task DisconnectAsync(CancellationToken cancellationToken);
     }
 }

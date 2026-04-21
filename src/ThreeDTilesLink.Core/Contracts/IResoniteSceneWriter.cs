@@ -1,10 +1,6 @@
-using ThreeDTilesLink.Core.Models;
-
 namespace ThreeDTilesLink.Core.Contracts
 {
-    internal interface IResoniteSceneWriter
+    internal interface IResoniteSceneWriter : ISceneWriter
     {
-        Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken);
-        Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken);
     }
 }
