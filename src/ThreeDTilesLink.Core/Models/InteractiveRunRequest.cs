@@ -1,8 +1,8 @@
 namespace ThreeDTilesLink.Core.Models
 {
     internal sealed record InteractiveRunRequest(
-        string ResoniteHost,
-        int ResonitePort,
+        string EndpointHost,
+        int EndpointPort,
         double HeightOffset,
         TraversalOptions Traversal,
         TileSourceOptions TileSource,

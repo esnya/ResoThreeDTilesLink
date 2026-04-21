@@ -114,12 +114,18 @@ namespace ThreeDTilesLink
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
 
+            string? tileSourceApiKey = configuration["TILE_SOURCE_API_KEY"] ??
+                configuration["TileSource:ApiKey"];
+            if (string.IsNullOrWhiteSpace(tileSourceApiKey) &&
+                IsGoogleTileSource(rootTilesetUri, fileSchemeBaseUri))
+            {
+                tileSourceApiKey = sharedGoogleApiKey;
+            }
+
             return new TileSourceOptions(
                 rootTilesetUri,
                 new TileSourceAccess(
-                    configuration["TILE_SOURCE_API_KEY"] ??
-                    configuration["TileSource:ApiKey"] ??
-                    sharedGoogleApiKey,
+                    tileSourceApiKey,
                     configuration["TILE_SOURCE_BEARER_TOKEN"] ??
                     configuration["TileSource:BearerToken"]),
                 new TileSourceContentLinkOptions(fileSchemeBaseUri, normalizedInheritedQueryParameters));
@@ -185,8 +191,17 @@ namespace ThreeDTilesLink
         {
             ArgumentNullException.ThrowIfNull(tileSourceOptions);
 
-            return UriHostEquals(tileSourceOptions.RootTilesetUri, "tile.googleapis.com") ||
-                UriHostEquals(tileSourceOptions.ContentLinks.FileSchemeBaseUri, "tile.googleapis.com");
+            return IsGoogleTileSource(
+                tileSourceOptions.RootTilesetUri,
+                tileSourceOptions.ContentLinks.FileSchemeBaseUri);
+        }
+
+        private static bool IsGoogleTileSource(Uri rootTilesetUri, Uri? fileSchemeBaseUri)
+        {
+            ArgumentNullException.ThrowIfNull(rootTilesetUri);
+
+            return UriHostEquals(rootTilesetUri, "tile.googleapis.com") ||
+                UriHostEquals(fileSchemeBaseUri, "tile.googleapis.com");
         }
 
         private static bool UriHostEquals(Uri? uri, string expectedHost)

@@ -13,7 +13,7 @@ namespace ThreeDTilesLink.Core.Runtime
             Connection = session;
             SceneWriter = session;
             SessionMetadata = session;
-            InteractiveInputStore = session;
+            InteractiveUiStore = new ResoniteDynamicValueInteractiveUiStore(session);
         }
 
         internal ResoniteSession Session { get; }
@@ -28,6 +28,6 @@ namespace ThreeDTilesLink.Core.Runtime
 
         internal ISceneMetadataSink SessionMetadata { get; }
 
-        internal IInteractiveInputStore InteractiveInputStore { get; }
+        internal IInteractiveUiStore InteractiveUiStore { get; }
     }
 }

@@ -66,7 +66,7 @@ namespace ThreeDTilesLink.Tests
             var expected = new InvalidOperationException("boom");
             var completion = new CommandCompletion();
             var lifetime = new FakeHostApplicationLifetime();
-            var inputStore = new FakeInteractiveInputStore();
+            var inputStore = new FakeInteractiveUiStore();
             var tileSource = new TileSourceOptions(
                 new Uri("https://tile.googleapis.com/v1/3dtiles/root.json"),
                 new TileSourceAccess(null, null));
@@ -144,6 +144,44 @@ namespace ThreeDTilesLink.Tests
             Func<InteractiveRunSupervisor> act = () => provider.GetRequiredService<InteractiveRunSupervisor>();
 
             _ = act.Should().NotThrow();
+        }
+
+        [Fact]
+        public void AddThreeDTilesLinkRuntime_PreservesPreRegisteredInteractiveUiStore()
+        {
+            var services = new ServiceCollection();
+            _ = services.AddLogging();
+            var runtimeOptions = new InteractiveCommandOptions(
+                20d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                250,
+                800,
+                3000,
+                LogLevel.Information);
+            var tileSource = new TileSourceOptions(
+                new Uri("https://tile.googleapis.com/v1/3dtiles/root.json"),
+                new TileSourceAccess("key", null));
+            ResoniteDestinationPolicyOptions destinationPolicy = ResoniteDestinationPolicyOptions.CreateGoogleDefaults();
+            var registeredUiStore = new FakeInteractiveUiStore();
+
+            _ = services.AddSingleton<IInteractiveUiStore>(registeredUiStore);
+            _ = services.AddThreeDTilesLinkRuntime(
+                runtimeOptions,
+                tileSource,
+                destinationPolicy,
+                new GenericTileLicenseCreditPolicy(),
+                new SearchOptions("key"));
+
+            using ServiceProvider provider = services.BuildServiceProvider();
+
+            IInteractiveUiStore uiStore = provider.GetRequiredService<IInteractiveUiStore>();
+            _ = uiStore.Should().BeSameAs(registeredUiStore);
         }
 
         [Fact]
@@ -388,6 +426,32 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void CommandHost_BuildTileSourceOptions_DoesNotLeakSharedGoogleApiKeyToNonGoogleTileSource()
+        {
+            const string envApiKey = "google-env-key";
+            string? previousGoogleApiKey = Environment.GetEnvironmentVariable("GOOGLE_MAPS_API_KEY");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("GOOGLE_MAPS_API_KEY", envApiKey);
+                using var configuration = new ConfigurationManager();
+                _ = configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["TileSource:RootTilesetUri"] = "https://plateau.example.com/tiles/root.json"
+                });
+                _ = configuration.AddEnvironmentVariables();
+
+                TileSourceOptions tileSource = InvokeBuildTileSourceOptions(configuration);
+
+                _ = tileSource.Access.ApiKey.Should().BeNull();
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("GOOGLE_MAPS_API_KEY", previousGoogleApiKey);
+            }
+        }
+
+        [Fact]
         public void CommandHost_BuildSearchOptions_FallsBackToGoogleTileSourceApiKey()
         {
             using var configuration = new ConfigurationManager();
@@ -532,6 +596,46 @@ namespace ThreeDTilesLink.Tests
             _ = provider.GetRequiredService<ISceneSession>().Should().BeSameAs(fakeSceneSession);
             _ = provider.GetRequiredService<ISceneMetadataSink>().Should().BeSameAs(fakeMetadataSink);
             _ = provider.GetRequiredService<ITileSelectionService>().Should().NotBeNull();
+        }
+
+        [Fact]
+        public async Task AddThreeDTilesLinkRuntime_RequiresExplicitInteractiveUiStore_WhenSceneSessionIsNotResonite()
+        {
+            var services = new ServiceCollection();
+            _ = services.AddLogging();
+            var runtimeOptions = new InteractiveCommandOptions(
+                20d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                250,
+                800,
+                3000,
+                LogLevel.Information);
+            var tileSource = new TileSourceOptions(
+                new Uri("https://plateau.example.com/root.json"),
+                new TileSourceAccess(null, null));
+            var fakeSceneSession = new PreRegisteredSceneSession();
+            var fakeMetadataSink = new PreRegisteredSceneMetadataSink();
+
+            _ = services.AddSingleton<ISceneSession>(fakeSceneSession);
+            _ = services.AddSingleton<ISceneMetadataSink>(fakeMetadataSink);
+            _ = services.AddThreeDTilesLinkRuntime(
+                runtimeOptions,
+                tileSource,
+                ResoniteDestinationPolicyOptions.CreateDefault(),
+                new GenericTileLicenseCreditPolicy(),
+                new SearchOptions(null));
+            await using ServiceProvider provider = services.BuildServiceProvider();
+
+            Func<IInteractiveUiStore> act = () => provider.GetRequiredService<IInteractiveUiStore>();
+
+            _ = act.Should().Throw<InvalidOperationException>()
+                .WithMessage("*Register IInteractiveUiStore explicitly when overriding ISceneSession*");
         }
 
         [Fact]
@@ -711,26 +815,18 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
-        private sealed class FakeInteractiveInputStore : IInteractiveInputStore
+        private sealed class FakeInteractiveUiStore : IInteractiveUiStore
         {
-            public Task<InteractiveInputBinding> CreateInteractiveInputBindingAsync(CancellationToken cancellationToken)
+            public Task<InteractiveUiBinding> CreateInteractiveUiBindingAsync(CancellationToken cancellationToken)
             {
-                return Task.FromResult(new InteractiveInputBinding(
-                    "latComponent",
-                    "latAlias",
-                    "lonComponent",
-                    "lonAlias",
-                    "rangeComponent",
-                    "rangeAlias",
-                    "searchComponent",
-                    "searchAlias"));
+                return Task.FromResult(new InteractiveUiBinding("fake-binding"));
             }
 
-            public Task<SelectionInputValues?> ReadInteractiveInputValuesAsync(InteractiveInputBinding binding, CancellationToken cancellationToken) => Task.FromResult<SelectionInputValues?>(null);
+            public Task<SelectionInputValues?> ReadInteractiveUiValuesAsync(InteractiveUiBinding binding, CancellationToken cancellationToken) => Task.FromResult<SelectionInputValues?>(null);
 
-            public Task<string?> ReadInteractiveInputSearchAsync(InteractiveInputBinding binding, CancellationToken cancellationToken) => Task.FromResult<string?>(null);
+            public Task<string?> ReadInteractiveUiSearchAsync(InteractiveUiBinding binding, CancellationToken cancellationToken) => Task.FromResult<string?>(null);
 
-            public Task UpdateInteractiveInputCoordinatesAsync(InteractiveInputBinding binding, double latitude, double longitude, CancellationToken cancellationToken) => Task.CompletedTask;
+            public Task UpdateInteractiveUiCoordinatesAsync(InteractiveUiBinding binding, double latitude, double longitude, CancellationToken cancellationToken) => Task.CompletedTask;
         }
 
         private sealed class FakeSearchResolver : ISearchResolver

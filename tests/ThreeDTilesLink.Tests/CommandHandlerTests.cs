@@ -67,8 +67,8 @@ namespace ThreeDTilesLink.Tests
 
             var request = CommandRequestFactory.CreateInteractiveRequest(options, tileSource, new SearchOptions("key"));
 
-            _ = request.ResoniteHost.Should().Be("localhost");
-            _ = request.ResonitePort.Should().Be(12000);
+            _ = request.EndpointHost.Should().Be("localhost");
+            _ = request.EndpointPort.Should().Be(12000);
             _ = request.HeightOffset.Should().Be(20d);
             _ = request.Traversal.RangeM.Should().Be(0d);
             _ = request.Traversal.DetailTargetM.Should().Be(25d);

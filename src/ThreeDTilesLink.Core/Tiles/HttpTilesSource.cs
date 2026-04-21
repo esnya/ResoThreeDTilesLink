@@ -124,11 +124,7 @@ namespace ThreeDTilesLink.Core.Tiles
 
         private static string BuildTilesetCacheKey(Uri tilesetUri, TileSourceAccess access)
         {
-            string authContext = !string.IsNullOrWhiteSpace(access.ApiKey)
-                ? $"key:{access.ApiKey}"
-                : !string.IsNullOrWhiteSpace(access.BearerToken)
-                    ? $"bearer:{access.BearerToken}"
-                    : "anonymous";
+            string authContext = $"key:{access.ApiKey ?? string.Empty}|bearer:{access.BearerToken ?? string.Empty}";
             string combined = $"{tilesetUri.AbsoluteUri}|{authContext}";
             return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(combined)));
         }

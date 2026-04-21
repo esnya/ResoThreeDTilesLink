@@ -72,14 +72,14 @@ dotnet run --project src/ThreeDTilesLink -- stream \
   --latitude 35.65858 \
   --longitude 139.745433 \
   --range 400 \
-  --resonite-port PLACEHOLDER
+  --endpoint-port PLACEHOLDER
 ```
 
 - `--range` defines the approximate square coverage half-width around the center point (X/Z local extent), not a strict spherical radius.
 - Large ranges prioritize coarse ancestor tiles first so the requested coverage is established before finer descendants arrive.
-- Add `--dry-run` to verify only the fetch and conversion path without sending anything to Resonite; in dry-run mode, `--resonite-port` is optional.
+- Add `--dry-run` to verify only the fetch and conversion path without sending anything to Resonite; in dry-run mode, `--endpoint-port` is optional.
 - Useful tuning flags include `--detail`, `--content-workers`, `--resonite-send-workers`, `--timeout`, `--log-level`, and `--measure-performance`; use `--help` for the full set and defaults.
-- If `--resonite-host` is omitted, `localhost` is used.
+- If `--endpoint-host` is omitted, `localhost` is used.
 - When running from WSL against a Windows-hosted Resonite session, prefer host-side execution such as `cmd.exe /c dotnet.exe run ...` or `pwsh.exe`, because Linux-side `localhost` does not reliably mean the Windows host.
 - For live verification, clear old `3DTilesLink Session ...` roots before the case by running `tools/Invoke-ResoniteLinkCommand.ps1 cleanup-sessions`.
 - Treat the standard Tokyo Tower live case as `--latitude 35.65858 --longitude 139.745433 --range 60` without extra limiting arguments beyond the defaults.
@@ -124,7 +124,7 @@ When `Range` is large, the run first secures visible coverage with coarse ancest
 
 ```bash
 dotnet run --project src/ThreeDTilesLink -- interactive \
-  --resonite-port PLACEHOLDER \
+  --endpoint-port PLACEHOLDER \
   --poll-interval 250 \
   --debounce 800 \
   --throttle 3000
@@ -132,7 +132,7 @@ dotnet run --project src/ThreeDTilesLink -- interactive \
 
 Run `dotnet run --project src/ThreeDTilesLink -- interactive --help` for units and defaults.
 
-- If `--resonite-host` is omitted, `localhost` is used.
+- If `--endpoint-host` is omitted, `localhost` is used.
 - When running from WSL against a Windows-hosted Resonite session, prefer host-side execution such as `cmd.exe /c dotnet.exe run ...` or `pwsh.exe`, because Linux-side `localhost` does not reliably mean the Windows host.
 - The anchor height is sea level at the current latitude/longitude, and `--height-offset` is applied relative to that anchor.
 - The Interactive input values are fixed session-root members; the observation aliases remain fixed under `World/ThreeDTilesLink.*`.

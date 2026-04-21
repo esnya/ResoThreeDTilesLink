@@ -9,8 +9,8 @@ namespace ThreeDTilesLink.Core.CommandLine
         double Longitude,
         double HeightOffset,
         double RangeM,
-        string ResoniteHost,
-        int ResonitePort,
+        string EndpointHost,
+        int EndpointPort,
         double DetailTargetM,
         int ContentWorkers,
         int ResoniteSendWorkers,
@@ -23,14 +23,14 @@ namespace ThreeDTilesLink.Core.CommandLine
     {
         private static readonly CommandSpecification Specification = new(
             "dotnet run --project src/ThreeDTilesLink -- stream [options]",
-            "Fetch 3D Tiles around a center point and stream them to Resonite Link.",
+            "Fetch 3D Tiles around a center point and stream them to the configured scene endpoint.",
             [
                 new("--latitude", CommandOptionValueKind.DecimalNumber, "Center latitude.", Required: true, Unit: "degrees"),
                 new("--longitude", CommandOptionValueKind.DecimalNumber, "Center longitude.", Required: true, Unit: "degrees"),
                 CommonCommandOptions.HeightOffset(),
                 new("--range", CommandOptionValueKind.DecimalNumber, "Approximate square coverage half-width from the center (X/Z local extent).", Required: true, Unit: "m", RenamedFrom: ["--half-width-m"]),
-                CommonCommandOptions.ResoniteHost(),
-                CommonCommandOptions.ResonitePort(required: false),
+                CommonCommandOptions.EndpointHost(),
+                CommonCommandOptions.EndpointPort(required: false),
                 CommonCommandOptions.DetailTarget(),
                 CommonCommandOptions.ContentWorkers("Maximum number of tile content fetch/decode workers."),
                 CommonCommandOptions.ResoniteSendWorkers("Maximum number of parallel Resonite send workers."),
@@ -77,7 +77,7 @@ namespace ThreeDTilesLink.Core.CommandLine
                 !CommandInvocationBuilder.TryGetValue(parsed, "--longitude", out double longitude) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--height-offset", out double heightOffset) ||
                 !CommandInvocationBuilder.TryGetPositiveDouble(parsed, "--range", out double rangeM) ||
-                !CommandInvocationBuilder.TryGetValue(parsed, "--resonite-host", out string? resoniteHost) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--endpoint-host", out string? endpointHost) ||
                 !CommandInvocationBuilder.TryGetPositiveDouble(parsed, "--detail", out double detailTargetM) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--timeout", out int timeoutSec) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--measure-performance", out bool measurePerformance) ||
@@ -100,22 +100,22 @@ namespace ThreeDTilesLink.Core.CommandLine
                     RenderHelp);
             }
 
-            if (string.IsNullOrWhiteSpace(resoniteHost))
+            if (string.IsNullOrWhiteSpace(endpointHost))
             {
-                return CommandInvocationBuilder.Error<StreamCommandOptions>("Invalid value for --resonite-host.", RenderHelp);
+                return CommandInvocationBuilder.Error<StreamCommandOptions>("Invalid value for --endpoint-host.", RenderHelp);
             }
 
-            int resonitePort = 0;
-            if (parsed.Values.TryGetValue("--resonite-port", out object? rawResonitePort) && rawResonitePort is not null)
+            int endpointPort = 0;
+            if (parsed.Values.TryGetValue("--endpoint-port", out object? rawEndpointPort) && rawEndpointPort is not null)
             {
-                if (!CommandInvocationBuilder.TryGetPort(parsed, "--resonite-port", out resonitePort))
+                if (!CommandInvocationBuilder.TryGetPort(parsed, "--endpoint-port", out endpointPort))
                 {
-                    return CommandInvocationBuilder.Error<StreamCommandOptions>("Invalid value for --resonite-port.", RenderHelp);
+                    return CommandInvocationBuilder.Error<StreamCommandOptions>("Invalid value for --endpoint-port.", RenderHelp);
                 }
             }
             else if (!dryRun)
             {
-                return CommandInvocationBuilder.Error<StreamCommandOptions>("Missing required argument: --resonite-port", RenderHelp);
+                return CommandInvocationBuilder.Error<StreamCommandOptions>("Missing required argument: --endpoint-port", RenderHelp);
             }
 
             return new CommandInvocation<StreamCommandOptions>(true, new StreamCommandOptions(
@@ -123,8 +123,8 @@ namespace ThreeDTilesLink.Core.CommandLine
                 longitude,
                 heightOffset,
                 rangeM,
-                resoniteHost,
-                resonitePort,
+                endpointHost,
+                endpointPort,
                 detailTargetM,
                 contentWorkers,
                 resoniteSendWorkers,

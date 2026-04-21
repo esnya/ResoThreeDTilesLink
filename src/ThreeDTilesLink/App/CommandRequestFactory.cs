@@ -24,8 +24,8 @@ namespace ThreeDTilesLink.App
                     options.RangeM,
                     options.DetailTargetM),
                 new SceneOutputOptions(
-                    options.ResoniteHost,
-                    options.ResonitePort,
+                    options.EndpointHost,
+                    options.EndpointPort,
                     options.DryRun),
                 tileSource);
         }
@@ -40,8 +40,8 @@ namespace ThreeDTilesLink.App
             ArgumentNullException.ThrowIfNull(search);
 
             return new InteractiveRunRequest(
-                options.ResoniteHost,
-                options.ResonitePort,
+                options.EndpointHost,
+                options.EndpointPort,
                 options.HeightOffset,
                 new TraversalOptions(
                     RangeM: 0d,

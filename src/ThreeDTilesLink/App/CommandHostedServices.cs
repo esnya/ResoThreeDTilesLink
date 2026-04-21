@@ -93,7 +93,7 @@ namespace ThreeDTilesLink.App
             try
             {
                 await _output.WriteLineAsync(
-                    $"Interactive mode started. Input=session root slot values (Latitude/Longitude/Range/Search). Poll={_options.PollIntervalMs}ms Debounce={_options.DebounceMs}ms Throttle={_options.ThrottleMs}ms. Press Ctrl+C to stop.")
+                    $"Interactive mode started. Current UI adapter polls Latitude/Longitude/Range/Search values. Poll={_options.PollIntervalMs}ms Debounce={_options.DebounceMs}ms Throttle={_options.ThrottleMs}ms. Press Ctrl+C to stop.")
                     .ConfigureAwait(false);
                 await _interactiveRunSupervisor.RunAsync(
                     CommandRequestFactory.CreateInteractiveRequest(_options, _tileSource, _searchOptions),

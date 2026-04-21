@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Net.WebSockets;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
@@ -14,7 +15,7 @@ namespace ThreeDTilesLink.Tests
             DateTimeOffset failureTime = DateTimeOffset.UnixEpoch.AddSeconds(42);
             var clock = new FakeClock(failureTime);
             var coordinator = new InteractiveSearchCoordinator(
-                new ThrowingInteractiveInputStore(new HttpRequestException("synthetic input write failure")),
+                new ThrowingInteractiveUiStore(new HttpRequestException("synthetic input write failure")),
                 new FixedSearchResolver(new LocationSearchResult("Shibuya", 35.65858d, 139.745433d)),
                 clock,
                 NullLogger<InteractiveSearchCoordinator>.Instance);
@@ -37,6 +38,39 @@ namespace ThreeDTilesLink.Tests
             _ = next.PendingValuesChangedAt.Should().Be(DateTimeOffset.UnixEpoch);
         }
 
+        [Theory]
+        [InlineData(typeof(InteractiveUiNoResponseException))]
+        [InlineData(typeof(InteractiveUiDisconnectedException))]
+        [InlineData(typeof(WebSocketException))]
+        public async Task ResolveSearchAsync_RequeuesSearch_WhenInteractiveUiWritebackFails(Type exceptionType)
+        {
+            DateTimeOffset failureTime = DateTimeOffset.UnixEpoch.AddSeconds(99);
+            var clock = new FakeClock(failureTime);
+            Exception exception = exceptionType == typeof(InteractiveUiNoResponseException)
+                ? new InteractiveUiNoResponseException("synthetic")
+                : exceptionType == typeof(InteractiveUiDisconnectedException)
+                    ? new InteractiveUiDisconnectedException("synthetic")
+                    : new WebSocketException();
+            var coordinator = new InteractiveSearchCoordinator(
+                new ThrowingInteractiveUiStore(exception),
+                new FixedSearchResolver(new LocationSearchResult("Shibuya", 35.65858d, 139.745433d)),
+                clock,
+                NullLogger<InteractiveSearchCoordinator>.Instance);
+            InteractiveLoopState state = InteractiveLoopState.CreateInitial() with
+            {
+                InputBinding = CreateInputBinding()
+            };
+
+            InteractiveLoopState next = await coordinator.ResolveSearchAsync(
+                state,
+                CreateOptions(),
+                new ResolveSearchAction("Shibuya"),
+                CancellationToken.None);
+
+            _ = next.PendingSearch.Should().Be("Shibuya");
+            _ = next.PendingSearchChangedAt.Should().Be(failureTime);
+        }
+
         private static InteractiveRunRequest CreateOptions()
         {
             return new InteractiveRunRequest(
@@ -55,13 +89,9 @@ namespace ThreeDTilesLink.Tests
                     TimeSpan.FromSeconds(1)));
         }
 
-        private static InteractiveInputBinding CreateInputBinding()
+        private static InteractiveUiBinding CreateInputBinding()
         {
-            return new InteractiveInputBinding(
-                "lat", "latAlias",
-                "lon", "lonAlias",
-                "range", "rangeAlias",
-                "search", "searchAlias");
+            return new InteractiveUiBinding("binding");
         }
 
         private sealed class FakeClock(DateTimeOffset utcNow) : IClock
@@ -74,26 +104,26 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
-        private sealed class ThrowingInteractiveInputStore(Exception exception) : IInteractiveInputStore
+        private sealed class ThrowingInteractiveUiStore(Exception exception) : IInteractiveUiStore
         {
             private readonly Exception _exception = exception;
 
-            public Task<InteractiveInputBinding> CreateInteractiveInputBindingAsync(CancellationToken cancellationToken)
+            public Task<InteractiveUiBinding> CreateInteractiveUiBindingAsync(CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }
 
-            public Task<SelectionInputValues?> ReadInteractiveInputValuesAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
+            public Task<SelectionInputValues?> ReadInteractiveUiValuesAsync(InteractiveUiBinding binding, CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }
 
-            public Task<string?> ReadInteractiveInputSearchAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
+            public Task<string?> ReadInteractiveUiSearchAsync(InteractiveUiBinding binding, CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }
 
-            public Task UpdateInteractiveInputCoordinatesAsync(InteractiveInputBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
+            public Task UpdateInteractiveUiCoordinatesAsync(InteractiveUiBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
             {
                 return Task.FromException(_exception);
             }

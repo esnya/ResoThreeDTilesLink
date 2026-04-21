@@ -1,23 +1,22 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using System.Net.WebSockets;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
-using ThreeDTilesLink.Core.Resonite;
-
 namespace ThreeDTilesLink.Tests
 {
     public sealed class SelectionInputReaderTests
     {
         [Fact]
-        public async Task TryReadInteractiveInputSearchAsync_ReturnsNull_AndDoesNotWarn_WhenResponseIsMissing()
+        public async Task TryReadInteractiveUiSearchAsync_ReturnsNull_AndDoesNotWarn_WhenResponseIsMissing()
         {
             var logger = new ListLogger<SelectionInputReader>();
             var monitor = new SelectionInputReader(
-                new ThrowingInteractiveInputStore(new ResoniteLinkNoResponseException(), null),
+                new ThrowingInteractiveUiStore(new InteractiveUiNoResponseException("missing", new TimeoutException()), null),
                 logger);
 
-            string? result = await monitor.TryReadInteractiveInputSearchAsync(CreateInputBinding(), CancellationToken.None);
+            string? result = await monitor.TryReadInteractiveUiSearchAsync(CreateInputBinding(), CancellationToken.None);
 
             _ = result.Should().BeNull();
             _ = logger.Entries.Should().ContainSingle();
@@ -26,14 +25,14 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task TryReadInteractiveInputValuesAsync_ReturnsNull_AndDoesNotWarn_WhenResponseIsMissing()
+        public async Task TryReadInteractiveUiValuesAsync_ReturnsNull_AndDoesNotWarn_WhenResponseIsMissing()
         {
             var logger = new ListLogger<SelectionInputReader>();
             var monitor = new SelectionInputReader(
-                new ThrowingInteractiveInputStore(null, new ResoniteLinkNoResponseException()),
+                new ThrowingInteractiveUiStore(null, new InteractiveUiNoResponseException("missing", new TimeoutException())),
                 logger);
 
-            SelectionInputValues? result = await monitor.TryReadInteractiveInputValuesAsync(CreateInputBinding(), CancellationToken.None);
+            SelectionInputValues? result = await monitor.TryReadInteractiveUiValuesAsync(CreateInputBinding(), CancellationToken.None);
 
             _ = result.Should().BeNull();
             _ = logger.Entries.Should().ContainSingle();
@@ -42,14 +41,44 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task TryReadInteractiveInputValuesAsync_ReturnsNull_WhenRangeIsZero()
+        public async Task TryReadInteractiveUiSearchAsync_ReturnsNull_WhenWebSocketFails()
         {
             var logger = new ListLogger<SelectionInputReader>();
             var monitor = new SelectionInputReader(
-                new ValueInteractiveInputStore(new SelectionInputValues(35.0f, 139.0f, 0f)),
+                new ThrowingInteractiveUiStore(new WebSocketException(), null),
                 logger);
 
-            SelectionInputValues? result = await monitor.TryReadInteractiveInputValuesAsync(CreateInputBinding(), CancellationToken.None);
+            string? result = await monitor.TryReadInteractiveUiSearchAsync(CreateInputBinding(), CancellationToken.None);
+
+            _ = result.Should().BeNull();
+            _ = logger.Entries.Should().ContainSingle();
+            _ = logger.Entries[0].Level.Should().Be(LogLevel.Warning);
+        }
+
+        [Fact]
+        public async Task TryReadInteractiveUiValuesAsync_ReturnsNull_WhenWebSocketFails()
+        {
+            var logger = new ListLogger<SelectionInputReader>();
+            var monitor = new SelectionInputReader(
+                new ThrowingInteractiveUiStore(null, new WebSocketException()),
+                logger);
+
+            SelectionInputValues? result = await monitor.TryReadInteractiveUiValuesAsync(CreateInputBinding(), CancellationToken.None);
+
+            _ = result.Should().BeNull();
+            _ = logger.Entries.Should().ContainSingle();
+            _ = logger.Entries[0].Level.Should().Be(LogLevel.Warning);
+        }
+
+        [Fact]
+        public async Task TryReadInteractiveUiValuesAsync_ReturnsNull_WhenRangeIsZero()
+        {
+            var logger = new ListLogger<SelectionInputReader>();
+            var monitor = new SelectionInputReader(
+                new ValueInteractiveUiStore(new SelectionInputValues(35.0f, 139.0f, 0f)),
+                logger);
+
+            SelectionInputValues? result = await monitor.TryReadInteractiveUiValuesAsync(CreateInputBinding(), CancellationToken.None);
 
             _ = result.Should().BeNull();
             _ = logger.Entries.Should().BeEmpty();
@@ -60,14 +89,14 @@ namespace ThreeDTilesLink.Tests
         [InlineData(float.PositiveInfinity)]
         [InlineData(float.NegativeInfinity)]
         [InlineData(-10f)]
-        public async Task TryReadInteractiveInputValuesAsync_ReturnsNull_WhenRangeIsInvalid(float rangeM)
+        public async Task TryReadInteractiveUiValuesAsync_ReturnsNull_WhenRangeIsInvalid(float rangeM)
         {
             var logger = new ListLogger<SelectionInputReader>();
             var monitor = new SelectionInputReader(
-                new ValueInteractiveInputStore(new SelectionInputValues(35.0f, 139.0f, rangeM)),
+                new ValueInteractiveUiStore(new SelectionInputValues(35.0f, 139.0f, rangeM)),
                 logger);
 
-            SelectionInputValues? result = await monitor.TryReadInteractiveInputValuesAsync(CreateInputBinding(), CancellationToken.None);
+            SelectionInputValues? result = await monitor.TryReadInteractiveUiValuesAsync(CreateInputBinding(), CancellationToken.None);
 
             _ = result.Should().BeNull();
             _ = logger.Entries.Should().BeEmpty();
@@ -82,14 +111,14 @@ namespace ThreeDTilesLink.Tests
         [InlineData(35f, float.NegativeInfinity)]
         [InlineData(35f, -181f)]
         [InlineData(35f, 181f)]
-        public async Task TryReadInteractiveInputValuesAsync_ReturnsNull_WhenCoordinatesAreInvalid(float latitude, float longitude)
+        public async Task TryReadInteractiveUiValuesAsync_ReturnsNull_WhenCoordinatesAreInvalid(float latitude, float longitude)
         {
             var logger = new ListLogger<SelectionInputReader>();
             var monitor = new SelectionInputReader(
-                new ValueInteractiveInputStore(new SelectionInputValues(latitude, longitude, 100f)),
+                new ValueInteractiveUiStore(new SelectionInputValues(latitude, longitude, 100f)),
                 logger);
 
-            SelectionInputValues? result = await monitor.TryReadInteractiveInputValuesAsync(CreateInputBinding(), CancellationToken.None);
+            SelectionInputValues? result = await monitor.TryReadInteractiveUiValuesAsync(CreateInputBinding(), CancellationToken.None);
 
             _ = result.Should().BeNull();
             _ = logger.Entries.Should().BeEmpty();
@@ -100,7 +129,7 @@ namespace ThreeDTilesLink.Tests
         {
             var logger = new ListLogger<SelectionInputReader>();
             var monitor = new SelectionInputReader(
-                new ValueInteractiveInputStore(new SelectionInputValues(35.0f, 139.0f, 0f)),
+                new ValueInteractiveUiStore(new SelectionInputValues(35.0f, 139.0f, 0f)),
                 logger);
 
             SelectionInputSnapshot snapshot = await monitor.ReadAsync(CreateInputBinding(), CancellationToken.None);
@@ -134,67 +163,59 @@ namespace ThreeDTilesLink.Tests
             _ = range.Max.Should().Be(50d);
         }
 
-        private static InteractiveInputBinding CreateInputBinding()
+        private static InteractiveUiBinding CreateInputBinding()
         {
-            return new InteractiveInputBinding(
-                "lat",
-                "lat_alias",
-                "lon",
-                "lon_alias",
-                "range",
-                "range_alias",
-                "search",
-                "search_alias");
+            return new InteractiveUiBinding("binding");
         }
 
-        private sealed class ThrowingInteractiveInputStore(Exception? searchException, Exception? valuesException) : IInteractiveInputStore
+        private sealed class ThrowingInteractiveUiStore(Exception? searchException, Exception? valuesException) : IInteractiveUiStore
         {
             private readonly Exception? _searchException = searchException;
             private readonly Exception? _valuesException = valuesException;
 
-            public Task<InteractiveInputBinding> CreateInteractiveInputBindingAsync(CancellationToken cancellationToken)
+            public Task<InteractiveUiBinding> CreateInteractiveUiBindingAsync(CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }
 
-            public Task<SelectionInputValues?> ReadInteractiveInputValuesAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
+            public Task<SelectionInputValues?> ReadInteractiveUiValuesAsync(InteractiveUiBinding binding, CancellationToken cancellationToken)
             {
                 return _valuesException is null
                     ? Task.FromResult<SelectionInputValues?>(null)
                     : Task.FromException<SelectionInputValues?>(_valuesException);
             }
 
-            public Task<string?> ReadInteractiveInputSearchAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
+            public Task<string?> ReadInteractiveUiSearchAsync(InteractiveUiBinding binding, CancellationToken cancellationToken)
             {
                 return _searchException is null
                     ? Task.FromResult<string?>(null)
                     : Task.FromException<string?>(_searchException);
             }
 
-            public Task UpdateInteractiveInputCoordinatesAsync(InteractiveInputBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
+            public Task UpdateInteractiveUiCoordinatesAsync(InteractiveUiBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }
         }
 
-        private sealed class ValueInteractiveInputStore(SelectionInputValues values) : IInteractiveInputStore
+        private sealed class ValueInteractiveUiStore(SelectionInputValues values) : IInteractiveUiStore
         {
-            public Task<InteractiveInputBinding> CreateInteractiveInputBindingAsync(CancellationToken cancellationToken)
+            public Task<InteractiveUiBinding> CreateInteractiveUiBindingAsync(CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }
 
-            public Task<SelectionInputValues?> ReadInteractiveInputValuesAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
+            public Task<SelectionInputValues?> ReadInteractiveUiValuesAsync(InteractiveUiBinding binding, CancellationToken cancellationToken)
             {
                 return Task.FromResult<SelectionInputValues?>(values);
             }
 
-            public Task<string?> ReadInteractiveInputSearchAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
+            public Task<string?> ReadInteractiveUiSearchAsync(InteractiveUiBinding binding, CancellationToken cancellationToken)
             {
                 return Task.FromResult<string?>(null);
             }
 
-            public Task UpdateInteractiveInputCoordinatesAsync(InteractiveInputBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
+            public Task UpdateInteractiveUiCoordinatesAsync(InteractiveUiBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }

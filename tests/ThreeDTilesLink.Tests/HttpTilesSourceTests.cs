@@ -137,6 +137,38 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task FetchRootTilesetAsync_DoesNotShareCacheAcrossBearerTokenContexts_WhenApiKeyMatches()
+        {
+            using var handler = new RecordingHttpMessageHandler(
+                _ => CreateJsonResponse(
+                    "https://plateau.example.com/tiles/root.json?key=shared-key",
+                    """
+                    {
+                      "root": {
+                        "children": []
+                      }
+                    }
+                    """));
+            using var httpClient = new HttpClient(handler);
+            var parser = new TilesetParser();
+            var sut = new HttpTilesSource(httpClient, parser, new TileContentDecoder(parser, new B3dmGlbExtractor()));
+            var firstSource = new TileSourceOptions(
+                new Uri("https://plateau.example.com/tiles/root.json"),
+                new TileSourceAccess("shared-key", "first-token"));
+            var secondSource = new TileSourceOptions(
+                new Uri("https://plateau.example.com/tiles/root.json"),
+                new TileSourceAccess("shared-key", "second-token"));
+
+            _ = await sut.FetchRootTilesetAsync(firstSource, CancellationToken.None);
+            _ = await sut.FetchRootTilesetAsync(secondSource, CancellationToken.None);
+
+            _ = handler.Requests.Should().HaveCount(2);
+            _ = handler.Requests.Select(static request => request.Headers.Authorization!.Parameter)
+                .Should()
+                .Contain(["first-token", "second-token"]);
+        }
+
+        [Fact]
         public async Task FetchNodeContentAsync_DecodesB3dmPayloadToEmbeddedGlb()
         {
             byte[] glbBytes = [0x67, 0x6C, 0x54, 0x46, 0x02, 0x00, 0x00, 0x00];

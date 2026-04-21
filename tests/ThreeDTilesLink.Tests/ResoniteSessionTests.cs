@@ -443,7 +443,7 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task CreateInteractiveInputBindingAsync_UsesSingleBatchWithExplicitFieldReferences()
+        public async Task CreateInteractiveUiBindingAsync_UsesSingleBatchWithExplicitFieldReferences()
         {
             await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
             SetPrivateField(session, "_sessionRootSlotId", "slot_session_root");
@@ -462,7 +462,7 @@ namespace ThreeDTilesLink.Tests
                 }
             };
 
-            InteractiveInputBinding binding = await session.CreateInteractiveInputBindingAsync(CancellationToken.None);
+            ResoniteDynamicValueInteractiveUiBinding binding = await session.CreateResoniteDynamicValueInteractiveUiBindingAsync(CancellationToken.None);
 
             _ = capturedOperations.Should().NotBeNull();
             _ = capturedOperations.Should().HaveCount(12);
@@ -485,14 +485,14 @@ namespace ThreeDTilesLink.Tests
             _ = searchCopy.Data.Members["Source"].Should().BeOfType<Reference>().Which.TargetID.Should().Be(searchFieldId);
             _ = searchCopy.Data.Members["Target"].Should().BeOfType<Reference>().Which.TargetID.Should().Be(searchAliasFieldId);
 
-            _ = binding.LatitudeComponentId.Should().Be(latitudeVariable.Data.ID);
-            _ = binding.LatitudeAliasComponentId.Should().Be(latitudeAliasVariable.Data.ID);
-            _ = binding.SearchComponentId.Should().Be(searchVariable.Data.ID);
-            _ = binding.SearchAliasComponentId.Should().Be(searchAliasVariable.Data.ID);
+            _ = binding.LatitudeReadHandle.Should().Be(latitudeVariable.Data.ID);
+            _ = binding.LatitudeWriteHandle.Should().Be(latitudeAliasVariable.Data.ID);
+            _ = binding.SearchReadHandle.Should().Be(searchVariable.Data.ID);
+            _ = binding.SearchWriteHandle.Should().Be(searchAliasVariable.Data.ID);
         }
 
         [Fact]
-        public async Task CreateInteractiveInputBindingAsync_UsesBatchResponseEntityIds_WhenTheyDifferFromRequestedIds()
+        public async Task CreateInteractiveUiBindingAsync_UsesBatchResponseEntityIds_WhenTheyDifferFromRequestedIds()
         {
             await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
             SetPrivateField(session, "_sessionRootSlotId", "slot_session_root");
@@ -523,16 +523,16 @@ namespace ThreeDTilesLink.Tests
                 }
             };
 
-            InteractiveInputBinding binding = await session.CreateInteractiveInputBindingAsync(CancellationToken.None);
+            ResoniteDynamicValueInteractiveUiBinding binding = await session.CreateResoniteDynamicValueInteractiveUiBindingAsync(CancellationToken.None);
 
-            _ = binding.LatitudeComponentId.Should().Be("lat_actual");
-            _ = binding.LongitudeComponentId.Should().Be("lon_actual");
-            _ = binding.RangeComponentId.Should().Be("range_actual");
-            _ = binding.SearchComponentId.Should().Be("search_actual");
-            _ = binding.LatitudeAliasComponentId.Should().Be("lat_alias_actual");
-            _ = binding.LongitudeAliasComponentId.Should().Be("lon_alias_actual");
-            _ = binding.RangeAliasComponentId.Should().Be("range_alias_actual");
-            _ = binding.SearchAliasComponentId.Should().Be("search_alias_actual");
+            _ = binding.LatitudeReadHandle.Should().Be("lat_actual");
+            _ = binding.LongitudeReadHandle.Should().Be("lon_actual");
+            _ = binding.RangeReadHandle.Should().Be("range_actual");
+            _ = binding.SearchReadHandle.Should().Be("search_actual");
+            _ = binding.LatitudeWriteHandle.Should().Be("lat_alias_actual");
+            _ = binding.LongitudeWriteHandle.Should().Be("lon_alias_actual");
+            _ = binding.RangeWriteHandle.Should().Be("range_alias_actual");
+            _ = binding.SearchWriteHandle.Should().Be("search_alias_actual");
         }
 
         [Fact]

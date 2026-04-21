@@ -70,7 +70,7 @@ namespace ThreeDTilesLink.App
             services.TryAddSingleton<ISceneMetadataSink>(static provider => provider.GetRequiredService<ResoniteSession>());
             services.TryAddSingleton<IResoniteSession>(static provider => provider.GetRequiredService<ResoniteSession>());
             services.TryAddSingleton<IResoniteSessionMetadataPort>(static provider => provider.GetRequiredService<ResoniteSession>());
-            services.TryAddSingleton<IInteractiveInputStore>(static provider => provider.GetRequiredService<ResoniteSession>());
+            services.TryAddSingleton<IInteractiveUiStore>(static provider => CreateDefaultInteractiveUiStore(provider));
 
             _ = services.AddSingleton<ITileSelectionService>(provider => new TileSelectionService(
                 provider.GetRequiredService<ITilesSource>(),
@@ -107,6 +107,20 @@ namespace ThreeDTilesLink.App
                 MaxConnectionsPerServer = Math.Max(32, options.ContentWorkers * 4),
                 PooledConnectionLifetime = TimeSpan.FromMinutes(10)
             };
+        }
+
+        private static ResoniteDynamicValueInteractiveUiStore CreateDefaultInteractiveUiStore(IServiceProvider provider)
+        {
+            ArgumentNullException.ThrowIfNull(provider);
+
+            ISceneSession sceneSession = provider.GetRequiredService<ISceneSession>();
+            if (sceneSession is ResoniteSession resoniteSession)
+            {
+                return new ResoniteDynamicValueInteractiveUiStore(resoniteSession);
+            }
+
+            throw new InvalidOperationException(
+                $"No default interactive UI store is available for scene session type '{sceneSession.GetType().FullName}'. Register {nameof(IInteractiveUiStore)} explicitly when overriding {nameof(ISceneSession)}.");
         }
     }
 }

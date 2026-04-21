@@ -1,44 +1,43 @@
-using System.Net.WebSockets;
 using Microsoft.Extensions.Logging;
 using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
-using ThreeDTilesLink.Core.Resonite;
+using System.Net.WebSockets;
 
 namespace ThreeDTilesLink.Core.Pipeline
 {
     internal sealed partial class SelectionInputReader(
-        IInteractiveInputStore interactiveInputStore,
+        IInteractiveUiStore interactiveUiStore,
         ILogger<SelectionInputReader> logger)
     {
-        private readonly IInteractiveInputStore _interactiveInputStore = interactiveInputStore;
+        private readonly IInteractiveUiStore _interactiveUiStore = interactiveUiStore;
         private readonly ILogger<SelectionInputReader> _logger = logger;
 
-        internal async Task<SelectionInputSnapshot> ReadAsync(InteractiveInputBinding inputBinding, CancellationToken cancellationToken)
+        internal async Task<SelectionInputSnapshot> ReadAsync(InteractiveUiBinding inputBinding, CancellationToken cancellationToken)
         {
-            SelectionInputValues? rawValues = await TryReadRawInteractiveInputValuesAsync(inputBinding, cancellationToken).ConfigureAwait(false);
+            SelectionInputValues? rawValues = await TryReadRawInteractiveUiValuesAsync(inputBinding, cancellationToken).ConfigureAwait(false);
             SelectionInputValues? values = NormalizeInteractiveInputValues(rawValues);
-            string? searchText = await TryReadInteractiveInputSearchAsync(inputBinding, cancellationToken).ConfigureAwait(false);
+            string? searchText = await TryReadInteractiveUiSearchAsync(inputBinding, cancellationToken).ConfigureAwait(false);
             return new SelectionInputSnapshot(
                 searchText,
                 values,
                 HasInvalidValues: rawValues is not null && values is null);
         }
 
-        internal async Task<string?> TryReadInteractiveInputSearchAsync(InteractiveInputBinding inputBinding, CancellationToken cancellationToken)
+        internal async Task<string?> TryReadInteractiveUiSearchAsync(InteractiveUiBinding inputBinding, CancellationToken cancellationToken)
         {
             try
             {
-                return NormalizeSearchText(await _interactiveInputStore.ReadInteractiveInputSearchAsync(inputBinding, cancellationToken).ConfigureAwait(false));
+                return NormalizeSearchText(await _interactiveUiStore.ReadInteractiveUiSearchAsync(inputBinding, cancellationToken).ConfigureAwait(false));
             }
             catch (OperationCanceledException)
             {
                 throw;
             }
-            catch (ResoniteLinkDisconnectedException)
+            catch (InteractiveUiDisconnectedException)
             {
                 throw;
             }
-            catch (ResoniteLinkNoResponseException ex)
+            catch (InteractiveUiNoResponseException ex)
             {
                 Log.SearchReadNoResponse(_logger, ex);
                 return null;
@@ -65,27 +64,27 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        internal async Task<SelectionInputValues?> TryReadInteractiveInputValuesAsync(InteractiveInputBinding inputBinding, CancellationToken cancellationToken)
+        internal async Task<SelectionInputValues?> TryReadInteractiveUiValuesAsync(InteractiveUiBinding inputBinding, CancellationToken cancellationToken)
         {
-            SelectionInputValues? values = await TryReadRawInteractiveInputValuesAsync(inputBinding, cancellationToken).ConfigureAwait(false);
+            SelectionInputValues? values = await TryReadRawInteractiveUiValuesAsync(inputBinding, cancellationToken).ConfigureAwait(false);
             return NormalizeInteractiveInputValues(values);
         }
 
-        private async Task<SelectionInputValues?> TryReadRawInteractiveInputValuesAsync(InteractiveInputBinding inputBinding, CancellationToken cancellationToken)
+        private async Task<SelectionInputValues?> TryReadRawInteractiveUiValuesAsync(InteractiveUiBinding inputBinding, CancellationToken cancellationToken)
         {
             try
             {
-                return await _interactiveInputStore.ReadInteractiveInputValuesAsync(inputBinding, cancellationToken).ConfigureAwait(false);
+                return await _interactiveUiStore.ReadInteractiveUiValuesAsync(inputBinding, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 throw;
             }
-            catch (ResoniteLinkDisconnectedException)
+            catch (InteractiveUiDisconnectedException)
             {
                 throw;
             }
-            catch (ResoniteLinkNoResponseException ex)
+            catch (InteractiveUiNoResponseException ex)
             {
                 Log.ValuesReadNoResponse(_logger, ex);
                 return null;

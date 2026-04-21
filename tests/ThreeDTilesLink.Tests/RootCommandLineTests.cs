@@ -30,11 +30,11 @@ namespace ThreeDTilesLink.Tests
         [Fact]
         public void Parse_RoutesInteractiveSubcommand()
         {
-            CommandInvocation<RootCommandRoute> invocation = RootCommandLine.Parse(["interactive", "--resonite-port", "12000"]);
+            CommandInvocation<RootCommandRoute> invocation = RootCommandLine.Parse(["interactive", "--endpoint-port", "12000"]);
 
             _ = invocation.ShouldRun.Should().BeTrue();
             _ = invocation.Options!.Command.Should().Be(RootCommandKind.Interactive);
-            _ = invocation.Options.Arguments.Should().Equal("--resonite-port", "12000");
+            _ = invocation.Options.Arguments.Should().Equal("--endpoint-port", "12000");
         }
 
         [Fact]

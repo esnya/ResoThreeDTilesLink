@@ -7,7 +7,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 {
     internal sealed partial class InteractiveRunSupervisor
     {
-        private readonly IInteractiveInputStore _interactiveInputStore;
+        private readonly IInteractiveUiStore _interactiveUiStore;
         private readonly ICoordinateTransformer _coordinateTransformer;
         private readonly IGeoReferenceResolver _geoReferenceResolver;
         private readonly IClock _clock;
@@ -19,7 +19,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         public InteractiveRunSupervisor(
             ITileSelectionService tileRunCoordinator,
             ISceneSession sceneSession,
-            IInteractiveInputStore interactiveInputStore,
+            IInteractiveUiStore interactiveUiStore,
             ISearchResolver searchResolver,
             ICoordinateTransformer coordinateTransformer,
             IGeoReferenceResolver geoReferenceResolver,
@@ -28,7 +28,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             ILoggerFactory loggerFactory,
             ILogger<InteractiveRunSupervisor> logger)
         {
-            _interactiveInputStore = interactiveInputStore;
+            _interactiveUiStore = interactiveUiStore;
             _coordinateTransformer = coordinateTransformer;
             _geoReferenceResolver = geoReferenceResolver;
             _clock = clock;
@@ -39,7 +39,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 sceneSession,
                 loggerFactory.CreateLogger<InteractiveSessionManager>());
             _searchCoordinator = new InteractiveSearchCoordinator(
-                interactiveInputStore,
+                interactiveUiStore,
                 searchResolver,
                 clock,
                 loggerFactory.CreateLogger<InteractiveSearchCoordinator>());
@@ -54,8 +54,8 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                Log.ConnectingToResonite(_logger, options.ResoniteHost, options.ResonitePort);
-                await _sessionManager.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
+                Log.ConnectingToInteractiveEndpoint(_logger, options.EndpointHost, options.EndpointPort);
+                await _sessionManager.ConnectAsync(options.EndpointHost, options.EndpointPort, cancellationToken).ConfigureAwait(false);
                 state = state with { Connected = true };
                 state = await InitializeInputBindingAsync(state, cancellationToken).ConfigureAwait(false);
 
@@ -77,8 +77,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             InteractiveLoopState state,
             CancellationToken cancellationToken)
         {
-            InteractiveInputBinding inputBinding = await _interactiveInputStore.CreateInteractiveInputBindingAsync(cancellationToken).ConfigureAwait(false);
-            Log.InteractiveInputAttached(_logger);
+            InteractiveUiBinding inputBinding = await _interactiveUiStore.CreateInteractiveUiBindingAsync(cancellationToken).ConfigureAwait(false);
+            Log.InteractiveUiAttached(_logger);
             return state with { InputBinding = inputBinding };
         }
 
@@ -158,14 +158,14 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         internal static partial class Log
         {
-            [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Connecting to Resonite Link at {Host}:{Port}.")]
-            public static partial void ConnectingToResonite(ILogger logger, string host, int port);
+            [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Connecting to interactive endpoint at {Host}:{Port}.")]
+            public static partial void ConnectingToInteractiveEndpoint(ILogger logger, string host, int port);
 
             [LoggerMessage(
                 EventId = 2,
                 Level = LogLevel.Information,
-                Message = "Interactive input bindings attached on the session root slot: Latitude, Longitude, Range, Search.")]
-            public static partial void InteractiveInputAttached(ILogger logger);
+                Message = "Interactive UI bindings attached for Latitude, Longitude, Range, and Search.")]
+            public static partial void InteractiveUiAttached(ILogger logger);
 
             [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Search query changed: {Query}")]
             public static partial void SearchQueryChanged(ILogger logger, string query);
@@ -213,7 +213,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             [LoggerMessage(EventId = 10, Level = LogLevel.Warning, Message = "Run finished with error while superseding.")]
             public static partial void RunSupersededFailed(ILogger logger, Exception exception);
 
-            [LoggerMessage(EventId = 12, Level = LogLevel.Warning, Message = "Failed to disconnect Resonite Link cleanly.")]
+            [LoggerMessage(EventId = 12, Level = LogLevel.Warning, Message = "Failed to disconnect interactive endpoint cleanly.")]
             public static partial void DisconnectFailed(ILogger logger, Exception exception);
 
             [LoggerMessage(EventId = 13, Level = LogLevel.Warning, Message = "Search query ignored because no search API key is configured: query={Query}")]

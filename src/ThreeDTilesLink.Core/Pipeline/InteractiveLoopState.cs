@@ -17,7 +17,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         Dictionary<string, RetainedTileState> RetainedTiles,
         Dictionary<string, RetainedTileState> CleanupDebtTiles,
         InteractiveRunCheckpoint? Checkpoint,
-        InteractiveInputBinding? InputBinding,
+        InteractiveUiBinding? InputBinding,
         SelectionInputValues? LastObservedValues,
         SelectionInputValues? PendingValues,
         DateTimeOffset? PendingValuesChangedAt,

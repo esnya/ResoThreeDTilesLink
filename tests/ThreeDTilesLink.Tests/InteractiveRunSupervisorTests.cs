@@ -15,7 +15,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_StartsRun_WhenSelectionInputValuesChange()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SelectionInputValues = new Queue<SelectionInputValues?>([new SelectionInputValues(35f, 139f, 400f), new SelectionInputValues(35f, 139f, 400f)])
             };
@@ -38,7 +38,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_KeepsPlacementReference_WhenRangesOverlap()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SelectionInputValues = new Queue<SelectionInputValues?>(
                 [
@@ -70,7 +70,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_ResetsPlacementReference_WhenLocationsDoNotOverlap()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SelectionInputValues = new Queue<SelectionInputValues?>(
                 [
@@ -103,7 +103,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_RangeChange_KeepsRetainedTilesButDropsCheckpoint()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SelectionInputValues = new Queue<SelectionInputValues?>(
                 [
@@ -154,7 +154,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_CancellationDoesNotRemoveAnySlots()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SelectionInputValues = new Queue<SelectionInputValues?>([new SelectionInputValues(35f, 139f, 400f), new SelectionInputValues(35f, 139f, 400f)])
             };
@@ -174,7 +174,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_InvalidInput_DoesNotCancelActiveRun_OrStartReplacementRun()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SelectionInputValues = new Queue<SelectionInputValues?>(
                 [
@@ -219,7 +219,7 @@ namespace ThreeDTilesLink.Tests
             {
                 ThrowOnCanceledDisconnect = true
             };
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SelectionInputValues = new Queue<SelectionInputValues?>([new SelectionInputValues(35f, 139f, 400f), new SelectionInputValues(35f, 139f, 400f)])
             };
@@ -241,7 +241,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_SupersededOverlapRun_CarriesPartialVisibleTilesIntoNextRun()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SelectionInputValues = new Queue<SelectionInputValues?>(
                 [
@@ -301,7 +301,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_SupersedesActiveRun_WithoutWaitingForThrottleWindow()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SelectionInputValues = new Queue<SelectionInputValues?>(
                 [
@@ -357,7 +357,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_DropsRetainedTilesAndCheckpoint_WhenLocationsDoNotOverlap()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SelectionInputValues = new Queue<SelectionInputValues?>(
                 [
@@ -406,7 +406,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_KeepsRetainedTilesButDropsCheckpoint_WhenRangeChangesAtSameLocation()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SelectionInputValues = new Queue<SelectionInputValues?>(
                 [
@@ -459,7 +459,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_IgnoresSearchWithoutApiKey()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SearchValues = new Queue<string?>(["Shibuya", "Shibuya"]),
                 SelectionInputValues = new Queue<SelectionInputValues?>([null, null])
@@ -481,7 +481,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_WaitsForWatchToReflectResolvedSearchCoordinates_BeforeStartingRun()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SearchValues = new Queue<string?>(["Asakusa", "Asakusa", "Asakusa", "Asakusa"]),
                 SelectionInputValues = new Queue<SelectionInputValues?>(
@@ -517,7 +517,7 @@ namespace ThreeDTilesLink.Tests
         {
             var session = new FakeSession();
             var reflectedValues = new SelectionInputValues(35.7147651f, 139.7966553f, 400f);
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SearchValues = new Queue<string?>(["Asakusa", "Asakusa", "Asakusa", "Asakusa"]),
                 SelectionInputValues = new Queue<SelectionInputValues?>(
@@ -550,9 +550,9 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_Throws_WhenWatchSearchReadDetectsDisconnectedSession()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
-                SearchReadException = new ResoniteLinkDisconnectedException()
+                SearchReadException = new InteractiveUiDisconnectedException()
             };
             var supervisor = CreateSupervisor(
                 new FakeTileRunCoordinator(static _ => { }),
@@ -563,7 +563,7 @@ namespace ThreeDTilesLink.Tests
 
             Func<Task> act = () => supervisor.RunAsync(CreateRequest(apiKey: string.Empty), CancellationToken.None);
 
-            _ = await act.Should().ThrowAsync<ResoniteLinkDisconnectedException>();
+            _ = await act.Should().ThrowAsync<InteractiveUiDisconnectedException>();
             _ = session.DisconnectCalls.Should().Be(1);
         }
 
@@ -571,7 +571,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_Disconnects_WhenInputBindingInitializationFailsAfterConnect()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 CreateBindingException = new InvalidOperationException("binding failed")
             };
@@ -593,7 +593,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_PropagatesCancellation_WhenSearchResolutionIsCanceled()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SearchValues = new Queue<string?>(["Asakusa", "Asakusa"]),
                 SelectionInputValues = new Queue<SelectionInputValues?>([null, null])
@@ -616,7 +616,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_RetriesSameSearchText_AfterTransientFailure()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SearchValues = new Queue<string?>(
                 [
@@ -653,7 +653,7 @@ namespace ThreeDTilesLink.Tests
         public async Task RunAsync_RequeuesSearch_WhenWatchCoordinateWritebackFails()
         {
             var session = new FakeSession();
-            var watchStore = new FakeInteractiveInputStore
+            var watchStore = new FakeInteractiveUiStore
             {
                 SearchValues = new Queue<string?>(["Asakusa", "Asakusa", "Asakusa"]),
                 SelectionInputValues = new Queue<SelectionInputValues?>([null, null, null]),
@@ -680,7 +680,7 @@ namespace ThreeDTilesLink.Tests
         private static InteractiveRunSupervisor CreateSupervisor(
             FakeTileRunCoordinator coordinator,
             FakeSession session,
-            FakeInteractiveInputStore watchStore,
+            FakeInteractiveUiStore watchStore,
             FakeSearchResolver searchResolver,
             FakeClock clock,
             ICoordinateTransformer? coordinateTransformer = null)
@@ -824,7 +824,7 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
-        private sealed class FakeInteractiveInputStore : IInteractiveInputStore
+        private sealed class FakeInteractiveUiStore : IInteractiveUiStore
         {
             public Queue<SelectionInputValues?> SelectionInputValues { get; init; } = new();
             public Queue<string?> SearchValues { get; init; } = new();
@@ -834,25 +834,17 @@ namespace ThreeDTilesLink.Tests
             public Exception? SelectionInputValuesReadException { get; init; }
             public Exception? SearchReadException { get; init; }
 
-            public Task<InteractiveInputBinding> CreateInteractiveInputBindingAsync(CancellationToken cancellationToken)
+            public Task<InteractiveUiBinding> CreateInteractiveUiBindingAsync(CancellationToken cancellationToken)
             {
                 if (CreateBindingException is not null)
                 {
                     throw CreateBindingException;
                 }
 
-                return Task.FromResult(new InteractiveInputBinding(
-                    "lat",
-                    "lat_alias",
-                    "lon",
-                    "lon_alias",
-                    "range",
-                    "range_alias",
-                    "search",
-                    "search_alias"));
+                return Task.FromResult(new InteractiveUiBinding("binding"));
             }
 
-            public Task<SelectionInputValues?> ReadInteractiveInputValuesAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
+            public Task<SelectionInputValues?> ReadInteractiveUiValuesAsync(InteractiveUiBinding binding, CancellationToken cancellationToken)
             {
                 if (SelectionInputValuesReadException is not null)
                 {
@@ -862,7 +854,7 @@ namespace ThreeDTilesLink.Tests
                 return Task.FromResult(SelectionInputValues.Count > 0 ? SelectionInputValues.Dequeue() : null);
             }
 
-            public Task<string?> ReadInteractiveInputSearchAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
+            public Task<string?> ReadInteractiveUiSearchAsync(InteractiveUiBinding binding, CancellationToken cancellationToken)
             {
                 if (SearchReadException is not null)
                 {
@@ -872,7 +864,7 @@ namespace ThreeDTilesLink.Tests
                 return Task.FromResult(SearchValues.Count > 0 ? SearchValues.Dequeue() : null);
             }
 
-            public Task UpdateInteractiveInputCoordinatesAsync(InteractiveInputBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
+            public Task UpdateInteractiveUiCoordinatesAsync(InteractiveUiBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
             {
                 if (UpdateCoordinateFailures.Count > 0)
                 {

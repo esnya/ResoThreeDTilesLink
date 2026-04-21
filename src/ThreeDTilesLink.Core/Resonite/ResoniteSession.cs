@@ -18,7 +18,7 @@ namespace ThreeDTilesLink.Core.Resonite
         ResoniteDestinationPolicyOptions destinationPolicyOptions,
         ILogger<ResoniteSession> logger,
         Func<LinkInterface>? linkInterfaceFactory = null,
-        int assetImportWorkers = 1) : IResoniteSession, IResoniteSessionMetadataPort, IInteractiveInputStore, IAsyncDisposable
+        int assetImportWorkers = 1) : IResoniteSession, IResoniteSessionMetadataPort, IAsyncDisposable
     {
         private static partial class Log
         {
@@ -347,7 +347,7 @@ namespace ThreeDTilesLink.Core.Resonite
             return await CreateSlotAsync(name, _sessionRootSlotId, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task<InteractiveInputBinding> CreateInteractiveInputBindingAsync(CancellationToken cancellationToken)
+        public async Task<ResoniteDynamicValueInteractiveUiBinding> CreateResoniteDynamicValueInteractiveUiBindingAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -464,7 +464,7 @@ namespace ThreeDTilesLink.Core.Resonite
             string searchComponentId = ResolveCreatedEntityId(response.Responses[3], searchBinding.ComponentId);
             string searchAliasComponentId = ResolveCreatedEntityId(response.Responses[10], searchAliasBinding.ComponentId);
 
-            return new InteractiveInputBinding(
+            return new ResoniteDynamicValueInteractiveUiBinding(
                 latitudeComponentId,
                 latitudeAliasComponentId,
                 longitudeComponentId,
@@ -475,13 +475,13 @@ namespace ThreeDTilesLink.Core.Resonite
                 searchAliasComponentId);
         }
 
-        public async Task<SelectionInputValues?> ReadInteractiveInputValuesAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
+        public async Task<SelectionInputValues?> ReadResoniteDynamicValueInteractiveUiValuesAsync(ResoniteDynamicValueInteractiveUiBinding binding, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(binding);
 
-            float lat = await ReadNumericMemberAsFloatAsync(binding.LatitudeComponentId, DynamicValueVariableValueMemberName, cancellationToken).ConfigureAwait(false);
-            float lon = await ReadNumericMemberAsFloatAsync(binding.LongitudeComponentId, DynamicValueVariableValueMemberName, cancellationToken).ConfigureAwait(false);
-            float range = await ReadNumericMemberAsFloatAsync(binding.RangeComponentId, DynamicValueVariableValueMemberName, cancellationToken).ConfigureAwait(false);
+            float lat = await ReadNumericMemberAsFloatAsync(binding.LatitudeReadHandle, DynamicValueVariableValueMemberName, cancellationToken).ConfigureAwait(false);
+            float lon = await ReadNumericMemberAsFloatAsync(binding.LongitudeReadHandle, DynamicValueVariableValueMemberName, cancellationToken).ConfigureAwait(false);
+            float range = await ReadNumericMemberAsFloatAsync(binding.RangeReadHandle, DynamicValueVariableValueMemberName, cancellationToken).ConfigureAwait(false);
 
             if (!float.IsFinite(lat) || !float.IsFinite(lon) || !float.IsFinite(range))
             {
@@ -491,14 +491,14 @@ namespace ThreeDTilesLink.Core.Resonite
             return new SelectionInputValues(lat, lon, range);
         }
 
-        public async Task<string?> ReadInteractiveInputSearchAsync(InteractiveInputBinding binding, CancellationToken cancellationToken)
+        public async Task<string?> ReadResoniteDynamicValueInteractiveUiSearchAsync(ResoniteDynamicValueInteractiveUiBinding binding, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(binding);
 
-            return await ReadStringMemberAsync(binding.SearchComponentId, DynamicValueVariableValueMemberName, cancellationToken).ConfigureAwait(false);
+            return await ReadStringMemberAsync(binding.SearchReadHandle, DynamicValueVariableValueMemberName, cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task UpdateInteractiveInputCoordinatesAsync(InteractiveInputBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
+        public async Task UpdateResoniteDynamicValueInteractiveUiCoordinatesAsync(ResoniteDynamicValueInteractiveUiBinding binding, double latitude, double longitude, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(binding);
 
@@ -510,16 +510,16 @@ namespace ThreeDTilesLink.Core.Resonite
             }
 
             await UpdateMirroredNumericMemberAsync(
-                binding.LatitudeComponentId,
+                binding.LatitudeReadHandle,
                 DynamicValueVariableValueMemberName,
-                binding.LatitudeAliasComponentId,
+                binding.LatitudeWriteHandle,
                 DynamicValueVariableValueMemberName,
                 lat,
                 cancellationToken).ConfigureAwait(false);
             await UpdateMirroredNumericMemberAsync(
-                binding.LongitudeComponentId,
+                binding.LongitudeReadHandle,
                 DynamicValueVariableValueMemberName,
-                binding.LongitudeAliasComponentId,
+                binding.LongitudeWriteHandle,
                 DynamicValueVariableValueMemberName,
                 lon,
                 cancellationToken).ConfigureAwait(false);

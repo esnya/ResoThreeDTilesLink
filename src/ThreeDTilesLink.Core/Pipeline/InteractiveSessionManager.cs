@@ -217,8 +217,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                     options.Traversal.DetailTargetM,
                     options.Traversal.BootstrapRangeMultiplier),
                 new SceneOutputOptions(
-                    options.ResoniteHost,
-                    options.ResonitePort,
+                    options.EndpointHost,
+                    options.EndpointPort,
                     false,
                     ManageConnection: false),
                 options.TileSource);
