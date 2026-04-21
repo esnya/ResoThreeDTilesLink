@@ -639,6 +639,45 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public async Task AddThreeDTilesLinkRuntime_RequiresExplicitMetadataSink_WhenSceneSessionDoesNotProvideIt()
+        {
+            var services = new ServiceCollection();
+            _ = services.AddLogging();
+            var runtimeOptions = new StreamCommandOptions(
+                35.65858d,
+                139.745433d,
+                20d,
+                60d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                false,
+                LogLevel.Information);
+            var tileSource = new TileSourceOptions(
+                new Uri("https://plateau.example.com/root.json"),
+                new TileSourceAccess(null, null));
+            var fakeSceneSession = new PreRegisteredSceneSession();
+
+            _ = services.AddSingleton<ISceneSession>(fakeSceneSession);
+            _ = services.AddThreeDTilesLinkRuntime(
+                runtimeOptions,
+                tileSource,
+                ResoniteDestinationPolicyOptions.CreateDefault(),
+                new GenericTileLicenseCreditPolicy(),
+                new SearchOptions(null));
+            await using ServiceProvider provider = services.BuildServiceProvider();
+
+            Func<ISceneMetadataSink> act = () => provider.GetRequiredService<ISceneMetadataSink>();
+
+            _ = act.Should().Throw<InvalidOperationException>()
+                .WithMessage("*Register ISceneMetadataSink explicitly when overriding ISceneSession*");
+        }
+
+        [Fact]
         public async Task Program_RunAsync_LoadsParentDotEnvBeforeHostConfiguration()
         {
             string tempRoot = Path.Combine(Path.GetTempPath(), $"ThreeDTilesLink.Tests.{Guid.NewGuid():N}");

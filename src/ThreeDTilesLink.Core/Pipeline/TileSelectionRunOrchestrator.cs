@@ -631,7 +631,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 fact.NestedStatus = ContentDiscoveryStatus.Unrequested;
             }
-            else if (fact.Tile.ContentKind == TileContentKind.Glb &&
+            else if (fact.Tile.ContentKind.IsRenderable() &&
                      fact.PrepareStatus == ContentDiscoveryStatus.InFlight)
             {
                 fact.PrepareStatus = ContentDiscoveryStatus.Unrequested;

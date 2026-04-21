@@ -96,7 +96,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                         break;
 
-                    case TileContentKind.Glb:
+                    case var renderableKind when renderableKind.IsRenderable():
                         if (availablePrepareSlots == 0)
                         {
                             break;
@@ -670,7 +670,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 return cached;
             }
 
-            if (node.Fact.Tile.ContentKind == TileContentKind.Glb)
+            if (node.Fact.Tile.ContentKind.IsRenderable())
             {
                 ReplacementBranchRequirement requirement = selectedStableIds.Contains(node.StableId)
                     ? new(
@@ -826,7 +826,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         private static PlanningNode[] GetRenderableFrontierNodes(PlanningNode anchor)
         {
             var frontier = new List<PlanningNode>();
-            if (anchor.Fact.Tile.ContentKind == TileContentKind.Glb)
+            if (anchor.Fact.Tile.ContentKind.IsRenderable())
             {
                 frontier.Add(anchor);
             }
@@ -940,7 +940,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         private static PlanningNode? FindFirstRenderableNode(PlanningNode node)
         {
-            if (node.Fact.Tile.ContentKind == TileContentKind.Glb)
+            if (node.Fact.Tile.ContentKind.IsRenderable())
             {
                 return node;
             }

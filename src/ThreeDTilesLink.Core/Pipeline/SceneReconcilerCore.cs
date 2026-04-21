@@ -558,10 +558,10 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             int pendingDiscovery = facts.Branches.Values.Count(fact =>
                 (fact.Tile.ContentKind == TileContentKind.Json && fact.NestedStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight) ||
-                (fact.Tile.ContentKind == TileContentKind.Glb && desiredView.CandidateStableIds.Contains(fact.Tile.StableId!) &&
+                (fact.Tile.ContentKind.IsRenderable() && desiredView.CandidateStableIds.Contains(fact.Tile.StableId!) &&
                  fact.PrepareStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight));
             int pendingPrepared = facts.Branches.Values.Count(fact =>
-                fact.Tile.ContentKind == TileContentKind.Glb &&
+                fact.Tile.ContentKind.IsRenderable() &&
                 desiredView.CandidateStableIds.Contains(fact.Tile.StableId!) &&
                 fact.PreparedContent is not null &&
                 fact.PrepareStatus == ContentDiscoveryStatus.Ready &&

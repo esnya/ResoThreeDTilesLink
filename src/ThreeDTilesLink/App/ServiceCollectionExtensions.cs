@@ -67,7 +67,7 @@ namespace ThreeDTilesLink.App
                 provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ResoniteSession>>(),
                 assetImportWorkers: runtimeOptions.ResoniteSendWorkers));
             services.TryAddSingleton<ISceneSession>(static provider => provider.GetRequiredService<ResoniteSession>());
-            services.TryAddSingleton<ISceneMetadataSink>(static provider => provider.GetRequiredService<ResoniteSession>());
+            services.TryAddSingleton<ISceneMetadataSink>(static provider => CreateDefaultSceneMetadataSink(provider));
             services.TryAddSingleton<IResoniteSession>(static provider => provider.GetRequiredService<ResoniteSession>());
             services.TryAddSingleton<IResoniteSessionMetadataPort>(static provider => provider.GetRequiredService<ResoniteSession>());
             services.TryAddSingleton<IInteractiveUiStore>(static provider => CreateDefaultInteractiveUiStore(provider));
@@ -121,6 +121,20 @@ namespace ThreeDTilesLink.App
 
             throw new InvalidOperationException(
                 $"No default interactive UI store is available for scene session type '{sceneSession.GetType().FullName}'. Register {nameof(IInteractiveUiStore)} explicitly when overriding {nameof(ISceneSession)}.");
+        }
+
+        private static ISceneMetadataSink CreateDefaultSceneMetadataSink(IServiceProvider provider)
+        {
+            ArgumentNullException.ThrowIfNull(provider);
+
+            ISceneSession sceneSession = provider.GetRequiredService<ISceneSession>();
+            if (sceneSession is ISceneMetadataSink metadataSink)
+            {
+                return metadataSink;
+            }
+
+            throw new InvalidOperationException(
+                $"No default scene metadata sink is available for scene session type '{sceneSession.GetType().FullName}'. Register {nameof(ISceneMetadataSink)} explicitly when overriding {nameof(ISceneSession)}.");
         }
     }
 }

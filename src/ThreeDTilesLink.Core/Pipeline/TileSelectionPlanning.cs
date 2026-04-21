@@ -36,7 +36,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public int CompleteSendFailureCount { get; set; }
 
-        public bool HasRenderable => Tile.ContentKind == TileContentKind.Glb;
+        public bool HasRenderable => Tile.ContentKind.IsRenderable();
 
         public bool CanRetryCompleteSendFailure => CompleteSendFailureCount <= MaxCompleteSendRetries;
     }

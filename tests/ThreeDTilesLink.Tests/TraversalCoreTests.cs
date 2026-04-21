@@ -563,6 +563,27 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
+        public void PlanDiscovery_B3dmLeaf_SchedulesPrepare()
+        {
+            TraversalCore core = CreateCore(_ =>
+            [
+                CreateTile("p", "https://example.com/p.json", depth: 0, parentTileId: null, hasChildren: true, span: 120d),
+                CreateTile("leaf", "https://example.com/leaf.b3dm", depth: 1, parentTileId: "p", hasChildren: false, span: 40d)
+            ]);
+
+            DiscoveryFacts facts = core.Initialize(CreateRootTileset(), CreateRequest(dryRun: false, rangeM: 60d), interactive: null);
+            WriterState writerState = new();
+
+            List<DiscoveryWorkItem> work = core.PlanDiscovery(
+                facts,
+                writerState.CreateSelectionState(),
+                availableNestedSlots: 1,
+                availablePrepareSlots: 1);
+
+            _ = work.OfType<PrepareTileWorkItem>().Should().ContainSingle().Which.Tile.TileId.Should().Be("leaf");
+        }
+
+        [Fact]
         public void PlanDiscovery_VisibleDescendantStillSchedulesCoverageParent_WhenRangeExpansionNeedsSiblingBranch()
         {
             TraversalCore core = CreateCore(_ =>
@@ -1368,7 +1389,11 @@ namespace ThreeDTilesLink.Tests
                 Matrix4x4d.Identity,
                 depth,
                 parentTileId,
-                contentUri.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? TileContentKind.Json : TileContentKind.Glb,
+                contentUri.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                    ? TileContentKind.Json
+                    : contentUri.EndsWith(".b3dm", StringComparison.OrdinalIgnoreCase)
+                        ? TileContentKind.B3dm
+                        : TileContentKind.Glb,
                 hasChildren,
                 span,
                 span,
