@@ -41,7 +41,6 @@ namespace ThreeDTilesLink.App
             _ = services.AddSingleton<ResoniteReconcilerCore>();
             _ = services.AddSingleton<IGlbMeshExtractor, GlbMeshExtractor>();
             _ = services.AddSingleton<IMeshPlacementService, MeshPlacementService>();
-            _ = services.AddSingleton<IContentProcessor, TileContentProcessor>();
             _ = services.AddSingleton<ISearchResolver, SearchResolver>();
             _ = services.AddSingleton<IClock, SystemClock>();
             _ = services.AddSingleton<SelectionInputReader>();
@@ -70,7 +69,7 @@ namespace ThreeDTilesLink.App
                 provider.GetRequiredService<ITilesSource>(),
                 provider.GetRequiredService<TraversalCore>(),
                 provider.GetRequiredService<ResoniteReconcilerCore>(),
-                provider.GetRequiredService<IContentProcessor>(),
+                provider.GetRequiredService<IGlbMeshExtractor>(),
                 provider.GetRequiredService<IMeshPlacementService>(),
                 provider.GetRequiredService<IResoniteSession>(),
                 provider.GetRequiredService<IResoniteSessionMetadataPort>(),

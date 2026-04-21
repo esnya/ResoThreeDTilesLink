@@ -56,7 +56,6 @@ namespace ThreeDTilesLink
             }
 
             _ = builder.Services.AddSingleton(registration.OptionsType, options);
-            _ = builder.Services.AddSingleton(options);
             _ = builder.Services.AddSingleton(output);
             _ = builder.Services.AddSingleton<CommandCompletion>();
             _ = builder.Services.AddThreeDTilesLinkRuntime(
@@ -73,30 +72,49 @@ namespace ThreeDTilesLink
         {
             ArgumentNullException.ThrowIfNull(configuration);
 
+            Uri googleRootTilesetUri = new("https://tile.googleapis.com/v1/3dtiles/root.json");
+            Uri googleFileSchemeBaseUri = new("https://tile.googleapis.com/");
             string? sharedGoogleApiKey = configuration["GoogleMaps:ApiKey"] ?? configuration["GOOGLE_MAPS_API_KEY"];
             string[] inheritedQueryParameters = ReadList(
                 configuration,
                 "TileSource:InheritedQueryParameters",
                 "TILE_SOURCE_INHERITED_QUERY_PARAMETERS",
                 "session");
-
-            var configured = new TileSourceConfigurationOptions
+            string rootTilesetUriText = configuration["TileSource:RootTilesetUri"] ??
+                configuration["TILE_SOURCE_ROOT_TILESET_URI"] ??
+                googleRootTilesetUri.AbsoluteUri;
+            if (!Uri.TryCreate(rootTilesetUriText, UriKind.Absolute, out Uri? rootTilesetUri))
             {
-                RootTilesetUri = configuration["TileSource:RootTilesetUri"] ??
-                    configuration["TILE_SOURCE_ROOT_TILESET_URI"] ??
-                    TileSourceDefaults.GoogleRootTilesetUri.AbsoluteUri,
-                ApiKey = configuration["TileSource:ApiKey"] ??
+                throw new InvalidOperationException($"Tile source root URI must be absolute: {rootTilesetUriText}");
+            }
+
+            string? fileSchemeBaseUriText = configuration["TileSource:FileSchemeBaseUri"] ??
+                configuration["TILE_SOURCE_FILE_SCHEME_BASE_URI"] ??
+                googleFileSchemeBaseUri.AbsoluteUri;
+            Uri? fileSchemeBaseUri = null;
+            if (!string.IsNullOrWhiteSpace(fileSchemeBaseUriText))
+            {
+                if (!Uri.TryCreate(fileSchemeBaseUriText, UriKind.Absolute, out fileSchemeBaseUri))
+                {
+                    throw new InvalidOperationException($"Tile source file-scheme base URI must be absolute: {fileSchemeBaseUriText}");
+                }
+            }
+
+            string[] normalizedInheritedQueryParameters = inheritedQueryParameters
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Select(static value => value.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            return new TileSourceOptions(
+                rootTilesetUri,
+                new TileSourceAccess(
+                    configuration["TileSource:ApiKey"] ??
                     configuration["TILE_SOURCE_API_KEY"] ??
                     sharedGoogleApiKey,
-                BearerToken = configuration["TileSource:BearerToken"] ??
-                    configuration["TILE_SOURCE_BEARER_TOKEN"],
-                FileSchemeBaseUri = configuration["TileSource:FileSchemeBaseUri"] ??
-                    configuration["TILE_SOURCE_FILE_SCHEME_BASE_URI"] ??
-                    TileSourceDefaults.GoogleFileSchemeBaseUri.AbsoluteUri,
-                InheritedQueryParameters = inheritedQueryParameters
-            };
-
-            return configured.ToModel();
+                    configuration["TileSource:BearerToken"] ??
+                    configuration["TILE_SOURCE_BEARER_TOKEN"]),
+                new TileSourceContentLinkOptions(fileSchemeBaseUri, normalizedInheritedQueryParameters));
         }
 
         private static SearchOptions BuildSearchOptions(

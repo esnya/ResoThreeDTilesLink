@@ -14,7 +14,7 @@ namespace ThreeDTilesLink.Core.Models
         internal static TileSourceContentLinkOptions CreateGoogleDefaults()
         {
             return new TileSourceContentLinkOptions(
-                TileSourceDefaults.GoogleFileSchemeBaseUri,
+                new Uri("https://tile.googleapis.com/"),
                 ["session"]);
         }
     }

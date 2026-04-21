@@ -1848,7 +1848,7 @@ namespace ThreeDTilesLink.Tests
                 tilesSource,
                 traversalCore,
                 new ResoniteReconcilerCore(),
-                new TileContentProcessor(extractor ?? new FakeExtractor()),
+                extractor ?? new FakeExtractor(),
                 new MeshPlacementService(transformer),
                 session,
                 metadataPort ?? session,

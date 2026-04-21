@@ -11,7 +11,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         ITilesSource tilesSource,
         TraversalCore traversalCore,
         ResoniteReconcilerCore reconcilerCore,
-        IContentProcessor contentProcessor,
+        IGlbMeshExtractor glbMeshExtractor,
         IMeshPlacementService meshPlacementService,
         IResoniteSession resoniteSession,
         IResoniteSessionMetadataPort sessionMetadataPort,
@@ -23,7 +23,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly ITilesSource _tilesSource = tilesSource;
         private readonly TraversalCore _traversalCore = traversalCore;
         private readonly ResoniteReconcilerCore _reconcilerCore = reconcilerCore;
-        private readonly IContentProcessor _contentProcessor = contentProcessor;
+        private readonly IGlbMeshExtractor _glbMeshExtractor = glbMeshExtractor;
         private readonly IMeshPlacementService _meshPlacementService = meshPlacementService;
         private readonly IResoniteSession _resoniteSession = resoniteSession;
         private readonly IResoniteSessionMetadataPort _sessionMetadataPort = sessionMetadataPort;
@@ -737,25 +737,27 @@ namespace ThreeDTilesLink.Core.Pipeline
                 FetchedNodeContent fetchedContent = await _tilesSource
                     .FetchNodeContentAsync(work.Tile.ContentUri, request.Source, cancellationToken)
                     .ConfigureAwait(false);
-                ContentProcessResult content = await _contentProcessor
-                    .ProcessAsync(fetchedContent, cancellationToken)
-                    .ConfigureAwait(false);
-                return content switch
+                switch (fetchedContent)
                 {
-                    NestedTilesetContentProcessResult nested => new NestedTilesetDiscovered(work.Tile, nested.Tileset),
-                    RenderableContentProcessResult renderable => new TilePrepared(
-                        work.Tile,
-                        new PreparedTileContent(
+                    case NestedTilesetFetchedContent nested:
+                        return new NestedTilesetDiscovered(work.Tile, nested.Tileset);
+                    case GlbFetchedContent glb:
+                        GlbExtractResult extracted = ExtractGlb(glb.GlbBytes);
+                        return new TilePrepared(
                             work.Tile,
-                            MeasurePlacement(() => _meshPlacementService.Place(
+                            new PreparedTileContent(
                                 work.Tile,
-                                renderable.Meshes,
-                                request.PlacementReference,
-                                request.Output.MeshParentSlotId)),
-                            renderable.AssetCopyright)),
-                    SkippedContentProcessResult skipped => new DiscoverySkipped(work.Tile, skipped.Reason),
-                    _ => throw new InvalidOperationException("Unsupported content process result: " + content.GetType().Name)
-                };
+                                MeasurePlacement(() => _meshPlacementService.Place(
+                                    work.Tile,
+                                    extracted.Meshes,
+                                    request.PlacementReference,
+                                    request.Output.MeshParentSlotId)),
+                                extracted.AssetCopyright));
+                    case UnsupportedFetchedContent unsupported:
+                        return new DiscoverySkipped(work.Tile, unsupported.Reason);
+                    default:
+                        throw new InvalidOperationException("Unsupported fetched content type: " + fetchedContent.GetType().Name);
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -769,6 +771,19 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 return new DiscoveryFailed(work.Tile, ex);
             }
+        }
+
+        private GlbExtractResult ExtractGlb(byte[] glbBytes)
+        {
+            RunPerformanceSummary? performanceSummary = _performanceSummary;
+            DateTimeOffset startedAt = performanceSummary is null ? default : DateTimeOffset.UtcNow;
+            GlbExtractResult extracted = _glbMeshExtractor.Extract(glbBytes);
+            if (performanceSummary is not null)
+            {
+                performanceSummary.AddExtract(DateTimeOffset.UtcNow - startedAt);
+            }
+
+            return extracted;
         }
 
         private async Task<WriterCompletion> ExecuteWriterCommandAsync(
