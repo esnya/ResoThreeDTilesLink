@@ -3,5 +3,5 @@ namespace ThreeDTilesLink.Core.Models
     internal sealed record SelectionInputSnapshot(
         string? SearchText,
         SelectionInputValues? Values,
-        bool StopRequested = false);
+        bool HasInvalidValues = false);
 }

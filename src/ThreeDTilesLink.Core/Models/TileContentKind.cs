@@ -4,6 +4,13 @@ namespace ThreeDTilesLink.Core.Models
     {
         Json = 0,
         Glb = 1,
-        Other = 2
+        B3dm = 2,
+        Other = 3
+    }
+
+    internal static class TileContentKindExtensions
+    {
+        public static bool IsRenderable(this TileContentKind kind) =>
+            kind is TileContentKind.Glb or TileContentKind.B3dm;
     }
 }

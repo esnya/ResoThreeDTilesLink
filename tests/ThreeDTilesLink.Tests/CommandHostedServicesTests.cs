@@ -1,18 +1,20 @@
+using System.Diagnostics;
 using System.Reflection;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using ThreeDTilesLink.App;
 using ThreeDTilesLink.Core.App;
 using ThreeDTilesLink.Core.CommandLine;
 using ThreeDTilesLink.Core.Contracts;
-using ThreeDTilesLink.Core.Google;
+using ThreeDTilesLink.Core.Generic;
 using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Pipeline;
+using ThreeDTilesLink.Core.Tiles;
 
 namespace ThreeDTilesLink.Tests
 {
@@ -24,6 +26,9 @@ namespace ThreeDTilesLink.Tests
             var expected = new InvalidOperationException("boom");
             var completion = new CommandCompletion();
             var lifetime = new FakeHostApplicationLifetime();
+            var tileSource = new TileSourceOptions(
+                new Uri("https://tile.googleapis.com/v1/3dtiles/root.json"),
+                new TileSourceAccess(null, null));
             using var service = new StreamCommandHostedService(
                 new StreamCommandOptions(
                     35.65858d,
@@ -41,7 +46,7 @@ namespace ThreeDTilesLink.Tests
                     LogLevel.Information),
                 new ThrowingTileSelectionService(expected),
                 new FakeGeoReferenceResolver(),
-                Options.Create(new GoogleMapsOptions { ApiKey = "key" }),
+                tileSource,
                 TextWriter.Null,
                 completion,
                 lifetime);
@@ -61,7 +66,10 @@ namespace ThreeDTilesLink.Tests
             var expected = new InvalidOperationException("boom");
             var completion = new CommandCompletion();
             var lifetime = new FakeHostApplicationLifetime();
-            var inputStore = new FakeInteractiveInputStore();
+            var inputStore = new FakeInteractiveUiStore();
+            var tileSource = new TileSourceOptions(
+                new Uri("https://tile.googleapis.com/v1/3dtiles/root.json"),
+                new TileSourceAccess(null, null));
             using var service = new InteractiveCommandHostedService(
                 new InteractiveCommandOptions(
                     20d,
@@ -80,14 +88,15 @@ namespace ThreeDTilesLink.Tests
                     new ThrowingTileSelectionService(expected),
                     new ThrowingResoniteSession(expected),
                     inputStore,
-                    new FakeSearchResolver(),
-                    new FakeCoordinateTransformer(),
-                    new FakeGeoReferenceResolver(),
-                    new FakeClock(),
-                    new SelectionInputReader(inputStore, NullLogger<SelectionInputReader>.Instance),
-                    NullLoggerFactory.Instance,
-                    NullLogger<InteractiveRunSupervisor>.Instance),
-                Options.Create(new GoogleMapsOptions { ApiKey = "key" }),
+                new FakeSearchResolver(),
+                new FakeCoordinateTransformer(),
+                new FakeGeoReferenceResolver(),
+                new FakeClock(),
+                new SelectionInputReader(inputStore, NullLogger<SelectionInputReader>.Instance),
+                NullLoggerFactory.Instance,
+                NullLogger<InteractiveRunSupervisor>.Instance),
+                tileSource,
+                new SearchOptions("key"),
                 TextWriter.Null,
                 completion,
                 lifetime);
@@ -106,7 +115,7 @@ namespace ThreeDTilesLink.Tests
         {
             var services = new ServiceCollection();
             _ = services.AddLogging();
-            _ = services.AddSingleton<ICommandRuntimeOptions>(new InteractiveCommandOptions(
+            var runtimeOptions = new InteractiveCommandOptions(
                 20d,
                 "localhost",
                 4301,
@@ -118,27 +127,61 @@ namespace ThreeDTilesLink.Tests
                 250,
                 800,
                 3000,
-                LogLevel.Information));
+                LogLevel.Information);
+            var tileSource = new TileSourceOptions(
+                new Uri("https://tile.googleapis.com/v1/3dtiles/root.json"),
+                new TileSourceAccess("key", null));
+            ResoniteDestinationPolicyOptions destinationPolicy = ResoniteDestinationPolicyOptions.CreateGoogleDefaults();
 
-            _ = services.AddThreeDTilesLinkRuntime(new InteractiveCommandOptions(
-                20d,
-                "localhost",
-                4301,
-                25d,
-                4,
-                2,
-                90,
-                false,
-                250,
-                800,
-                3000,
-                LogLevel.Information));
-
+            _ = services.AddThreeDTilesLinkRuntime(
+                runtimeOptions,
+                tileSource,
+                destinationPolicy,
+                new GenericTileLicenseCreditPolicy(),
+                new SearchOptions("key"));
             await using ServiceProvider provider = services.BuildServiceProvider();
 
             Func<InteractiveRunSupervisor> act = () => provider.GetRequiredService<InteractiveRunSupervisor>();
 
             _ = act.Should().NotThrow();
+        }
+
+        [Fact]
+        public void AddThreeDTilesLinkRuntime_PreservesPreRegisteredInteractiveUiStore()
+        {
+            var services = new ServiceCollection();
+            _ = services.AddLogging();
+            var runtimeOptions = new InteractiveCommandOptions(
+                20d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                250,
+                800,
+                3000,
+                LogLevel.Information);
+            var tileSource = new TileSourceOptions(
+                new Uri("https://tile.googleapis.com/v1/3dtiles/root.json"),
+                new TileSourceAccess("key", null));
+            ResoniteDestinationPolicyOptions destinationPolicy = ResoniteDestinationPolicyOptions.CreateGoogleDefaults();
+            var registeredUiStore = new FakeInteractiveUiStore();
+
+            _ = services.AddSingleton<IInteractiveUiStore>(registeredUiStore);
+            _ = services.AddThreeDTilesLinkRuntime(
+                runtimeOptions,
+                tileSource,
+                destinationPolicy,
+                new GenericTileLicenseCreditPolicy(),
+                new SearchOptions("key"));
+
+            using ServiceProvider provider = services.BuildServiceProvider();
+
+            IInteractiveUiStore uiStore = provider.GetRequiredService<IInteractiveUiStore>();
+            _ = uiStore.Should().BeSameAs(registeredUiStore);
         }
 
         [Fact]
@@ -158,18 +201,516 @@ namespace ThreeDTilesLink.Tests
                 3000,
                 LogLevel.Information);
 
-            MethodInfo? createHostDefinition = typeof(ThreeDTilesLink.CommandHost).GetMethod(
+            Type commandHostType = typeof(ThreeDTilesLink.CommandHost);
+            MethodInfo? resolveRegistrationDefinition = commandHostType.GetMethod(
+                "ResolveRegistration",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            _ = resolveRegistrationDefinition.Should().NotBeNull();
+            MethodInfo? createHostDefinition = commandHostType.GetMethod(
                 "CreateHost",
                 BindingFlags.Static | BindingFlags.NonPublic);
             _ = createHostDefinition.Should().NotBeNull();
-            MethodInfo createHost = createHostDefinition!.MakeGenericMethod(typeof(InteractiveCommandOptions));
+            object commandKind = Enum.Parse(
+                resolveRegistrationDefinition!.GetParameters()[0].ParameterType,
+                "Interactive");
+            object registration = resolveRegistrationDefinition.Invoke(null, [commandKind])!;
 
-            using IHost host = (IHost)createHost.Invoke(null, [options, TextWriter.Null])!;
+            using IHost host = (IHost)createHostDefinition!.Invoke(
+                null,
+                [registration, options, TextWriter.Null])!;
 
             Func<IEnumerable<IHostedService>> act = () => host.Services.GetRequiredService<IEnumerable<IHostedService>>();
 
             IEnumerable<IHostedService> services = act.Should().NotThrow().Subject;
             _ = services.Should().ContainSingle(static service => service is InteractiveCommandHostedService);
+        }
+
+        [Fact]
+        public void CommandHost_CreateHost_RegistersConfiguredTileAndSearchOptions()
+        {
+            const string rootUri = "https://plateau.example.com/tiles/root.json";
+            const string fileBaseUri = "https://cdn.plateau.example.com/";
+            const string tileApiKey = "tile-key";
+            const string searchApiKey = "search-key";
+            var options = new InteractiveCommandOptions(
+                20d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                250,
+                800,
+                3000,
+                LogLevel.Information);
+
+            string? previousRoot = Environment.GetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI");
+            string? previousFileBase = Environment.GetEnvironmentVariable("TILE_SOURCE_FILE_SCHEME_BASE_URI");
+            string? previousTileApiKey = Environment.GetEnvironmentVariable("TILE_SOURCE_API_KEY");
+            string? previousSearchApiKey = Environment.GetEnvironmentVariable("SEARCH_API_KEY");
+            string? previousInherited = Environment.GetEnvironmentVariable("TILE_SOURCE_INHERITED_QUERY_PARAMETERS");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI", rootUri);
+                Environment.SetEnvironmentVariable("TILE_SOURCE_FILE_SCHEME_BASE_URI", fileBaseUri);
+                Environment.SetEnvironmentVariable("TILE_SOURCE_API_KEY", tileApiKey);
+                Environment.SetEnvironmentVariable("SEARCH_API_KEY", searchApiKey);
+                Environment.SetEnvironmentVariable("TILE_SOURCE_INHERITED_QUERY_PARAMETERS", "session,sig");
+
+                Type commandHostType = typeof(ThreeDTilesLink.CommandHost);
+                MethodInfo? resolveRegistrationDefinition = commandHostType.GetMethod(
+                    "ResolveRegistration",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                MethodInfo? createHostDefinition = commandHostType.GetMethod(
+                    "CreateHost",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                _ = resolveRegistrationDefinition.Should().NotBeNull();
+                _ = createHostDefinition.Should().NotBeNull();
+
+                object commandKind = Enum.Parse(
+                    resolveRegistrationDefinition!.GetParameters()[0].ParameterType,
+                    "Interactive");
+                object registration = resolveRegistrationDefinition.Invoke(null, [commandKind])!;
+
+                using IHost host = (IHost)createHostDefinition!.Invoke(
+                    null,
+                    [registration, options, TextWriter.Null])!;
+
+                TileSourceOptions tileSource = host.Services.GetRequiredService<TileSourceOptions>();
+                SearchOptions search = host.Services.GetRequiredService<SearchOptions>();
+
+                _ = tileSource.RootTilesetUri.AbsoluteUri.Should().Be(rootUri);
+                _ = tileSource.Access.ApiKey.Should().Be(tileApiKey);
+                _ = tileSource.ContentLinks.FileSchemeBaseUri!.AbsoluteUri.Should().Be(fileBaseUri);
+                _ = tileSource.ContentLinks.InheritedQueryParameters.Should().Equal("session", "sig");
+                _ = search.ApiKey.Should().Be(searchApiKey);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI", previousRoot);
+                Environment.SetEnvironmentVariable("TILE_SOURCE_FILE_SCHEME_BASE_URI", previousFileBase);
+                Environment.SetEnvironmentVariable("TILE_SOURCE_API_KEY", previousTileApiKey);
+                Environment.SetEnvironmentVariable("SEARCH_API_KEY", previousSearchApiKey);
+                Environment.SetEnvironmentVariable("TILE_SOURCE_INHERITED_QUERY_PARAMETERS", previousInherited);
+            }
+        }
+
+        [Fact]
+        public void CommandHost_BuildTileSourceOptions_DefaultsFileSchemeBaseToRootAuthority()
+        {
+            using var configuration = new ConfigurationManager();
+            _ = configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["TileSource:RootTilesetUri"] = "https://plateau.example.com/tiles/root.json"
+            });
+
+            TileSourceOptions tileSource = InvokeBuildTileSourceOptions(configuration);
+
+            _ = tileSource.ContentLinks.FileSchemeBaseUri!.AbsoluteUri.Should().Be("https://plateau.example.com/");
+        }
+
+        [Fact]
+        public void CommandHost_BuildTileSourceOptions_PrefersFlatEnvOverridesOverSectionValues()
+        {
+            string? previousRoot = Environment.GetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI");
+            string? previousApiKey = Environment.GetEnvironmentVariable("TILE_SOURCE_API_KEY");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI", "https://env.example.com/root.json");
+                Environment.SetEnvironmentVariable("TILE_SOURCE_API_KEY", "env-key");
+                using var configuration = new ConfigurationManager();
+                _ = configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["TileSource:RootTilesetUri"] = "https://config.example.com/root.json",
+                    ["TileSource:ApiKey"] = "config-key"
+                });
+                _ = configuration.AddEnvironmentVariables();
+
+                TileSourceOptions tileSource = InvokeBuildTileSourceOptions(configuration);
+
+                _ = tileSource.RootTilesetUri.AbsoluteUri.Should().Be("https://env.example.com/root.json");
+                _ = tileSource.Access.ApiKey.Should().Be("env-key");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI", previousRoot);
+                Environment.SetEnvironmentVariable("TILE_SOURCE_API_KEY", previousApiKey);
+            }
+        }
+
+        [Fact]
+        public void CommandHost_BuildSearchOptions_PrefersLegacyGoogleMapsEnvVarOverSectionValue()
+        {
+            const string envApiKey = "google-env-key";
+            const string configApiKey = "google-config-key";
+            string? previousGoogleApiKey = Environment.GetEnvironmentVariable("GOOGLE_MAPS_API_KEY");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("GOOGLE_MAPS_API_KEY", envApiKey);
+                using var configuration = new ConfigurationManager();
+                _ = configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["GoogleMaps:ApiKey"] = configApiKey
+                });
+                _ = configuration.AddEnvironmentVariables();
+
+                SearchOptions search = InvokeBuildSearchOptions(configuration, new TileSourceOptions(
+                    new Uri("https://tile.googleapis.com/v1/3dtiles/root.json"),
+                    new TileSourceAccess("tile-key", null)));
+
+                _ = search.ApiKey.Should().Be(envApiKey);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("GOOGLE_MAPS_API_KEY", previousGoogleApiKey);
+            }
+        }
+
+        [Fact]
+        public void CommandHost_BuildSearchOptions_PrefersFlatSearchApiKeyEnvOverrideOverSectionValue()
+        {
+            string? previousSearchApiKey = Environment.GetEnvironmentVariable("SEARCH_API_KEY");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("SEARCH_API_KEY", "env-search-key");
+                using var configuration = new ConfigurationManager();
+                _ = configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Search:ApiKey"] = "config-search-key"
+                });
+                _ = configuration.AddEnvironmentVariables();
+
+                SearchOptions search = InvokeBuildSearchOptions(configuration, new TileSourceOptions(
+                    new Uri("https://plateau.example.com/root.json"),
+                    new TileSourceAccess(null, null)));
+
+                _ = search.ApiKey.Should().Be("env-search-key");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("SEARCH_API_KEY", previousSearchApiKey);
+            }
+        }
+
+        [Fact]
+        public void CommandHost_BuildTileSourceOptions_PrefersLegacyGoogleMapsEnvVarOverSectionValue()
+        {
+            const string envApiKey = "google-env-key";
+            const string configApiKey = "google-config-key";
+            string? previousGoogleApiKey = Environment.GetEnvironmentVariable("GOOGLE_MAPS_API_KEY");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("GOOGLE_MAPS_API_KEY", envApiKey);
+                using var configuration = new ConfigurationManager();
+                _ = configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["GoogleMaps:ApiKey"] = configApiKey
+                });
+                _ = configuration.AddEnvironmentVariables();
+
+                TileSourceOptions tileSource = InvokeBuildTileSourceOptions(configuration);
+
+                _ = tileSource.Access.ApiKey.Should().Be(envApiKey);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("GOOGLE_MAPS_API_KEY", previousGoogleApiKey);
+            }
+        }
+
+        [Fact]
+        public void CommandHost_BuildTileSourceOptions_DoesNotLeakSharedGoogleApiKeyToNonGoogleTileSource()
+        {
+            const string envApiKey = "google-env-key";
+            string? previousGoogleApiKey = Environment.GetEnvironmentVariable("GOOGLE_MAPS_API_KEY");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("GOOGLE_MAPS_API_KEY", envApiKey);
+                using var configuration = new ConfigurationManager();
+                _ = configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["TileSource:RootTilesetUri"] = "https://plateau.example.com/tiles/root.json"
+                });
+                _ = configuration.AddEnvironmentVariables();
+
+                TileSourceOptions tileSource = InvokeBuildTileSourceOptions(configuration);
+
+                _ = tileSource.Access.ApiKey.Should().BeNull();
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("GOOGLE_MAPS_API_KEY", previousGoogleApiKey);
+            }
+        }
+
+        [Fact]
+        public void CommandHost_BuildSearchOptions_FallsBackToGoogleTileSourceApiKey()
+        {
+            using var configuration = new ConfigurationManager();
+            TileSourceOptions tileSource = new(
+                new Uri("https://tile.googleapis.com/v1/3dtiles/root.json"),
+                new TileSourceAccess("tile-only-key", null));
+
+            SearchOptions search = InvokeBuildSearchOptions(configuration, tileSource);
+
+            _ = search.ApiKey.Should().Be("tile-only-key");
+        }
+
+        [Fact]
+        public void CommandHost_CreateHost_UsesNeutralPoliciesForNonGoogleTileSource()
+        {
+            const string rootUri = "https://plateau.example.com/tiles/root.json";
+            var options = new InteractiveCommandOptions(
+                20d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                250,
+                800,
+                3000,
+                LogLevel.Information);
+            string? previousRoot = Environment.GetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI");
+            string? previousFileBase = Environment.GetEnvironmentVariable("TILE_SOURCE_FILE_SCHEME_BASE_URI");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI", rootUri);
+                Environment.SetEnvironmentVariable("TILE_SOURCE_FILE_SCHEME_BASE_URI", null);
+
+                Type commandHostType = typeof(ThreeDTilesLink.CommandHost);
+                MethodInfo? resolveRegistrationDefinition = commandHostType.GetMethod(
+                    "ResolveRegistration",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                MethodInfo? createHostDefinition = commandHostType.GetMethod(
+                    "CreateHost",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                object commandKind = Enum.Parse(
+                    resolveRegistrationDefinition!.GetParameters()[0].ParameterType,
+                    "Interactive");
+                object registration = resolveRegistrationDefinition.Invoke(null, [commandKind])!;
+
+                using IHost host = (IHost)createHostDefinition!.Invoke(
+                    null,
+                    [registration, options, TextWriter.Null])!;
+
+                ResoniteDestinationPolicyOptions destinationPolicy = host.Services.GetRequiredService<ResoniteDestinationPolicyOptions>();
+                ILicenseCreditPolicy licenseCreditPolicy = host.Services.GetRequiredService<ILicenseCreditPolicy>();
+
+                _ = destinationPolicy.SessionDynamicSpaceName.Should().Be("ThreeDTilesLink");
+                _ = destinationPolicy.CanExport.Should().BeTrue();
+                _ = destinationPolicy.ApplyAvatarProtectionToTileSlots.Should().BeFalse();
+                _ = licenseCreditPolicy.Should().BeOfType<GenericTileLicenseCreditPolicy>();
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("TILE_SOURCE_ROOT_TILESET_URI", previousRoot);
+                Environment.SetEnvironmentVariable("TILE_SOURCE_FILE_SCHEME_BASE_URI", previousFileBase);
+            }
+        }
+
+        [Fact]
+        public async Task AddThreeDTilesLinkRuntime_PreservesPreRegisteredTileSource()
+        {
+            var services = new ServiceCollection();
+            _ = services.AddLogging();
+            var runtimeOptions = new StreamCommandOptions(
+                35.65858d,
+                139.745433d,
+                20d,
+                60d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                false,
+                LogLevel.Information);
+            var tileSource = new TileSourceOptions(
+                new Uri("https://plateau.example.com/root.json"),
+                new TileSourceAccess(null, null));
+            var fakeTilesSource = new PreRegisteredTilesSource();
+
+            _ = services.AddSingleton<ITilesSource>(fakeTilesSource);
+            _ = services.AddThreeDTilesLinkRuntime(
+                runtimeOptions,
+                tileSource,
+                ResoniteDestinationPolicyOptions.CreateDefault(),
+                new GenericTileLicenseCreditPolicy(),
+                new SearchOptions(null));
+            await using ServiceProvider provider = services.BuildServiceProvider();
+
+            _ = provider.GetRequiredService<ITilesSource>().Should().BeSameAs(fakeTilesSource);
+        }
+
+        [Fact]
+        public async Task AddThreeDTilesLinkRuntime_PreservesPreRegisteredScenePorts()
+        {
+            var services = new ServiceCollection();
+            _ = services.AddLogging();
+            var runtimeOptions = new StreamCommandOptions(
+                35.65858d,
+                139.745433d,
+                20d,
+                60d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                false,
+                LogLevel.Information);
+            var tileSource = new TileSourceOptions(
+                new Uri("https://plateau.example.com/root.json"),
+                new TileSourceAccess(null, null));
+            var fakeTilesSource = new PreRegisteredTilesSource();
+            var fakeSceneSession = new PreRegisteredSceneSession();
+            var fakeMetadataSink = new PreRegisteredSceneMetadataSink();
+
+            _ = services.AddSingleton<ITilesSource>(fakeTilesSource);
+            _ = services.AddSingleton<ISceneSession>(fakeSceneSession);
+            _ = services.AddSingleton<ISceneMetadataSink>(fakeMetadataSink);
+            _ = services.AddThreeDTilesLinkRuntime(
+                runtimeOptions,
+                tileSource,
+                ResoniteDestinationPolicyOptions.CreateDefault(),
+                new GenericTileLicenseCreditPolicy(),
+                new SearchOptions(null));
+            await using ServiceProvider provider = services.BuildServiceProvider();
+
+            _ = provider.GetRequiredService<ISceneSession>().Should().BeSameAs(fakeSceneSession);
+            _ = provider.GetRequiredService<ISceneMetadataSink>().Should().BeSameAs(fakeMetadataSink);
+            _ = provider.GetRequiredService<ITileSelectionService>().Should().NotBeNull();
+        }
+
+        [Fact]
+        public async Task AddThreeDTilesLinkRuntime_RequiresExplicitInteractiveUiStore_WhenSceneSessionIsNotResonite()
+        {
+            var services = new ServiceCollection();
+            _ = services.AddLogging();
+            var runtimeOptions = new InteractiveCommandOptions(
+                20d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                250,
+                800,
+                3000,
+                LogLevel.Information);
+            var tileSource = new TileSourceOptions(
+                new Uri("https://plateau.example.com/root.json"),
+                new TileSourceAccess(null, null));
+            var fakeSceneSession = new PreRegisteredSceneSession();
+            var fakeMetadataSink = new PreRegisteredSceneMetadataSink();
+
+            _ = services.AddSingleton<ISceneSession>(fakeSceneSession);
+            _ = services.AddSingleton<ISceneMetadataSink>(fakeMetadataSink);
+            _ = services.AddThreeDTilesLinkRuntime(
+                runtimeOptions,
+                tileSource,
+                ResoniteDestinationPolicyOptions.CreateDefault(),
+                new GenericTileLicenseCreditPolicy(),
+                new SearchOptions(null));
+            await using ServiceProvider provider = services.BuildServiceProvider();
+
+            Func<IInteractiveUiStore> act = () => provider.GetRequiredService<IInteractiveUiStore>();
+
+            _ = act.Should().Throw<InvalidOperationException>()
+                .WithMessage("*Register IInteractiveUiStore explicitly when overriding ISceneSession*");
+        }
+
+        [Fact]
+        public async Task AddThreeDTilesLinkRuntime_RequiresExplicitMetadataSink_WhenSceneSessionDoesNotProvideIt()
+        {
+            var services = new ServiceCollection();
+            _ = services.AddLogging();
+            var runtimeOptions = new StreamCommandOptions(
+                35.65858d,
+                139.745433d,
+                20d,
+                60d,
+                "localhost",
+                4301,
+                25d,
+                4,
+                2,
+                90,
+                false,
+                false,
+                LogLevel.Information);
+            var tileSource = new TileSourceOptions(
+                new Uri("https://plateau.example.com/root.json"),
+                new TileSourceAccess(null, null));
+            var fakeSceneSession = new PreRegisteredSceneSession();
+
+            _ = services.AddSingleton<ISceneSession>(fakeSceneSession);
+            _ = services.AddThreeDTilesLinkRuntime(
+                runtimeOptions,
+                tileSource,
+                ResoniteDestinationPolicyOptions.CreateDefault(),
+                new GenericTileLicenseCreditPolicy(),
+                new SearchOptions(null));
+            await using ServiceProvider provider = services.BuildServiceProvider();
+
+            Func<ISceneMetadataSink> act = () => provider.GetRequiredService<ISceneMetadataSink>();
+
+            _ = act.Should().Throw<InvalidOperationException>()
+                .WithMessage("*Register ISceneMetadataSink explicitly when overriding ISceneSession*");
+        }
+
+        [Fact]
+        public async Task Program_RunAsync_LoadsParentDotEnvBeforeHostConfiguration()
+        {
+            string tempRoot = Path.Combine(Path.GetTempPath(), $"ThreeDTilesLink.Tests.{Guid.NewGuid():N}");
+            string parentDir = Path.Combine(tempRoot, "parent");
+            string childDir = Path.Combine(parentDir, "child");
+            _ = Directory.CreateDirectory(childDir);
+            await File.WriteAllTextAsync(
+                Path.Combine(parentDir, ".env"),
+                "TILE_SOURCE_ROOT_TILESET_URI=not-an-absolute-uri" + Environment.NewLine);
+
+            try
+            {
+                using Process process = StartProgramProcess(
+                    childDir,
+                    "stream",
+                    "--latitude", "35.65858",
+                    "--longitude", "139.745433",
+                    "--range", "60",
+                    "--dry-run");
+
+                string stderr = await process.StandardError.ReadToEndAsync();
+                await process.WaitForExitAsync();
+
+                _ = process.ExitCode.Should().Be(1);
+                _ = stderr.Should().Contain("Tile source root URI must be absolute");
+            }
+            finally
+            {
+                if (Directory.Exists(tempRoot))
+                {
+                    Directory.Delete(tempRoot, recursive: true);
+                }
+            }
         }
 
         private static Task InvokeExecuteAsync(object service, CancellationToken cancellationToken)
@@ -181,6 +722,61 @@ namespace ThreeDTilesLink.Tests
                 BindingFlags.Instance | BindingFlags.NonPublic);
             _ = method.Should().NotBeNull();
             return (Task)method!.Invoke(service, [cancellationToken])!;
+        }
+
+        private static SearchOptions InvokeBuildSearchOptions(
+            ConfigurationManager configuration,
+            TileSourceOptions tileSourceOptions)
+        {
+            MethodInfo? method = typeof(ThreeDTilesLink.CommandHost).GetMethod(
+                "BuildSearchOptions",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            _ = method.Should().NotBeNull();
+            return (SearchOptions)method!.Invoke(null, [configuration, tileSourceOptions])!;
+        }
+
+        private static TileSourceOptions InvokeBuildTileSourceOptions(ConfigurationManager configuration)
+        {
+            MethodInfo? method = typeof(ThreeDTilesLink.CommandHost).GetMethod(
+                "BuildTileSourceOptions",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            _ = method.Should().NotBeNull();
+            return (TileSourceOptions)method!.Invoke(null, [configuration])!;
+        }
+
+        private static Process StartProgramProcess(string workingDirectory, params string[] arguments)
+        {
+            string appPath = GetAppAssemblyPath();
+            var startInfo = new ProcessStartInfo("dotnet")
+            {
+                WorkingDirectory = workingDirectory,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+                UseShellExecute = false
+            };
+            startInfo.ArgumentList.Add(appPath);
+            foreach (string argument in arguments)
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            _ = startInfo.Environment.Remove("TILE_SOURCE_ROOT_TILESET_URI");
+            _ = startInfo.Environment.Remove("TILE_SOURCE_FILE_SCHEME_BASE_URI");
+            _ = startInfo.Environment.Remove("TILE_SOURCE_API_KEY");
+            _ = startInfo.Environment.Remove("TILE_SOURCE_BEARER_TOKEN");
+            _ = startInfo.Environment.Remove("TILE_SOURCE_INHERITED_QUERY_PARAMETERS");
+            _ = startInfo.Environment.Remove("SEARCH_API_KEY");
+            _ = startInfo.Environment.Remove("GOOGLE_MAPS_API_KEY");
+
+            return Process.Start(startInfo)!;
+        }
+
+        private static string GetAppAssemblyPath()
+        {
+            string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+            string appPath = Path.Combine(root, "src", "ThreeDTilesLink", "bin", "Debug", "net10.0", "ThreeDTilesLink.dll");
+            _ = File.Exists(appPath).Should().BeTrue($"Expected built application at {appPath}");
+            return appPath;
         }
 
         private sealed class ThrowingTileSelectionService(Exception exception) : ITileSelectionService
@@ -210,9 +806,44 @@ namespace ThreeDTilesLink.Tests
 
             public Task DisconnectAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-            public Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken) => Task.FromResult<string?>(null);
+            public Task<string?> StreamMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken) => Task.FromResult<string?>(null);
 
-            public Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken) => Task.CompletedTask;
+            public Task RemoveNodeAsync(string nodeId, CancellationToken cancellationToken) => Task.CompletedTask;
+        }
+
+        private sealed class PreRegisteredTilesSource : ITilesSource
+        {
+            public Task<Tileset> FetchRootTilesetAsync(TileSourceOptions source, CancellationToken cancellationToken)
+                => throw new NotSupportedException();
+
+            public Task<FetchedNodeContent> FetchNodeContentAsync(Uri contentUri, TileSourceOptions source, CancellationToken cancellationToken)
+                => throw new NotSupportedException();
+        }
+
+        private sealed class PreRegisteredSceneSession : ISceneSession
+        {
+            public Task ConnectAsync(string host, int port, CancellationToken cancellationToken) => Task.CompletedTask;
+
+            public Task DisconnectAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+            public Task<string?> StreamMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
+                => Task.FromResult<string?>("scene-node");
+
+            public Task RemoveNodeAsync(string nodeId, CancellationToken cancellationToken) => Task.CompletedTask;
+        }
+
+        private sealed class PreRegisteredSceneMetadataSink : ISceneMetadataSink
+        {
+            public Task SetSessionLicenseCreditAsync(string creditString, CancellationToken cancellationToken) => Task.CompletedTask;
+
+            public Task SetProgressAsync(string? parentNodeId, float progress01, string progressText, CancellationToken cancellationToken)
+                => Task.CompletedTask;
+
+            public Task SetProgressValueAsync(string? parentNodeId, float progress01, CancellationToken cancellationToken)
+                => Task.CompletedTask;
+
+            public Task SetProgressTextAsync(string? parentNodeId, string progressText, CancellationToken cancellationToken)
+                => Task.CompletedTask;
         }
 
         private sealed class FakeGeoReferenceResolver : IGeoReferenceResolver
@@ -223,34 +854,18 @@ namespace ThreeDTilesLink.Tests
             }
         }
 
-        private sealed class FakeInteractiveInputStore : IInteractiveInputStore
+        private sealed class FakeInteractiveUiStore : IInteractiveUiStore
         {
-            public Task<InteractiveInputBinding> CreateInteractiveInputBindingAsync(CancellationToken cancellationToken)
+            public Task<InteractiveUiBinding> CreateInteractiveUiBindingAsync(CancellationToken cancellationToken)
             {
-                return Task.FromResult(new InteractiveInputBinding(
-                    "latComponent",
-                    "Value",
-                    "latAlias",
-                    "Value",
-                    "lonComponent",
-                    "Value",
-                    "lonAlias",
-                    "Value",
-                    "rangeComponent",
-                    "Value",
-                    "rangeAlias",
-                    "Value",
-                    "searchComponent",
-                    "Value",
-                    "searchAlias",
-                    "Value"));
+                return Task.FromResult(new InteractiveUiBinding("fake-binding"));
             }
 
-            public Task<SelectionInputValues?> ReadInteractiveInputValuesAsync(InteractiveInputBinding binding, CancellationToken cancellationToken) => Task.FromResult<SelectionInputValues?>(null);
+            public Task<SelectionInputValues?> ReadInteractiveUiValuesAsync(InteractiveUiBinding binding, CancellationToken cancellationToken) => Task.FromResult<SelectionInputValues?>(null);
 
-            public Task<string?> ReadInteractiveInputSearchAsync(InteractiveInputBinding binding, CancellationToken cancellationToken) => Task.FromResult<string?>(null);
+            public Task<string?> ReadInteractiveUiSearchAsync(InteractiveUiBinding binding, CancellationToken cancellationToken) => Task.FromResult<string?>(null);
 
-            public Task UpdateInteractiveInputCoordinatesAsync(InteractiveInputBinding binding, double latitude, double longitude, CancellationToken cancellationToken) => Task.CompletedTask;
+            public Task UpdateInteractiveUiCoordinatesAsync(InteractiveUiBinding binding, double latitude, double longitude, CancellationToken cancellationToken) => Task.CompletedTask;
         }
 
         private sealed class FakeSearchResolver : ISearchResolver

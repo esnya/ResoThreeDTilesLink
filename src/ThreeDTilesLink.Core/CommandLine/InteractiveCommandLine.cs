@@ -5,8 +5,8 @@ namespace ThreeDTilesLink.Core.CommandLine
 {
     internal sealed record InteractiveCommandOptions(
         double HeightOffset,
-        string ResoniteHost,
-        int ResonitePort,
+        string EndpointHost,
+        int EndpointPort,
         double DetailTargetM,
         int ContentWorkers,
         int ResoniteSendWorkers,
@@ -21,11 +21,11 @@ namespace ThreeDTilesLink.Core.CommandLine
     {
         private static readonly CommandSpecification Specification = new(
             "dotnet run --project src/ThreeDTilesLink -- interactive [options]",
-            "Attach interactive input variables in Resonite and keep streaming tiles as the session-root Latitude/Longitude/Range/Search values change.",
+            "Attach the interactive UI adapter and keep streaming tiles as the selection Latitude/Longitude/Range/Search values change.",
             [
                 CommonCommandOptions.HeightOffset(),
-                CommonCommandOptions.ResoniteHost(),
-                CommonCommandOptions.ResonitePort(),
+                CommonCommandOptions.EndpointHost(),
+                CommonCommandOptions.EndpointPort(),
                 CommonCommandOptions.DetailTarget(),
                 CommonCommandOptions.ContentWorkers("Maximum number of tile content fetch/decode workers per run."),
                 CommonCommandOptions.ResoniteSendWorkers("Maximum number of parallel Resonite send workers."),
@@ -40,8 +40,8 @@ namespace ThreeDTilesLink.Core.CommandLine
             {
                 ["--lat"] = "--lat is no longer supported in interactive mode.",
                 ["--lon"] = "--lon is no longer supported in interactive mode.",
-                ["--range"] = "--range is no longer supported in interactive mode. Set the Interactive Range value in Resonite instead.",
-                ["--half-width-m"] = "--half-width-m is no longer supported in interactive mode. Set the Interactive Range value in Resonite instead.",
+                ["--range"] = "--range is no longer supported in interactive mode. Set the interactive UI Range value instead.",
+                ["--half-width-m"] = "--half-width-m is no longer supported in interactive mode. Set the interactive UI Range value instead.",
                 ["--tile-limit"] = "--tile-limit is no longer supported in interactive mode.",
                 ["--max-tiles"] = "--max-tiles is no longer supported in interactive mode.",
                 ["--depth-limit"] = "--depth-limit is no longer supported in interactive mode.",
@@ -74,8 +74,8 @@ namespace ThreeDTilesLink.Core.CommandLine
             }
 
             if (!CommandInvocationBuilder.TryGetValue(parsed, "--height-offset", out double heightOffset) ||
-                !CommandInvocationBuilder.TryGetValue(parsed, "--resonite-host", out string? resoniteHost) ||
-                !CommandInvocationBuilder.TryGetPort(parsed, "--resonite-port", out int resonitePort) ||
+                !CommandInvocationBuilder.TryGetValue(parsed, "--endpoint-host", out string? endpointHost) ||
+                !CommandInvocationBuilder.TryGetPort(parsed, "--endpoint-port", out int endpointPort) ||
                 !CommandInvocationBuilder.TryGetPositiveDouble(parsed, "--detail", out double detailTargetM) ||
                 !CommandInvocationBuilder.TryGetPositiveInt(parsed, "--timeout", out int timeoutSec) ||
                 !CommandInvocationBuilder.TryGetValue(parsed, "--measure-performance", out bool measurePerformance) ||
@@ -86,17 +86,17 @@ namespace ThreeDTilesLink.Core.CommandLine
                 return CommandInvocationBuilder.Error<InteractiveCommandOptions>("Invalid command values.", RenderHelp);
             }
 
-            if (string.IsNullOrWhiteSpace(resoniteHost))
+            if (string.IsNullOrWhiteSpace(endpointHost))
             {
-                return CommandInvocationBuilder.Error<InteractiveCommandOptions>("Invalid value for --resonite-host.", RenderHelp);
+                return CommandInvocationBuilder.Error<InteractiveCommandOptions>("Invalid value for --endpoint-host.", RenderHelp);
             }
 
             return new CommandInvocation<InteractiveCommandOptions>(
                 true,
                 new InteractiveCommandOptions(
                     heightOffset,
-                    resoniteHost,
-                    resonitePort,
+                    endpointHost,
+                    endpointPort,
                     detailTargetM,
                     contentWorkers,
                     resoniteSendWorkers,

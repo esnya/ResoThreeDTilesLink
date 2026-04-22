@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    internal sealed record GoogleTilesAuth(
+    internal sealed record TileSourceAccess(
         string? ApiKey,
         string? BearerToken);
 }

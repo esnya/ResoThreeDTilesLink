@@ -45,8 +45,8 @@ namespace ThreeDTilesLink.Tests
                 "--longitude", "139.745433",
                 "--height-offset", "20",
                 "--range=400",
-                "--resonite-host", "127.0.0.1",
-                "--resonite-port=12000",
+                "--endpoint-host", "127.0.0.1",
+                "--endpoint-port=12000",
                 "--detail", "25",
                 "--content-workers", "3",
                 "--resonite-send-workers", "5",
@@ -61,8 +61,8 @@ namespace ThreeDTilesLink.Tests
             _ = parsed.Longitude.Should().Be(139.745433d);
             _ = parsed.HeightOffset.Should().Be(20d);
             _ = parsed.RangeM.Should().Be(400d);
-            _ = parsed.ResoniteHost.Should().Be("127.0.0.1");
-            _ = parsed.ResonitePort.Should().Be(12000);
+            _ = parsed.EndpointHost.Should().Be("127.0.0.1");
+            _ = parsed.EndpointPort.Should().Be(12000);
             _ = parsed.DetailTargetM.Should().Be(25d);
             _ = parsed.ContentWorkers.Should().Be(3);
             _ = parsed.ResoniteSendWorkers.Should().Be(5);
@@ -72,23 +72,23 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public void Parse_DefaultsResoniteHostToLocalhost()
+        public void Parse_DefaultsEndpointHostToLocalhost()
         {
             CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
             [
                 "--latitude", "35.65858",
                 "--longitude", "139.745433",
                 "--range", "400",
-                "--resonite-port", "12000"
+                "--endpoint-port", "12000"
             ]);
 
             _ = invocation.ShouldRun.Should().BeTrue();
             StreamCommandOptions parsed = invocation.Options!;
-            _ = parsed.ResoniteHost.Should().Be("localhost");
+            _ = parsed.EndpointHost.Should().Be("localhost");
         }
 
         [Fact]
-        public void Parse_DryRun_DoesNotRequireResonitePort()
+        public void Parse_DryRun_DoesNotRequireEndpointPort()
         {
             CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
             [
@@ -101,7 +101,7 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.ShouldRun.Should().BeTrue();
             StreamCommandOptions parsed = invocation.Options!;
             _ = parsed.DryRun.Should().BeTrue();
-            _ = parsed.ResonitePort.Should().Be(0);
+            _ = parsed.EndpointPort.Should().Be(0);
         }
 
         [Fact]
@@ -112,7 +112,7 @@ namespace ThreeDTilesLink.Tests
                 "--latitude", "35.0",
                 "--longitude", "139.0",
                 "--half-width-m", "400",
-                "--resonite-port", "12000"
+                "--endpoint-port", "12000"
             ]);
 
             _ = invocation.ShouldRun.Should().BeFalse();
@@ -129,7 +129,7 @@ namespace ThreeDTilesLink.Tests
                 "--latitude", "35.0",
                 "--longitude", "139.0",
                 "--range", "400",
-                "--resonite-port", "12000",
+                "--endpoint-port", "12000",
                 "--content-workers", "0"
             ]);
 
@@ -146,7 +146,7 @@ namespace ThreeDTilesLink.Tests
                 "--latitude", "35.0",
                 "--longitude", "139.0",
                 "--range", "400",
-                "--resonite-port", "12000",
+                "--endpoint-port", "12000",
                 "--resonite-send-workers", "0"
             ]);
 
@@ -163,7 +163,7 @@ namespace ThreeDTilesLink.Tests
                 "--latitude", "35.0",
                 "--longitude", "139.0",
                 "--range", "400",
-                "--resonite-port", "12000",
+                "--endpoint-port", "12000",
                 "--log-level", "Verbose"
             ]);
 
@@ -184,7 +184,7 @@ namespace ThreeDTilesLink.Tests
                 "--latitude", "35.0",
                 "--longitude", "139.0",
                 "--range", "400",
-                "--resonite-port", "12000",
+                "--endpoint-port", "12000",
                 option, value
             ]);
 
@@ -196,19 +196,19 @@ namespace ThreeDTilesLink.Tests
         [Theory]
         [InlineData("0")]
         [InlineData("65536")]
-        public void Parse_RejectsInvalidResonitePort(string value)
+        public void Parse_RejectsInvalidEndpointPort(string value)
         {
             CommandInvocation<StreamCommandOptions> invocation = StreamCommandLine.Parse(
             [
                 "--latitude", "35.0",
                 "--longitude", "139.0",
                 "--range", "400",
-                "--resonite-port", value
+                "--endpoint-port", value
             ]);
 
             _ = invocation.ShouldRun.Should().BeFalse();
             _ = invocation.ExitCode.Should().Be(1);
-            _ = invocation.Output.Should().Contain("Invalid value for --resonite-port.");
+            _ = invocation.Output.Should().Contain("Invalid value for --endpoint-port.");
         }
 
         [Theory]
@@ -223,7 +223,7 @@ namespace ThreeDTilesLink.Tests
                 "--latitude", "35.0",
                 "--longitude", "139.0",
                 "--range", "400",
-                "--resonite-port", "12000",
+                "--endpoint-port", "12000",
                 option, value
             ]);
 
@@ -244,7 +244,7 @@ namespace ThreeDTilesLink.Tests
                 "--latitude", "35.0",
                 "--longitude", "139.0",
                 "--range", "400",
-                "--resonite-port", "12000",
+                "--endpoint-port", "12000",
                 option, "1"
             ]);
 

@@ -2,23 +2,28 @@ using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Web;
+using ThreeDTilesLink.Core.Contracts;
+using ThreeDTilesLink.Core.Models;
 
 namespace ThreeDTilesLink.Core.Tiles
 {
-    internal sealed class TilesetParser
+    internal sealed class TilesetParser : ITilesetParser
     {
-        public static Tileset Parse(string json, Uri sourceUri)
+        public Tileset Parse(string json, TileSourceContentLinkOptions contentLinks, Uri sourceUri)
         {
+            ArgumentNullException.ThrowIfNull(contentLinks);
+
             var context = new ParseContext();
             using var doc = JsonDocument.Parse(json);
             JsonElement root = doc.RootElement;
             return !root.TryGetProperty("root", out JsonElement rootTile)
                 ? throw new InvalidOperationException("tileset root is missing.")
-                : new Tileset(ParseTile(rootTile, sourceUri, "0", "0", context));
+                : new Tileset(ParseTile(rootTile, contentLinks, sourceUri, "0", "0", context));
         }
 
         private static Tile ParseTile(
             JsonElement tileElement,
+            TileSourceContentLinkOptions contentLinks,
             Uri sourceUri,
             string displayLabel,
             string stablePath,
@@ -32,6 +37,7 @@ namespace ThreeDTilesLink.Core.Tiles
                 {
                     children.Add(ParseTile(
                         child,
+                        contentLinks,
                         sourceUri,
                         $"{displayLabel}{EncodeDisplayIdSegment(index, context)}",
                         $"{stablePath}/{index}",
@@ -42,7 +48,7 @@ namespace ThreeDTilesLink.Core.Tiles
 
             IReadOnlyList<double>? transform = ParseDoubleArray(tileElement, "transform");
             BoundingVolume? bounding = ParseBoundingVolume(tileElement);
-            Uri? contentUri = ParseContentUri(tileElement, sourceUri);
+            Uri? contentUri = ParseContentUri(tileElement, contentLinks, sourceUri);
 
             return new Tile
             {
@@ -100,7 +106,10 @@ namespace ThreeDTilesLink.Core.Tiles
             return values;
         }
 
-        private static Uri? ParseContentUri(JsonElement tileElement, Uri sourceUri)
+        private static Uri? ParseContentUri(
+            JsonElement tileElement,
+            TileSourceContentLinkOptions contentLinks,
+            Uri sourceUri)
         {
             if (!tileElement.TryGetProperty("content", out JsonElement content) || content.ValueKind != JsonValueKind.Object)
             {
@@ -122,61 +131,96 @@ namespace ThreeDTilesLink.Core.Tiles
                 ? absolute
                 : new Uri(sourceUri, raw);
 
-            Uri normalized = NormalizeGoogleContentUri(uri);
-            return InheritRequiredQueryParameters(normalized, sourceUri);
+            Uri normalized = NormalizeContentUri(uri, contentLinks.FileSchemeBaseUri);
+            return InheritRequiredQueryParameters(normalized, sourceUri, contentLinks.InheritedQueryParameters);
         }
 
-        private static Uri NormalizeGoogleContentUri(Uri uri)
+        private static Uri NormalizeContentUri(Uri uri, Uri? fileSchemeBaseUri)
         {
-            // Google 3D Tiles may return content URIs using a file:// scheme,
-            // but the actual content is served by tile.googleapis.com.
-            if (!string.Equals(uri.Scheme, Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(uri.Scheme, Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase) ||
+                fileSchemeBaseUri is null)
             {
                 return uri;
             }
 
             string decodedPath = Uri.UnescapeDataString(uri.AbsolutePath);
+            string query = uri.Query.TrimStart('?');
+
             if (decodedPath.Contains('?', StringComparison.Ordinal))
             {
                 int index = decodedPath.IndexOf('?', StringComparison.Ordinal);
-                string path = decodedPath[..index];
-                string query = decodedPath[(index + 1)..];
-                var builder = new UriBuilder("https", "tile.googleapis.com")
+                if (string.IsNullOrEmpty(query))
                 {
-                    Path = path,
-                    Query = query
-                };
-
-                return builder.Uri;
+                    query = decodedPath[(index + 1)..];
+                }
+                decodedPath = decodedPath[..index];
             }
 
-            return new UriBuilder("https", "tile.googleapis.com")
+            var builder = new UriBuilder(fileSchemeBaseUri)
             {
-                Path = decodedPath,
-                Query = uri.Query.TrimStart('?')
-            }.Uri;
+                Path = CombineBasePath(fileSchemeBaseUri.AbsolutePath, decodedPath),
+                Query = MergeQuery(fileSchemeBaseUri.Query, query)
+            };
+
+            return builder.Uri;
         }
 
-        private static Uri InheritRequiredQueryParameters(Uri targetUri, Uri sourceUri)
+        private static string MergeQuery(string baseQuery, string contentQuery)
+        {
+            NameValueCollection merged = HttpUtility.ParseQueryString(baseQuery);
+            NameValueCollection content = HttpUtility.ParseQueryString(contentQuery);
+            foreach (string? key in content.AllKeys)
+            {
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                merged[key] = content[key];
+            }
+
+            return merged.ToString() ?? string.Empty;
+        }
+
+        private static string CombineBasePath(string basePath, string decodedPath)
+        {
+            string normalizedBasePath = string.IsNullOrWhiteSpace(basePath) ? "/" : basePath;
+            string normalizedContentPath = decodedPath.TrimStart('/');
+
+            return string.IsNullOrEmpty(normalizedContentPath)
+                ? normalizedBasePath
+                : $"{normalizedBasePath.TrimEnd('/')}/{normalizedContentPath}";
+        }
+
+        private static Uri InheritRequiredQueryParameters(
+            Uri targetUri,
+            Uri sourceUri,
+            IReadOnlyList<string> inheritedQueryParameters)
         {
             NameValueCollection sourceQuery = HttpUtility.ParseQueryString(sourceUri.Query);
             NameValueCollection targetQuery = HttpUtility.ParseQueryString(targetUri.Query);
             bool changed = false;
 
-            foreach (string? requiredKey in new[] { "session" })
+            foreach (string requiredKey in inheritedQueryParameters)
             {
-                string? sourceValue = sourceQuery[requiredKey];
+                if (string.IsNullOrWhiteSpace(requiredKey))
+                {
+                    continue;
+                }
+
+                string key = requiredKey.Trim();
+                string? sourceValue = sourceQuery[key];
                 if (string.IsNullOrWhiteSpace(sourceValue))
                 {
                     continue;
                 }
 
-                if (!string.IsNullOrWhiteSpace(targetQuery[requiredKey]))
+                if (!string.IsNullOrWhiteSpace(targetQuery[key]))
                 {
                     continue;
                 }
 
-                targetQuery[requiredKey] = sourceValue;
+                targetQuery[key] = sourceValue;
                 changed = true;
             }
 

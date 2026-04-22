@@ -1,9 +1,9 @@
 namespace ThreeDTilesLink.Core.Models
 {
-    internal sealed record ResoniteOutputOptions(
+    internal sealed record SceneOutputOptions(
         string Host,
         int Port,
         bool DryRun,
         bool ManageConnection = true,
-        string? MeshParentSlotId = null);
+        string? ParentNodeId = null);
 }

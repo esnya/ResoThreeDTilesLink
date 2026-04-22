@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Threading;
 using ThreeDTilesLink.Core.Contracts;
+using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Math;
 using ThreeDTilesLink.Core.Mesh;
 using ThreeDTilesLink.Core.Models;
@@ -12,7 +13,7 @@ using ThreeDTilesLink.Core.Tiles;
 
 namespace ThreeDTilesLink.Tests
 {
-    public sealed class TileRunCoordinatorTests
+    public sealed class TileSelectionServiceTests
     {
         [Fact]
         public async Task Run_DryRun_ProcessesTilesWithoutSending()
@@ -28,7 +29,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: true), CancellationToken.None);
 
@@ -43,7 +44,7 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task Run_WithoutApiKey_ThrowsBeforeFetching()
+        public async Task Run_WithoutApiKey_DoesNotValidateSourceRequirementsInCoordinator()
         {
             var tileset = new Tileset(new Tile
             {
@@ -55,17 +56,17 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            var source = new FakeTilesSource(tileset);
+            TileSelectionService coordinator = CreateCoordinator(source, client);
 
-            Func<Task> act = () => coordinator.RunAsync(CreateRequest(dryRun: true, apiKey: null), CancellationToken.None);
+            _ = await coordinator.RunAsync(CreateRequest(dryRun: true, apiKey: null), CancellationToken.None);
 
-            _ = await act.Should().ThrowAsync<InvalidOperationException>()
-                .WithMessage("GOOGLE_MAPS_API_KEY is required*");
             _ = client.ConnectCount.Should().Be(0);
+            _ = source.ContentFetchCount.Should().Be(1);
         }
 
         [Fact]
-        public async Task Run_WithoutApiKey_UpdatesProgressText_WhenMetadataSurfaceExists()
+        public async Task Run_WithoutApiKey_DoesNotPublishCoordinatorFailureProgress()
         {
             var tileset = new Tileset(new Tile
             {
@@ -77,13 +78,11 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
-            Func<Task> act = () => coordinator.RunAsync(CreateRequest(dryRun: false, manageConnection: false, apiKey: null), CancellationToken.None);
+            _ = await coordinator.RunAsync(CreateRequest(dryRun: false, manageConnection: false, apiKey: null), CancellationToken.None);
 
-            _ = await act.Should().ThrowAsync<InvalidOperationException>()
-                .WithMessage("GOOGLE_MAPS_API_KEY is required*");
-            _ = client.ProgressUpdates.Should().Contain(update => update.ProgressText.StartsWith("Failed: GOOGLE_MAPS_API_KEY is required", StringComparison.Ordinal));
+            _ = client.ProgressUpdates.Should().NotContain(update => update.ProgressText.StartsWith("Failed:", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -100,7 +99,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failFirstSend: true);
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -132,7 +131,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, manageConnection: false), CancellationToken.None);
 
@@ -156,7 +155,7 @@ namespace ThreeDTilesLink.Tests
 
             var session = new FakeResoniteSession();
             var metadataPort = new FakeMetadataPort();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), session, metadataPort: metadataPort);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), session, metadataPort: metadataPort);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, manageConnection: false), CancellationToken.None);
 
@@ -181,7 +180,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             _ = await coordinator.RunAsync(CreateRequest(dryRun: false, manageConnection: false), CancellationToken.None);
 
@@ -211,7 +210,7 @@ namespace ThreeDTilesLink.Tests
                 ]
             });
 
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(rootTileset, new Dictionary<string, Tileset>
                 {
                     ["https://example.com/nested.json"] = nestedTileset
@@ -239,7 +238,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -262,7 +261,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -288,7 +287,7 @@ namespace ThreeDTilesLink.Tests
 
             var client = new FakeResoniteSession();
             var extractor = new FakeExtractor(includeNormalsAndTangents: true);
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client, extractor);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client, extractor);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -320,7 +319,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -354,7 +353,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(rootTileset, new Dictionary<string, Tileset>
                 {
                     ["https://example.com/nested.json"] = nestedTileset
@@ -386,7 +385,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             {
                 [StableId("near")] = new(StableId("near"), "near", null, [], ["slot_existing"], "Google; Airbus")
@@ -399,7 +398,7 @@ namespace ThreeDTilesLink.Tests
 
             _ = client.SendCount.Should().Be(0);
             _ = result.VisibleTiles.Should().ContainKey(StableId("near"));
-            _ = result.VisibleTiles[StableId("near")].SlotIds.Should().ContainSingle().Which.Should().Be("slot_existing");
+            _ = result.VisibleTiles[StableId("near")].NodeIds.Should().ContainSingle().Which.Should().Be("slot_existing");
         }
 
         [Fact]
@@ -426,7 +425,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             {
                 [StableId("far")] = new(StableId("far"), "far", null, [], ["slot_far"], "Google; Maxar")
@@ -437,7 +436,7 @@ namespace ThreeDTilesLink.Tests
                 new InteractiveRunInput(retainedTiles, RemoveOutOfRangeTiles: false),
                 CancellationToken.None);
 
-            _ = client.RemovedSlotIds.Should().NotContain("slot_far");
+            _ = client.RemovedNodeIds.Should().NotContain("slot_far");
             _ = result.VisibleTiles.Should().ContainKey(StableId("near"));
             _ = result.VisibleTiles.Should().ContainKey(StableId("far"));
         }
@@ -466,7 +465,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             {
                 [StableId("far")] = new(StableId("far"), "far", null, [], ["slot_far"], "Google; Maxar")
@@ -477,7 +476,7 @@ namespace ThreeDTilesLink.Tests
                 new InteractiveRunInput(retainedTiles, RemoveOutOfRangeTiles: true),
                 CancellationToken.None);
 
-            _ = client.RemovedSlotIds.Should().Contain("slot_far");
+            _ = client.RemovedNodeIds.Should().Contain("slot_far");
             _ = result.VisibleTiles.Should().ContainKey(StableId("near"));
             _ = result.VisibleTiles.Should().NotContainKey(StableId("far"));
         }
@@ -501,7 +500,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             string coarseStableId = StableId("coarse");
             string childStableId = StableId("fine");
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
@@ -515,7 +514,7 @@ namespace ThreeDTilesLink.Tests
                 CancellationToken.None);
 
             _ = client.SendCount.Should().Be(1);
-            _ = client.RemovedSlotIds.Should().Contain("slot_fine");
+            _ = client.RemovedNodeIds.Should().Contain("slot_fine");
             _ = result.VisibleTiles.Should().ContainKey(coarseStableId);
             _ = result.VisibleTiles.Should().NotContainKey(childStableId);
             _ = result.SelectedTileStableIds.Should().Contain(coarseStableId);
@@ -549,7 +548,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             string parentStableId = StableId("p");
             string childStableId = StableId("c");
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
@@ -591,7 +590,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             InteractiveTileRunResult initial = await coordinator.RunInteractiveAsync(
                 CreateRequest(dryRun: false, manageConnection: false, rangeM: 100d),
@@ -649,7 +648,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             InteractiveTileRunResult initial = await coordinator.RunInteractiveAsync(
                 CreateRequest(dryRun: false, manageConnection: false, rangeM: 100d),
@@ -703,7 +702,7 @@ namespace ThreeDTilesLink.Tests
                     Task cancelTask = cts.CancelAsync();
                 }
             });
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             string farStableId = StableId("far");
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             {
@@ -716,7 +715,7 @@ namespace ThreeDTilesLink.Tests
                 cts.Token);
 
             _ = client.SendCount.Should().Be(1);
-            _ = client.RemovedSlotIds.Should().BeEmpty();
+            _ = client.RemovedNodeIds.Should().BeEmpty();
             _ = result.VisibleTiles.Should().ContainKey(StableId("near-a"));
             _ = result.VisibleTiles.Should().ContainKey(farStableId);
             _ = result.VisibleTiles.Should().NotContainKey(StableId("near-b"));
@@ -738,7 +737,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteSession(
                 streamDelay: TimeSpan.FromMilliseconds(50),
                 ignoreCancellationDuringStream: true);
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             Task<InteractiveTileRunResult> runTask = coordinator.RunInteractiveAsync(
                 CreateRequest(dryRun: false, manageConnection: false),
@@ -785,7 +784,7 @@ namespace ThreeDTilesLink.Tests
                 },
                 contentDelay: TimeSpan.FromMilliseconds(50),
                 ignoreCancellationDuringContent: true);
-            TileRunCoordinator coordinator = CreateCoordinator(tilesSource, new FakeResoniteSession());
+            TileSelectionService coordinator = CreateCoordinator(tilesSource, new FakeResoniteSession());
 
             Task<InteractiveTileRunResult> runTask = coordinator.RunInteractiveAsync(
                 CreateRequest(dryRun: true, manageConnection: false),
@@ -826,13 +825,13 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = summary.FailedTiles.Should().Be(0);
             _ = client.Payloads.Should().OnlyContain(payload => !payload.Name.Contains("tile_p_m", StringComparison.Ordinal));
-            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_c_m", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().NotContain(id => id.Contains("tile_c_m", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -869,7 +868,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(rootTileset, new Dictionary<string, Tileset>
                 {
                     ["https://example.com/nested.json"] = nestedTileset
@@ -880,7 +879,7 @@ namespace ThreeDTilesLink.Tests
 
             _ = summary.FailedTiles.Should().Be(0);
             _ = client.Payloads.Should().OnlyContain(payload => !payload.Name.Contains("tile_p_m", StringComparison.Ordinal));
-            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -908,12 +907,12 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failOnNameContains: "tile_c_m");
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = summary.FailedTiles.Should().BeGreaterThanOrEqualTo(1);
-            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -949,14 +948,14 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
             _ = summary.StreamedMeshes.Should().Be(2);
             _ = client.Payloads.Should().HaveCount(2);
             _ = client.Payloads[0].Name.Should().Contain("tile_c_");
-            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -995,7 +994,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(
                 CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d),
@@ -1021,7 +1020,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     tileset,
                     tileContentByUri: new Dictionary<string, byte[]>
@@ -1062,7 +1061,7 @@ namespace ThreeDTilesLink.Tests
                 });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     rootTileset,
                     new Dictionary<string, Tileset>
@@ -1119,7 +1118,7 @@ namespace ThreeDTilesLink.Tests
                 });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     rootTileset,
                     new Dictionary<string, Tileset>
@@ -1158,7 +1157,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     tileset,
                     tileContentByUri: new Dictionary<string, byte[]>
@@ -1205,7 +1204,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d), CancellationToken.None);
 
@@ -1213,7 +1212,7 @@ namespace ThreeDTilesLink.Tests
             _ = client.Payloads.Should().HaveCount(2);
             _ = client.Payloads[0].Name.Should().Contain("tile_p_");
             _ = client.Payloads[1].Name.Should().Contain("tile_c_");
-            _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().Contain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1243,7 +1242,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(
                 CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d),
@@ -1253,7 +1252,7 @@ namespace ThreeDTilesLink.Tests
             _ = client.Payloads.Should().ContainSingle();
             _ = client.Payloads[0].Name.Should().Contain("tile_c_");
             _ = client.Payloads[0].Name.Should().NotContain("tile_p_");
-            _ = client.RemovedSlotIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().NotContain(id => id.Contains("tile_p_m", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1292,7 +1291,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteSession(
                 onStreamCompleted: (payload, _) => events.Add($"stream:{payload.Name}"),
                 onRemoveCompleted: slotId => events.Add($"remove:{slotId}"));
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(
                 CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d),
@@ -1303,7 +1302,7 @@ namespace ThreeDTilesLink.Tests
             _ = client.Payloads[0].Name.Should().Contain("tile_p_");
             _ = client.Payloads[1].Name.Should().Contain("tile_c");
             _ = client.Payloads[2].Name.Should().Contain("tile_c");
-            _ = client.RemovedSlotIds.Should().ContainSingle(id => id.Contains("tile_p_m", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().ContainSingle(id => id.Contains("tile_p_m", StringComparison.Ordinal));
 
             int parentStreamIndex = events.FindIndex(entry => entry.Contains("stream:tile_p_", StringComparison.Ordinal));
             int firstChildStreamIndex = events.FindIndex(entry => entry.Contains("stream:tile_c0_", StringComparison.Ordinal));
@@ -1376,7 +1375,7 @@ namespace ThreeDTilesLink.Tests
                 onContentFetched: uri => events.Add($"fetch:{uri.AbsoluteUri}"));
             var client = new FakeResoniteSession(
                 onRemoveCompleted: slotId => events.Add($"remove:{slotId}"));
-            TileRunCoordinator coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 2);
+            TileSelectionService coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 2);
 
             RunSummary summary = await coordinator.RunAsync(
                 CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d),
@@ -1418,7 +1417,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false, bootstrapRangeMultiplier: 0.5d), CancellationToken.None);
 
@@ -1443,7 +1442,7 @@ namespace ThreeDTilesLink.Tests
 
             var tilesSource = new FakeTilesSource(tileset, contentDelay: TimeSpan.FromMilliseconds(75));
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 4);
+            TileSelectionService coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 4);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: true), CancellationToken.None);
 
@@ -1467,7 +1466,7 @@ namespace ThreeDTilesLink.Tests
 
             var tilesSource = new FakeTilesSource(tileset, contentDelay: TimeSpan.FromMilliseconds(40));
             var client = new FakeResoniteSession(streamDelay: TimeSpan.FromMilliseconds(20));
-            TileRunCoordinator coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 3);
+            TileSelectionService coordinator = CreateCoordinator(tilesSource, client, maxConcurrentTileProcessing: 3);
 
             RunSummary summary = await coordinator.RunAsync(CreateRequest(dryRun: false), CancellationToken.None);
 
@@ -1489,7 +1488,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failOnSendNumber: 2);
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     tileset,
                     tileContentByUri: new Dictionary<string, byte[]>
@@ -1511,8 +1510,8 @@ namespace ThreeDTilesLink.Tests
             _ = result.Summary.StreamedMeshes.Should().Be(2);
             _ = result.Summary.FailedTiles.Should().Be(1);
             _ = result.VisibleTiles.Should().ContainKey(StableId("multi"));
-            _ = result.VisibleTiles[StableId("multi")].SlotIds.Should().HaveCount(2);
-            _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_multi_", StringComparison.Ordinal));
+            _ = result.VisibleTiles[StableId("multi")].NodeIds.Should().HaveCount(2);
+            _ = client.RemovedNodeIds.Should().Contain(id => id.Contains("tile_multi_", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1541,7 +1540,7 @@ namespace ThreeDTilesLink.Tests
                     ["tile_multi_m0"] = TimeSpan.FromMilliseconds(10),
                     ["tile_multi_m1"] = TimeSpan.FromMilliseconds(200)
                 });
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     tileset,
                     tileContentByUri: new Dictionary<string, byte[]>
@@ -1559,7 +1558,7 @@ namespace ThreeDTilesLink.Tests
                 cancellation.Token);
 
             _ = await act.Should().ThrowAsync<OperationCanceledException>();
-            _ = client.RemovedSlotIds.Should().Contain(id => id.Contains("tile_multi_m0", StringComparison.Ordinal));
+            _ = client.RemovedNodeIds.Should().Contain(id => id.Contains("tile_multi_m0", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1578,7 +1577,7 @@ namespace ThreeDTilesLink.Tests
                 failOnSendNumber: 2,
                 failOnRemoveContains: "slot_1_tile_multi_m0",
                 failOnRemoveNumber: 1);
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     tileset,
                     tileContentByUri: new Dictionary<string, byte[]>
@@ -1602,7 +1601,7 @@ namespace ThreeDTilesLink.Tests
             _ = result.Summary.StreamedMeshes.Should().Be(3);
             _ = result.Summary.FailedTiles.Should().Be(1);
             _ = result.VisibleTiles.Should().ContainKey(StableId("multi"));
-            _ = result.VisibleTiles[StableId("multi")].SlotIds.Should().HaveCount(2);
+            _ = result.VisibleTiles[StableId("multi")].NodeIds.Should().HaveCount(2);
             _ = result.CleanupDebtTiles.Should().NotContainKey(StableId("multi"));
         }
 
@@ -1621,7 +1620,7 @@ namespace ThreeDTilesLink.Tests
             var client = new FakeResoniteSession(
                 failOnNameContains: "tile_multi_m1",
                 failOnRemoveContains: "slot_");
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(
                     tileset,
                     tileContentByUri: new Dictionary<string, byte[]>
@@ -1645,7 +1644,7 @@ namespace ThreeDTilesLink.Tests
             _ = result.Summary.FailedTiles.Should().Be(3);
             _ = result.VisibleTiles.Should().NotContainKey(StableId("multi"));
             _ = result.CleanupDebtTiles.Should().ContainKey(StableId("multi"));
-            _ = result.CleanupDebtTiles[StableId("multi")].SlotIds.Should().HaveCount(2);
+            _ = result.CleanupDebtTiles[StableId("multi")].NodeIds.Should().HaveCount(2);
         }
 
         [Fact]
@@ -1661,7 +1660,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failProgressUpdates: true);
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(
                 CreateRequest(dryRun: false, manageConnection: false),
@@ -1685,7 +1684,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failDisconnect: true);
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(tileset, rootFetchException: new InvalidOperationException("synthetic root fetch failure")),
                 client);
 
@@ -1709,7 +1708,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession();
-            TileRunCoordinator coordinator = CreateCoordinator(
+            TileSelectionService coordinator = CreateCoordinator(
                 new FakeTilesSource(tileset, contentDelay: TimeSpan.FromMilliseconds(200)),
                 client);
 
@@ -1735,7 +1734,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failDisconnectWhenCanceled: true);
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             RunSummary summary = await coordinator.RunAsync(
                 CreateRequest(dryRun: false),
@@ -1774,7 +1773,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failOnRemoveContains: "tile_p_m");
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
 
             InteractiveTileRunResult result = await coordinator.RunInteractiveAsync(
                 CreateRequest(dryRun: false, manageConnection: false, bootstrapRangeMultiplier: 0.5d),
@@ -1796,7 +1795,7 @@ namespace ThreeDTilesLink.Tests
             });
 
             var client = new FakeResoniteSession(failOnRemoveContains: "slot_keep");
-            TileRunCoordinator coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
+            TileSelectionService coordinator = CreateCoordinator(new FakeTilesSource(tileset), client);
             string stableId = StableId("retained");
             var retainedTiles = new Dictionary<string, RetainedTileState>(StringComparer.Ordinal)
             {
@@ -1808,52 +1807,53 @@ namespace ThreeDTilesLink.Tests
                 new InteractiveRunInput(retainedTiles, RemoveOutOfRangeTiles: true),
                 CancellationToken.None);
 
-            _ = client.RemovedSlotIds.Should().Contain("slot_remove");
+            _ = client.RemovedNodeIds.Should().Contain("slot_remove");
             _ = result.VisibleTiles.Should().ContainKey(stableId);
-            _ = result.VisibleTiles[stableId].SlotIds.Should().Equal("slot_keep");
+            _ = result.VisibleTiles[stableId].NodeIds.Should().Equal("slot_keep");
         }
 
         [Fact]
         public void Constructors_ExposeSeparateSessionMetadataPortDependency()
         {
-            Type[] coordinatorParameters = typeof(TileRunCoordinator)
+            Type[] coordinatorParameters = typeof(TileSelectionService)
                 .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                .Single(ctor => ctor.GetParameters().Any(parameter => parameter.ParameterType == typeof(IResoniteSessionMetadataPort)))
+                .Single(ctor => ctor.GetParameters().Any(parameter => parameter.ParameterType == typeof(ISceneMetadataSink)))
                 .GetParameters()
                 .Select(parameter => parameter.ParameterType)
                 .ToArray();
             Type[] selectionParameters = typeof(TileSelectionService)
                 .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                 .Select(static ctor => ctor.GetParameters().Select(static parameter => parameter.ParameterType).ToArray())
-                .FirstOrDefault(static parameters => parameters.Contains(typeof(IResoniteSessionMetadataPort)))
+                .FirstOrDefault(static parameters => parameters.Contains(typeof(ISceneMetadataSink)))
                 ?? [];
 
             _ = coordinatorParameters.Should().ContainInOrder(
-                typeof(IResoniteSession),
-                typeof(IResoniteSessionMetadataPort));
+                typeof(ISceneSession),
+                typeof(ISceneMetadataSink));
             _ = selectionParameters.Should().ContainInOrder(
-                typeof(IResoniteSession),
-                typeof(IResoniteSessionMetadataPort));
+                typeof(ISceneSession),
+                typeof(ISceneMetadataSink));
         }
 
-        private static TileRunCoordinator CreateCoordinator(
+        private static TileSelectionService CreateCoordinator(
             ITilesSource tilesSource,
             FakeResoniteSession session,
             IGlbMeshExtractor? extractor = null,
-            IResoniteSessionMetadataPort? metadataPort = null,
+            ISceneMetadataSink? metadataPort = null,
             int maxConcurrentTileProcessing = 1)
         {
             var transformer = new PassThroughTransformer();
             var traversalCore = new TraversalCore(new TileSelector(transformer));
-            return new TileRunCoordinator(
+            return new TileSelectionService(
                 tilesSource,
                 traversalCore,
-                new ResoniteReconcilerCore(),
-                new TileContentProcessor(tilesSource, extractor ?? new FakeExtractor()),
+                new SceneReconcilerCore(new GoogleTileLicenseCreditPolicy()),
+                extractor ?? new FakeExtractor(),
                 new MeshPlacementService(transformer),
                 session,
                 metadataPort ?? session,
-                NullLogger<TileRunCoordinator>.Instance,
+                new GoogleTileLicenseCreditPolicy(),
+                NullLogger<TileSelectionService>.Instance,
                 maxConcurrentTileProcessing);
         }
 
@@ -1868,8 +1868,10 @@ namespace ThreeDTilesLink.Tests
                 new GeoReference(0d, 0d, 0d),
                 new GeoReference(0d, 0d, 0d),
                 new TraversalOptions(rangeM, 40d, bootstrapRangeMultiplier),
-                new ResoniteOutputOptions("127.0.0.1", 12345, dryRun, manageConnection),
-                apiKey);
+                new SceneOutputOptions("127.0.0.1", 12345, dryRun, manageConnection),
+                new TileSourceOptions(
+                    new Uri("https://example.com/root.json"),
+                    new TileSourceAccess(apiKey, null)));
         }
 
         private static string StableId(string id)
@@ -1954,7 +1956,7 @@ namespace ThreeDTilesLink.Tests
 
             public int ContentFetchCount { get; private set; }
 
-            public Task<Tileset> FetchRootTilesetAsync(GoogleTilesAuth auth, CancellationToken cancellationToken)
+            public Task<Tileset> FetchRootTilesetAsync(TileSourceOptions source, CancellationToken cancellationToken)
             {
                 if (_rootFetchException is not null)
                 {
@@ -1964,7 +1966,7 @@ namespace ThreeDTilesLink.Tests
                 return Task.FromResult(_tileset);
             }
 
-            public async Task<FetchedNodeContent> FetchNodeContentAsync(Uri contentUri, GoogleTilesAuth auth, CancellationToken cancellationToken)
+            public async Task<FetchedNodeContent> FetchNodeContentAsync(Uri contentUri, TileSourceOptions source, CancellationToken cancellationToken)
             {
                 int current = Interlocked.Increment(ref _activeContentFetches);
                 UpdateMaxConcurrentContentFetches(current);
@@ -1982,18 +1984,17 @@ namespace ThreeDTilesLink.Tests
                             _ignoreCancellationDuringContent ? CancellationToken.None : cancellationToken).ConfigureAwait(false);
                     }
 
-                    FetchedNodeContent fetchedContent =
-                    TileContentClassifier.Classify(contentUri) switch
-                    {
-                        TileContentKind.Json => _nestedTilesets.TryGetValue(contentUri.AbsoluteUri, out Tileset? nested)
+                    FetchedNodeContent fetchedContent = contentUri.AbsolutePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                        ? _nestedTilesets.TryGetValue(contentUri.AbsoluteUri, out Tileset? nested)
                             ? new NestedTilesetFetchedContent(nested)
-                            : throw new InvalidOperationException($"Unknown nested tileset URI: {contentUri}"),
-                        TileContentKind.Glb => new GlbFetchedContent(
-                            _tileContentByUri.TryGetValue(contentUri.AbsoluteUri, out byte[]? content)
-                                ? content
-                                : [1, 2, 3, 4]),
-                        _ => new UnsupportedFetchedContent()
-                    };
+                            : throw new InvalidOperationException($"Unknown nested tileset URI: {contentUri}")
+                        : contentUri.AbsolutePath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) ||
+                            contentUri.AbsolutePath.EndsWith(".b3dm", StringComparison.OrdinalIgnoreCase)
+                            ? new GlbFetchedContent(
+                                _tileContentByUri.TryGetValue(contentUri.AbsoluteUri, out byte[]? content)
+                                    ? content
+                                    : [1, 2, 3, 4])
+                            : new UnsupportedFetchedContent();
                     _onContentFetched?.Invoke(contentUri);
                     return fetchedContent;
                 }
@@ -2098,7 +2099,7 @@ namespace ThreeDTilesLink.Tests
             public bool DisconnectCancellationObserved { get; private set; }
             public List<string> LicenseCredits => _metadata.LicenseCredits;
             public List<PlacedMeshPayload> Payloads { get; } = [];
-            public List<string> RemovedSlotIds { get; } = [];
+            public List<string> RemovedNodeIds { get; } = [];
             public List<(string? ParentSlotId, float Progress01, string ProgressText)> ProgressUpdates => _metadata.ProgressUpdates;
 
             public Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
@@ -2127,7 +2128,7 @@ namespace ThreeDTilesLink.Tests
                 return _metadata.SetProgressTextAsync(parentSlotId, progressText, cancellationToken);
             }
 
-            public async Task<string?> StreamPlacedMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
+            public async Task<string?> StreamMeshAsync(PlacedMeshPayload payload, CancellationToken cancellationToken)
             {
                 int current = Interlocked.Increment(ref _activeStreams);
                 UpdateMaxConcurrentStreams(current);
@@ -2169,20 +2170,20 @@ namespace ThreeDTilesLink.Tests
                 }
             }
 
-            public Task RemoveSlotAsync(string slotId, CancellationToken cancellationToken)
+            public Task RemoveNodeAsync(string nodeId, CancellationToken cancellationToken)
             {
                 int removeSlotNumber = Interlocked.Increment(ref _removeSlotNumber);
                 _ = Interlocked.Increment(ref _removeAttempts);
                 if (!string.IsNullOrWhiteSpace(_failOnRemoveContains) &&
-                    slotId.Contains(_failOnRemoveContains, StringComparison.Ordinal) &&
+                    nodeId.Contains(_failOnRemoveContains, StringComparison.Ordinal) &&
                     (_failOnRemoveNumber is null || removeSlotNumber == _failOnRemoveNumber.Value))
                 {
                     throw new InvalidOperationException("synthetic remove failure");
                 }
 
                 RemoveCount++;
-                RemovedSlotIds.Add(slotId);
-                _onRemoveCompleted?.Invoke(slotId);
+                RemovedNodeIds.Add(nodeId);
+                _onRemoveCompleted?.Invoke(nodeId);
                 return Task.CompletedTask;
             }
 
@@ -2370,3 +2371,4 @@ namespace ThreeDTilesLink.Tests
         }
     }
 }
+

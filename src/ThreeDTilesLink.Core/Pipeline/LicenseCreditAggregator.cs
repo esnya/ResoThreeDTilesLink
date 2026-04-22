@@ -1,9 +1,10 @@
-using ThreeDTilesLink.Core.Google;
+using ThreeDTilesLink.Core.Contracts;
 
 namespace ThreeDTilesLink.Core.Pipeline
 {
-    internal sealed class LicenseCreditAggregator
+    internal sealed class LicenseCreditAggregator(ILicenseCreditPolicy policy)
     {
+        private readonly ILicenseCreditPolicy _policy = policy;
         private readonly List<string> _attributionOrder = [];
         private readonly HashSet<string> _knownAttributions = new(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _activeAttributionCounts = new(StringComparer.Ordinal);
@@ -15,7 +16,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             _activeAttributionCounts.Clear();
         }
 
-        public static IReadOnlyList<string> ParseOwners(IEnumerable<string> values)
+        public IReadOnlyList<string> ParseOwners(IEnumerable<string> values)
         {
             ArgumentNullException.ThrowIfNull(values);
             var owners = new List<string>();
@@ -31,7 +32,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 string[] segments = raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 foreach (string segment in segments)
                 {
-                    string? normalized = NormalizeAttributionOwner(segment);
+                    string? normalized = _policy.NormalizeOwner(segment);
                     if (normalized is null || !seen.Add(normalized))
                     {
                         continue;
@@ -99,7 +100,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             if (_activeAttributionCounts.Count == 0)
             {
-                return GoogleMapsCompliance.BasemapAttribution;
+                return _policy.DefaultCredit;
             }
 
             var orderIndex = new Dictionary<string, int>(_attributionOrder.Count, StringComparer.Ordinal);
@@ -113,10 +114,15 @@ namespace ThreeDTilesLink.Core.Pipeline
                 .OrderByDescending(value => _activeAttributionCounts[value])
                 .ThenBy(value => orderIndex[value]);
 
-            var credits = new List<string> { GoogleMapsCompliance.BasemapAttribution };
+            var credits = new List<string>();
+            if (!string.IsNullOrWhiteSpace(_policy.DefaultCredit))
+            {
+                credits.Add(_policy.DefaultCredit);
+            }
+
             foreach (string attribution in ordered)
             {
-                if (string.Equals(attribution, GoogleMapsCompliance.BasemapAttribution, StringComparison.Ordinal))
+                if (string.Equals(attribution, _policy.DefaultCredit, StringComparison.Ordinal))
                 {
                     continue;
                 }
@@ -127,9 +133,9 @@ namespace ThreeDTilesLink.Core.Pipeline
             return string.Join("; ", credits);
         }
 
-        private static string? NormalizeAttributionOwner(string? value)
+        public LicenseCreditAggregator()
+            : this(new Google.GoogleTileLicenseCreditPolicy())
         {
-            return GoogleMapsCompliance.NormalizeAttributionOwner(value);
         }
     }
 }

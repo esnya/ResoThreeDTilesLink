@@ -4,6 +4,6 @@ namespace ThreeDTilesLink.Core.Models
         GeoReference SelectionReference,
         GeoReference PlacementReference,
         TraversalOptions Traversal,
-        ResoniteOutputOptions Output,
-        string? ApiKey);
+        SceneOutputOptions Output,
+        TileSourceOptions Source);
 }

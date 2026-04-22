@@ -3,7 +3,7 @@ namespace ThreeDTilesLink.Core.Math
     /// <summary>
     /// 64-bit vector used for 3D Tiles coordinate calculations.
     /// </summary>
-    public readonly struct Vector3d(double x, double y, double z) : IEquatable<Vector3d>
+    internal readonly struct Vector3d(double x, double y, double z) : IEquatable<Vector3d>
     {
         /// <summary>
         /// X coordinate.

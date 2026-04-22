@@ -13,7 +13,7 @@ namespace ThreeDTilesLink.Core.Models
         Vector3 SlotScale,
         byte[]? BaseColorTextureBytes,
         string? BaseColorTextureExtension,
-        string? ParentSlotId = null,
+        string? ParentNodeId = null,
         IReadOnlyList<Vector3>? Normals = null,
         IReadOnlyList<Vector4>? Tangents = null)
     {

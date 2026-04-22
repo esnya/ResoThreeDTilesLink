@@ -21,7 +21,7 @@ namespace ThreeDTilesLink.Core.Mesh
             TileSelectionResult tile,
             IReadOnlyList<MeshData> meshes,
             GeoReference reference,
-            string? parentSlotId)
+            string? parentNodeId)
         {
             ArgumentNullException.ThrowIfNull(tile);
             ArgumentNullException.ThrowIfNull(meshes);
@@ -30,7 +30,7 @@ namespace ThreeDTilesLink.Core.Mesh
             var placed = new List<PlacedMeshPayload>(meshes.Count);
             foreach (MeshData mesh in meshes)
             {
-                placed.Add(ToEunPayload(mesh, tile.WorldTransform, reference, tile.TileId, parentSlotId));
+                placed.Add(ToEunPayload(mesh, tile.WorldTransform, reference, tile.TileId, parentNodeId));
             }
 
             return placed;
@@ -41,7 +41,7 @@ namespace ThreeDTilesLink.Core.Mesh
             Matrix4x4d tileWorld,
             GeoReference reference,
             string tileId,
-            string? parentSlotId)
+            string? parentNodeId)
         {
             Matrix4x4d meshWorld = mesh.LocalTransform * GltfYUpToZUp * tileWorld;
             Vector3d meshOriginEcef = meshWorld.TransformPoint(new Vector3d(0d, 0d, 0d));
@@ -130,7 +130,7 @@ namespace ThreeDTilesLink.Core.Mesh
                 slotScale,
                 mesh.BaseColorTextureBytes,
                 mesh.BaseColorTextureExtension,
-                parentSlotId,
+                parentNodeId,
                 normals,
                 tangents);
         }

@@ -26,15 +26,29 @@
 - `stream` のタイル取得: Google Map Tiles API
 - `interactive` の `Latitude` / `Longitude` / `Range` ベースのタイル取得: Google Map Tiles API
 - `interactive` の自由検索 (`World/... .Search`): Google Geocoding API
+- tile fetch を別の tile source に向けても、現状の search 実装は引き続き Google Geocoding のまま
 - タイル取得は ADC fallback を使わない。常に `GOOGLE_MAPS_API_KEY` を使う
 - `interactive` の自由検索は `GOOGLE_MAPS_API_KEY` が必要で、ADC では扱わない
 - アプリは `.env` を上位ディレクトリ探索付きで自動ロードし、既存の環境変数は上書きしない
+- tile fetch の root、認証面、継承 query の扱いを変える必要がある場合は、Google 前提にせず明示的な tile-source override を使う
+- `TILE_SOURCE_ROOT_TILESET_URI`
+- `TILE_SOURCE_FILE_SCHEME_BASE_URI`
+- `TILE_SOURCE_API_KEY`
+- `TILE_SOURCE_BEARER_TOKEN`
+- `TILE_SOURCE_INHERITED_QUERY_PARAMETERS`
+- `SEARCH_API_KEY` で、tile fetch とは独立に Google Geocoding の API キーを上書きできる
 - tileset の表示ラベルは、slot 名の可読性を優先して compact な 16 進数にしている
 - 同一階層に 16 個を超える sibling がある場合、表示ラベルは 16 進数で折り返し、parser は warning を出す。ただし内部の stable path は一意性を保つ
 
 ## 環境変数
 
 - `GOOGLE_MAPS_API_KEY`: Google Map Tiles API と Google Geocoding API を API キーで使うときに設定する
+- `TILE_SOURCE_ROOT_TILESET_URI`: tile fetch の開始 root を別の source に切り替えるときに設定する
+- `TILE_SOURCE_FILE_SCHEME_BASE_URI`: 選択した tile source で `file://` の content URI をどう書き換えるかを上書きする
+- `TILE_SOURCE_API_KEY`: tile fetch 専用の API キーを上書きする
+- `TILE_SOURCE_BEARER_TOKEN`: provider が bearer 認証を要求する tile fetch で使う
+- `TILE_SOURCE_INHERITED_QUERY_PARAMETERS`: 親の tileset/content URI から継承する query parameter 名をカンマまたはセミコロン区切りで指定する
+- `SEARCH_API_KEY`: interactive search 専用の API キーを上書きする
 - `THREEDTILESLINK_DUMP_MESH_JSON`: メッシュ送信内容の JSON ダンプが必要なときに使う
 
 ## Resonite 連携の扱い

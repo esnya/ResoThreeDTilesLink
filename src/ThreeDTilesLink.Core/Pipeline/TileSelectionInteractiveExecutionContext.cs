@@ -6,7 +6,7 @@ namespace ThreeDTilesLink.Core.Pipeline
     {
         private readonly Dictionary<string, RetainedTileState> _retainedTiles = new(StringComparer.Ordinal);
         private readonly Dictionary<string, RetainedTileState> _cleanupDebtTiles = new(StringComparer.Ordinal);
-        private readonly HashSet<string> _newSlotIds = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _newNodeIds = new(StringComparer.Ordinal);
 
         public TileSelectionInteractiveExecutionContext(
             IReadOnlyDictionary<string, RetainedTileState> retainedTiles,
@@ -38,25 +38,25 @@ namespace ThreeDTilesLink.Core.Pipeline
             LastState = state;
         }
 
-        public void TrackNewSlotId(string slotId)
+        public void TrackNewNodeId(string nodeId)
         {
-            if (!string.IsNullOrWhiteSpace(slotId))
+            if (!string.IsNullOrWhiteSpace(nodeId))
             {
-                _ = _newSlotIds.Add(slotId);
+                _ = _newNodeIds.Add(nodeId);
             }
         }
 
-        public void ForgetNewSlotId(string slotId)
+        public void ForgetNewNodeId(string nodeId)
         {
-            if (!string.IsNullOrWhiteSpace(slotId))
+            if (!string.IsNullOrWhiteSpace(nodeId))
             {
-                _ = _newSlotIds.Remove(slotId);
+                _ = _newNodeIds.Remove(nodeId);
             }
         }
 
-        public string[] GetNewSlotIds()
+        public string[] GetNewNodeIds()
         {
-            return [.. _newSlotIds];
+            return [.. _newNodeIds];
         }
     }
 }

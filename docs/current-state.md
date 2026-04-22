@@ -26,15 +26,29 @@ This document contains only current operational information that is difficult to
 - `stream` tile fetch: Google Map Tiles API
 - `interactive` tile fetch based on `Latitude` / `Longitude` / `Range`: Google Map Tiles API
 - Interactive free-text search (`World/... .Search`): Google Geocoding API
+- The current search implementation is still Google Geocoding even when tile fetch is pointed at a different tile source.
 - Tile fetch does not support ADC fallback. Use `GOOGLE_MAPS_API_KEY` consistently.
 - Interactive free-text search requires `GOOGLE_MAPS_API_KEY` and does not support ADC.
 - The app auto-loads `.env` with parent-directory discovery and does not overwrite existing environment variables.
+- When tile fetch needs a different root, auth surface, or inherited query behavior, use the explicit tile-source overrides instead of assuming Google defaults:
+- `TILE_SOURCE_ROOT_TILESET_URI`
+- `TILE_SOURCE_FILE_SCHEME_BASE_URI`
+- `TILE_SOURCE_API_KEY`
+- `TILE_SOURCE_BEARER_TOKEN`
+- `TILE_SOURCE_INHERITED_QUERY_PARAMETERS`
+- `SEARCH_API_KEY` can override the Google Geocoding API key independently from tile fetch auth.
 - Tileset display labels are compact hexadecimal for slot-name readability.
 - If a tileset has more than 16 siblings at one level, display labels wrap modulo 16 and the parser emits a warning; internal stable paths remain unique.
 
 ## Environment Variables
 
 - `GOOGLE_MAPS_API_KEY`: set this when using the Google Map Tiles API and Google Geocoding API with an API key
+- `TILE_SOURCE_ROOT_TILESET_URI`: override the root tileset URI when tile fetch should start from a different source
+- `TILE_SOURCE_FILE_SCHEME_BASE_URI`: override how `file://` tile content URIs are rewritten for the selected tile source
+- `TILE_SOURCE_API_KEY`: override only the tile-fetch API key
+- `TILE_SOURCE_BEARER_TOKEN`: use bearer auth for tile fetch when the provider requires it
+- `TILE_SOURCE_INHERITED_QUERY_PARAMETERS`: comma- or semicolon-separated query parameter names to inherit from parent tileset/content URIs
+- `SEARCH_API_KEY`: override only the interactive search API key
 - `THREEDTILESLINK_DUMP_MESH_JSON`: use this when a JSON dump of mesh transmission contents is needed
 
 ## Handling Resonite Integration

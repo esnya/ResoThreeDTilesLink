@@ -1,5 +1,7 @@
 using FluentAssertions;
+using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Tiles;
+using System.Web;
 
 namespace ThreeDTilesLink.Tests
 {
@@ -8,7 +10,11 @@ namespace ThreeDTilesLink.Tests
         [Fact]
         public void Parse_GeneratesCompactHexTileDisplayLabelsWithoutSlash()
         {
-            var source = new Uri("https://tile.googleapis.com/v1/3dtiles/root.json?session=s");
+            var sourceUri = new Uri("https://tile.googleapis.com/v1/3dtiles/root.json?session=s");
+            TileSourceOptions source = new(
+                sourceUri,
+                new TileSourceAccess("key", null),
+                TileSourceContentLinkOptions.CreateGoogleDefaults());
             string json = /*lang=json,strict*/ """
                    {
                      "root": {
@@ -35,7 +41,7 @@ namespace ThreeDTilesLink.Tests
                    }
                    """;
 
-            Tileset tileset = TilesetParser.Parse(json, source);
+            Tileset tileset = new TilesetParser().Parse(json, source.ContentLinks, sourceUri);
 
             _ = tileset.Root.Id.Should().Be("0");
             _ = tileset.Root.Children[0].Id.Should().Be("00");
@@ -48,7 +54,11 @@ namespace ThreeDTilesLink.Tests
         [Fact]
         public void Parse_WrapsDisplayLabelsAfterHexRangeButKeepsStablePathsUnique()
         {
-            var source = new Uri("https://tile.googleapis.com/v1/3dtiles/root.json?session=s");
+            var sourceUri = new Uri("https://tile.googleapis.com/v1/3dtiles/root.json?session=s");
+            TileSourceOptions source = new(
+                sourceUri,
+                new TileSourceAccess("key", null),
+                TileSourceContentLinkOptions.CreateGoogleDefaults());
             string json = /*lang=json,strict*/ """
                    {
                      "root": {
@@ -95,7 +105,7 @@ namespace ThreeDTilesLink.Tests
                    }
                    """;
 
-            Tileset tileset = TilesetParser.Parse(json, source);
+            Tileset tileset = new TilesetParser().Parse(json, source.ContentLinks, sourceUri);
 
             _ = tileset.Root.Children[15].Id.Should().Be("0F");
             _ = tileset.Root.Children[16].Id.Should().Be("00");
@@ -103,6 +113,60 @@ namespace ThreeDTilesLink.Tests
             _ = tileset.Root.Children[35].Id.Should().Be("03");
             _ = tileset.Root.Children[36].Id.Should().Be("04");
             _ = tileset.Root.Children.Select(child => child.StablePath).Should().OnlyHaveUniqueItems();
+        }
+
+        [Fact]
+        public void Parse_PreservesConfiguredFileSchemeBasePathAndInheritedQueryParameters()
+        {
+            var sourceUri = new Uri("https://plateau.example.com/tiles/root.json?sig=abc&unused=z");
+            TileSourceOptions source = new(
+                sourceUri,
+                new TileSourceAccess(null, "token"),
+                new TileSourceContentLinkOptions(
+                    new Uri("https://cdn.plateau.example.com/tiles/"),
+                    ["sig"]));
+            string json = """
+                {
+                  "root": {
+                    "content": {
+                      "uri": "file:///lod/leaf.glb"
+                    }
+                  }
+                }
+                """;
+
+            Tileset tileset = new TilesetParser().Parse(json, source.ContentLinks, sourceUri);
+
+            _ = tileset.Root.ContentUri!.AbsoluteUri.Should().Be("https://cdn.plateau.example.com/tiles/lod/leaf.glb?sig=abc");
+        }
+
+        [Fact]
+        public void Parse_PreservesBaseQueryParameters_WhenNormalizingFileSchemeUris()
+        {
+            var sourceUri = new Uri("https://plateau.example.com/tiles/root.json?sig=source");
+            TileSourceOptions source = new(
+                sourceUri,
+                new TileSourceAccess(null, "token"),
+                new TileSourceContentLinkOptions(
+                    new Uri("https://cdn.plateau.example.com/tiles/?sig=base&mode=base"),
+                    ["sig"]));
+            string json = """
+                {
+                  "root": {
+                    "content": {
+                      "uri": "file:///lod/leaf.glb?mode=leaf&v=1"
+                    }
+                  }
+                }
+                """;
+
+            Tileset tileset = new TilesetParser().Parse(json, source.ContentLinks, sourceUri);
+            var query = HttpUtility.ParseQueryString(tileset.Root.ContentUri!.Query);
+
+            _ = tileset.Root.ContentUri!.AbsolutePath.Should().Be("/tiles/lod/leaf.glb");
+            _ = query["sig"].Should().Be("base");
+            _ = query["mode"].Should().Be("leaf");
+            _ = query["v"].Should().Be("1");
         }
     }
 }

@@ -20,7 +20,7 @@ namespace ThreeDTilesLink.Tests
             _ = invocation.Output.Should().Contain("dotnet run --project src/ThreeDTilesLink -- interactive [options]");
             _ = invocation.Output.Should().Contain("Default: localhost.");
             _ = invocation.Output.Should().Contain("Unit: ms.");
-            _ = invocation.Output.Should().Contain("session-root Latitude/Longitude/Range/Search values change");
+            _ = invocation.Output.Should().Contain("selection Latitude/Longitude/Range/Search values change");
         }
 
         [Fact]
@@ -40,8 +40,8 @@ namespace ThreeDTilesLink.Tests
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
             [
                 "--height-offset", "20",
-                "--resonite-host", "127.0.0.1",
-                "--resonite-port", "12000",
+                "--endpoint-host", "127.0.0.1",
+                "--endpoint-port", "12000",
                 "--detail", "25",
                 "--content-workers", "3",
                 "--resonite-send-workers", "5",
@@ -64,16 +64,16 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public void Parse_DefaultsResoniteHostToLocalhost()
+        public void Parse_DefaultsEndpointHostToLocalhost()
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
             [
-                "--resonite-port", "12000"
+                "--endpoint-port", "12000"
             ]);
 
             _ = invocation.ShouldRun.Should().BeTrue();
             InteractiveCommandOptions parsed = invocation.Options!;
-            _ = parsed.ResoniteHost.Should().Be("localhost");
+            _ = parsed.EndpointHost.Should().Be("localhost");
         }
 
         [Fact]
@@ -82,7 +82,7 @@ namespace ThreeDTilesLink.Tests
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
             [
                 "--range", "400",
-                "--resonite-port", "12000"
+                "--endpoint-port", "12000"
             ]);
 
             _ = invocation.ShouldRun.Should().BeFalse();
@@ -96,7 +96,7 @@ namespace ThreeDTilesLink.Tests
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
             [
                 "--remove-out-of-range",
-                "--resonite-port", "12000"
+                "--endpoint-port", "12000"
             ]);
 
             _ = invocation.ShouldRun.Should().BeFalse();
@@ -109,7 +109,7 @@ namespace ThreeDTilesLink.Tests
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
             [
-                "--resonite-port", "12000",
+                "--endpoint-port", "12000",
                 "--content-workers", "0"
             ]);
 
@@ -123,7 +123,7 @@ namespace ThreeDTilesLink.Tests
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
             [
-                "--resonite-port", "12000",
+                "--endpoint-port", "12000",
                 "--resonite-send-workers", "0"
             ]);
 
@@ -137,7 +137,7 @@ namespace ThreeDTilesLink.Tests
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
             [
-                "--resonite-port", "12000",
+                "--endpoint-port", "12000",
                 "--log-level", "Verbose"
             ]);
 
@@ -147,8 +147,8 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Theory]
-        [InlineData("--resonite-port", "0")]
-        [InlineData("--resonite-port", "65536")]
+        [InlineData("--endpoint-port", "0")]
+        [InlineData("--endpoint-port", "65536")]
         [InlineData("--detail", "0")]
         [InlineData("--timeout", "0")]
         [InlineData("--poll-interval", "0")]
@@ -158,7 +158,7 @@ namespace ThreeDTilesLink.Tests
         {
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(
             [
-                "--resonite-port", "12000",
+                "--endpoint-port", "12000",
                 option, value
             ]);
 
@@ -176,8 +176,8 @@ namespace ThreeDTilesLink.Tests
         public void Parse_RejectsRemovedArguments(string option, string value)
         {
             string[] args = string.IsNullOrEmpty(value)
-                ? ["--resonite-port", "12000", option]
-                : ["--resonite-port", "12000", option, value];
+                ? ["--endpoint-port", "12000", option]
+                : ["--endpoint-port", "12000", option, value];
             CommandInvocation<InteractiveCommandOptions> invocation = InteractiveCommandLine.Parse(args);
 
             _ = invocation.ShouldRun.Should().BeFalse();

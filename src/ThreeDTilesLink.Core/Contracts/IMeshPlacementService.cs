@@ -8,6 +8,6 @@ namespace ThreeDTilesLink.Core.Contracts
             TileSelectionResult tile,
             IReadOnlyList<MeshData> meshes,
             GeoReference reference,
-            string? parentSlotId);
+            string? parentNodeId);
     }
 }

@@ -36,7 +36,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         public int CompleteSendFailureCount { get; set; }
 
-        public bool HasRenderable => Tile.ContentKind == TileContentKind.Glb;
+        public bool HasRenderable => Tile.ContentKind.IsRenderable();
 
         public bool CanRetryCompleteSendFailure => CompleteSendFailureCount <= MaxCompleteSendRetries;
     }
@@ -206,10 +206,10 @@ namespace ThreeDTilesLink.Core.Pipeline
     internal sealed record SendTileWriterCommand(PreparedTileContent Content)
         : WriterCommand;
 
-    internal sealed record RemoveTileWriterCommand(string StableId, string TileId, IReadOnlyList<string> SlotIds)
+    internal sealed record RemoveTileWriterCommand(string StableId, string TileId, IReadOnlyList<string> NodeIds)
         : WriterCommand;
 
-    internal sealed record CleanupTileWriterCommand(string StableId, string TileId, IReadOnlyList<string> SlotIds)
+    internal sealed record CleanupTileWriterCommand(string StableId, string TileId, IReadOnlyList<string> NodeIds)
         : WriterCommand;
 
     internal sealed record DelayWriterCommand(TimeSpan Delay)
@@ -230,7 +230,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         PreparedTileContent Content,
         bool Succeeded,
         int StreamedMeshCount,
-        IReadOnlyList<string> SlotIds,
+        IReadOnlyList<string> NodeIds,
         Exception? Error = null)
         : WriterCompletion;
 
@@ -238,8 +238,8 @@ namespace ThreeDTilesLink.Core.Pipeline
         string StableId,
         string TileId,
         bool Succeeded,
-        int FailedSlotCount,
-        IReadOnlyList<string> RemainingSlotIds,
+        int FailedNodeCount,
+        IReadOnlyList<string> RemainingNodeIds,
         Exception? Error = null)
         : WriterCompletion;
 
@@ -247,8 +247,8 @@ namespace ThreeDTilesLink.Core.Pipeline
         string StableId,
         string TileId,
         bool Succeeded,
-        int FailedSlotCount,
-        IReadOnlyList<string> RemainingSlotIds,
+        int FailedNodeCount,
+        IReadOnlyList<string> RemainingNodeIds,
         Exception? Error = null)
         : WriterCompletion;
 

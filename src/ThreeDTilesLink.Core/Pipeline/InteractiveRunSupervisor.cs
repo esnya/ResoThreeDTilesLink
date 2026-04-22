@@ -7,18 +7,19 @@ namespace ThreeDTilesLink.Core.Pipeline
 {
     internal sealed partial class InteractiveRunSupervisor
     {
-        private readonly IInteractiveInputStore _interactiveInputStore;
+        private readonly IInteractiveUiStore _interactiveUiStore;
         private readonly ICoordinateTransformer _coordinateTransformer;
         private readonly IGeoReferenceResolver _geoReferenceResolver;
         private readonly IClock _clock;
         private readonly SelectionInputReader _selectionInputReader;
-        private readonly InteractiveActionApplier _actionApplier;
+        private readonly InteractiveSessionManager _sessionManager;
+        private readonly InteractiveSearchCoordinator _searchCoordinator;
         private readonly ILogger<InteractiveRunSupervisor> _logger;
 
         public InteractiveRunSupervisor(
             ITileSelectionService tileRunCoordinator,
-            IResoniteSession resoniteSession,
-            IInteractiveInputStore interactiveInputStore,
+            ISceneSession sceneSession,
+            IInteractiveUiStore interactiveUiStore,
             ISearchResolver searchResolver,
             ICoordinateTransformer coordinateTransformer,
             IGeoReferenceResolver geoReferenceResolver,
@@ -27,20 +28,21 @@ namespace ThreeDTilesLink.Core.Pipeline
             ILoggerFactory loggerFactory,
             ILogger<InteractiveRunSupervisor> logger)
         {
-            _interactiveInputStore = interactiveInputStore;
+            _interactiveUiStore = interactiveUiStore;
             _coordinateTransformer = coordinateTransformer;
             _geoReferenceResolver = geoReferenceResolver;
             _clock = clock;
             _selectionInputReader = selectionInputReader;
             _logger = logger;
-            _actionApplier = new InteractiveActionApplier(
+            _sessionManager = new InteractiveSessionManager(
                 tileRunCoordinator,
-                resoniteSession,
-                interactiveInputStore,
+                sceneSession,
+                loggerFactory.CreateLogger<InteractiveSessionManager>());
+            _searchCoordinator = new InteractiveSearchCoordinator(
+                interactiveUiStore,
                 searchResolver,
-                coordinateTransformer,
                 clock,
-                loggerFactory);
+                loggerFactory.CreateLogger<InteractiveSearchCoordinator>());
         }
 
         public async Task RunAsync(InteractiveRunRequest options, CancellationToken cancellationToken)
@@ -52,8 +54,8 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                Log.ConnectingToResonite(_logger, options.ResoniteHost, options.ResonitePort);
-                await _actionApplier.ConnectAsync(options.ResoniteHost, options.ResonitePort, cancellationToken).ConfigureAwait(false);
+                Log.ConnectingToInteractiveEndpoint(_logger, options.EndpointHost, options.EndpointPort);
+                await _sessionManager.ConnectAsync(options.EndpointHost, options.EndpointPort, cancellationToken).ConfigureAwait(false);
                 state = state with { Connected = true };
                 state = await InitializeInputBindingAsync(state, cancellationToken).ConfigureAwait(false);
 
@@ -67,7 +69,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 using var shutdownCts = new CancellationTokenSource();
                 shutdownCts.CancelAfter(TimeSpan.FromSeconds(5));
-                state = await _actionApplier.DisconnectAsync(state, shutdownCts.Token).ConfigureAwait(false);
+                state = await _sessionManager.DisconnectAsync(state, shutdownCts.Token).ConfigureAwait(false);
             }
         }
 
@@ -75,8 +77,8 @@ namespace ThreeDTilesLink.Core.Pipeline
             InteractiveLoopState state,
             CancellationToken cancellationToken)
         {
-            InteractiveInputBinding inputBinding = await _interactiveInputStore.CreateInteractiveInputBindingAsync(cancellationToken).ConfigureAwait(false);
-            Log.InteractiveInputAttached(_logger);
+            InteractiveUiBinding inputBinding = await _interactiveUiStore.CreateInteractiveUiBindingAsync(cancellationToken).ConfigureAwait(false);
+            Log.InteractiveUiAttached(_logger);
             return state with { InputBinding = inputBinding };
         }
 
@@ -85,7 +87,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             InteractiveRunRequest options,
             CancellationToken cancellationToken)
         {
-            state = await _actionApplier.FinalizeCompletedRunAsync(state, cancellationToken).ConfigureAwait(false);
+            state = await _sessionManager.FinalizeCompletedRunAsync(state, cancellationToken).ConfigureAwait(false);
 
             SelectionInputSnapshot snapshot = await _selectionInputReader.ReadAsync(state.InputBinding!, cancellationToken).ConfigureAwait(false);
             DateTimeOffset now = _clock.UtcNow;
@@ -100,7 +102,27 @@ namespace ThreeDTilesLink.Core.Pipeline
                 Overlaps);
             state = decision.State;
             LogInputChanges(previousState, state);
-            return await _actionApplier.ApplyAsync(state, decision.Actions, options, cancellationToken).ConfigureAwait(false);
+            return await ApplyActionsAsync(state, decision.Actions, options, cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task<InteractiveLoopState> ApplyActionsAsync(
+            InteractiveLoopState state,
+            IEnumerable<InteractiveAction> actions,
+            InteractiveRunRequest options,
+            CancellationToken cancellationToken)
+        {
+            foreach (InteractiveAction action in actions)
+            {
+                state = action switch
+                {
+                    ResolveSearchAction resolve => await _searchCoordinator.ResolveSearchAsync(state, options, resolve, cancellationToken).ConfigureAwait(false),
+                    CancelActiveRunAction => await _sessionManager.CancelActiveRunAsync(state).ConfigureAwait(false),
+                    StartRunAction start => await _sessionManager.StartRunAsync(state, options, start, cancellationToken).ConfigureAwait(false),
+                    _ => state
+                };
+            }
+
+            return state;
         }
 
         private void LogInputChanges(InteractiveLoopState previousState, InteractiveLoopState state)
@@ -136,14 +158,14 @@ namespace ThreeDTilesLink.Core.Pipeline
 
         internal static partial class Log
         {
-            [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Connecting to Resonite Link at {Host}:{Port}.")]
-            public static partial void ConnectingToResonite(ILogger logger, string host, int port);
+            [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Connecting to interactive endpoint at {Host}:{Port}.")]
+            public static partial void ConnectingToInteractiveEndpoint(ILogger logger, string host, int port);
 
             [LoggerMessage(
                 EventId = 2,
                 Level = LogLevel.Information,
-                Message = "Interactive input bindings attached on the session root slot: Latitude, Longitude, Range, Search.")]
-            public static partial void InteractiveInputAttached(ILogger logger);
+                Message = "Interactive UI bindings attached for Latitude, Longitude, Range, and Search.")]
+            public static partial void InteractiveUiAttached(ILogger logger);
 
             [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Search query changed: {Query}")]
             public static partial void SearchQueryChanged(ILogger logger, string query);
@@ -191,10 +213,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             [LoggerMessage(EventId = 10, Level = LogLevel.Warning, Message = "Run finished with error while superseding.")]
             public static partial void RunSupersededFailed(ILogger logger, Exception exception);
 
-            [LoggerMessage(EventId = 12, Level = LogLevel.Warning, Message = "Failed to disconnect Resonite Link cleanly.")]
+            [LoggerMessage(EventId = 12, Level = LogLevel.Warning, Message = "Failed to disconnect interactive endpoint cleanly.")]
             public static partial void DisconnectFailed(ILogger logger, Exception exception);
 
-            [LoggerMessage(EventId = 13, Level = LogLevel.Warning, Message = "Search query ignored because GOOGLE_MAPS_API_KEY is not set: query={Query}")]
+            [LoggerMessage(EventId = 13, Level = LogLevel.Warning, Message = "Search query ignored because no search API key is configured: query={Query}")]
             public static partial void SearchIgnored(ILogger logger, string query);
 
             [LoggerMessage(EventId = 14, Level = LogLevel.Warning, Message = "Search query returned no result: query={Query}")]

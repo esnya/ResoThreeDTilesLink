@@ -1,6 +1,6 @@
 namespace ThreeDTilesLink.Core.Contracts
 {
-    internal interface IResoniteSession : IResoniteSessionConnection, IResoniteSceneWriter
+    internal interface IResoniteSession : ISceneSession, IResoniteSessionConnection, IResoniteSceneWriter
     {
     }
 }

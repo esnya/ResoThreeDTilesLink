@@ -10,11 +10,11 @@ namespace ThreeDTilesLink.Core.Pipeline
     internal sealed class TileSelectionRunOrchestrator(
         ITilesSource tilesSource,
         TraversalCore traversalCore,
-        ResoniteReconcilerCore reconcilerCore,
-        IContentProcessor contentProcessor,
+        SceneReconcilerCore reconcilerCore,
+        IGlbMeshExtractor glbMeshExtractor,
         IMeshPlacementService meshPlacementService,
-        IResoniteSession resoniteSession,
-        IResoniteSessionMetadataPort sessionMetadataPort,
+        ISceneSession sceneSession,
+        ISceneMetadataSink metadataSink,
         ILogger logger,
         int maxConcurrentTileProcessing = 1,
         int maxConcurrentWriterSends = 1,
@@ -22,11 +22,11 @@ namespace ThreeDTilesLink.Core.Pipeline
     {
         private readonly ITilesSource _tilesSource = tilesSource;
         private readonly TraversalCore _traversalCore = traversalCore;
-        private readonly ResoniteReconcilerCore _reconcilerCore = reconcilerCore;
-        private readonly IContentProcessor _contentProcessor = contentProcessor;
+        private readonly SceneReconcilerCore _reconcilerCore = reconcilerCore;
+        private readonly IGlbMeshExtractor _glbMeshExtractor = glbMeshExtractor;
         private readonly IMeshPlacementService _meshPlacementService = meshPlacementService;
-        private readonly IResoniteSession _resoniteSession = resoniteSession;
-        private readonly IResoniteSessionMetadataPort _sessionMetadataPort = sessionMetadataPort;
+        private readonly ISceneSession _sceneSession = sceneSession;
+        private readonly ISceneMetadataSink _metadataSink = metadataSink;
         private readonly ILogger _logger = logger;
         private readonly int _maxConcurrentTileProcessing = maxConcurrentTileProcessing > 0
             ? maxConcurrentTileProcessing
@@ -37,17 +37,17 @@ namespace ThreeDTilesLink.Core.Pipeline
         private readonly int _maxConcurrentNestedTilesetLoads = global::System.Math.Max(2, maxConcurrentTileProcessing);
         private readonly RunPerformanceSummary? _performanceSummary = performanceSummary;
 
-        private static readonly Action<ILogger, string, int, Exception?> s_connectingToResonite =
+        private static readonly Action<ILogger, string, int, Exception?> s_connectingToScene =
             LoggerMessage.Define<string, int>(
                 LogLevel.Information,
-                new EventId(1, "ConnectingToResonite"),
-                "Connecting to Resonite Link at {Host}:{Port}");
+                new EventId(1, "ConnectingToScene"),
+                "Connecting to scene sink at {Host}:{Port}");
 
         private static readonly Action<ILogger, Exception?> s_fetchingRootTileset =
             LoggerMessage.Define(
                 LogLevel.Information,
                 new EventId(2, "FetchingRootTileset"),
-                "Fetching root tileset from Google Map Tiles API.");
+                "Fetching root tileset from the configured tile source.");
 
         private static readonly Action<ILogger, Exception?> s_failedToSetInitialFetchProgress =
             LoggerMessage.Define(
@@ -89,13 +89,13 @@ namespace ThreeDTilesLink.Core.Pipeline
             LoggerMessage.Define<string, int, int>(
                 LogLevel.Information,
                 new EventId(9, "WriterTileStreamed"),
-                "Streamed tile {TileId}: meshes={MeshCount}, slots={SlotCount}.");
+                "Streamed tile {TileId}: meshes={MeshCount}, nodes={NodeCount}.");
 
         private static readonly Action<ILogger, string, int, int, Exception?> s_writerTileFailed =
             LoggerMessage.Define<string, int, int>(
                 LogLevel.Warning,
                 new EventId(10, "WriterTileFailed"),
-                "Failed to stream tile {TileId}: streamedMeshes={MeshCount}, slots={SlotCount}.");
+                "Failed to stream tile {TileId}: streamedMeshes={MeshCount}, nodes={NodeCount}.");
 
         private static readonly Action<ILogger, string, Exception?> s_writerTileRemoved =
             LoggerMessage.Define<string>(
@@ -113,7 +113,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             LoggerMessage.Define<string, int>(
                 LogLevel.Warning,
                 new EventId(12, "WriterTileRemovalFailed"),
-                "Failed to fully remove tile {TileId}: remainingSlots={RemainingSlotCount}.");
+                "Failed to fully remove tile {TileId}: remainingNodes={RemainingNodeCount}.");
 
         private static readonly Action<ILogger, float, string, Exception?> s_writerMetadataUpdated =
             LoggerMessage.Define<float, string>(
@@ -131,13 +131,13 @@ namespace ThreeDTilesLink.Core.Pipeline
             LoggerMessage.Define<string, string>(
                 LogLevel.Warning,
                 new EventId(15, "RollBackPartialSendFailed"),
-                "Failed to roll back partially streamed slot {SlotId} for tile {TileId}.");
+                "Failed to roll back partially streamed node {NodeId} for tile {TileId}.");
 
         private static readonly Action<ILogger, Exception?> s_disconnectFailedDuringFailure =
             LoggerMessage.Define(
                 LogLevel.Warning,
                 new EventId(18, "DisconnectFailedDuringFailure"),
-                "Failed to disconnect Resonite Link while another failure was already in flight.");
+                "Failed to disconnect scene sink while another failure was already in flight.");
 
         private static readonly Action<ILogger, int, int, int, int, string, string, Exception?> s_progressSnapshot =
             LoggerMessage.Define<int, int, int, int, string, string>(
@@ -168,20 +168,10 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                GoogleTilesAuth auth;
-                try
-                {
-                    auth = await BuildAuthAsync(request).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    await TrySetFailureProgressAsync(request, ex).ConfigureAwait(false);
-                    throw;
-                }
                 if (!request.Output.DryRun && request.Output.ManageConnection)
                 {
-                    s_connectingToResonite(_logger, request.Output.Host, request.Output.Port, null);
-                    await _resoniteSession.ConnectAsync(request.Output.Host, request.Output.Port, cancellationToken).ConfigureAwait(false);
+                    s_connectingToScene(_logger, request.Output.Host, request.Output.Port, null);
+                    await _sceneSession.ConnectAsync(request.Output.Host, request.Output.Port, cancellationToken).ConfigureAwait(false);
                 }
 
                 s_fetchingRootTileset(_logger, null);
@@ -189,8 +179,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                 {
                     try
                     {
-                        await _sessionMetadataPort.SetProgressAsync(
-                            request.Output.MeshParentSlotId,
+                        await _metadataSink.SetProgressAsync(
+                            request.Output.ParentNodeId,
                             0f,
                             "Fetching root tileset...",
                             cancellationToken).ConfigureAwait(false);
@@ -201,7 +191,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
                 }
 
-                Tiles.Tileset rootTileset = await _tilesSource.FetchRootTilesetAsync(auth, cancellationToken).ConfigureAwait(false);
+                Tiles.Tileset rootTileset = await _tilesSource.FetchRootTilesetAsync(request.Source, cancellationToken).ConfigureAwait(false);
                 facts = _traversalCore.Initialize(rootTileset, request, interactiveInput);
                 writerState = new WriterState(interactiveInput?.RetainedTiles, interactiveInput?.CleanupDebtTiles);
                 UpdateInteractiveState(interactiveContext, facts, writerState, counters);
@@ -233,7 +223,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                         MarkDiscoveryInFlight(facts, work);
                         discoveryTasks.Add(stableId, new DiscoveryTaskEntry(
                             work,
-                            ExecuteDiscoveryAsync(work, request, auth, workerCts.Token)));
+                            ExecuteDiscoveryAsync(work, request, workerCts.Token)));
                     }
 
                     DateTimeOffset planningTime = DateTimeOffset.UtcNow;
@@ -349,7 +339,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     {
                         try
                         {
-	                        await _resoniteSession.DisconnectAsync(shutdownToken).ConfigureAwait(false);
+	                        await _sceneSession.DisconnectAsync(shutdownToken).ConfigureAwait(false);
                         }
                         catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
                         {
@@ -359,7 +349,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 	                    {
 	                        try
 	                        {
-	                            await _resoniteSession.DisconnectAsync(shutdownToken).ConfigureAwait(false);
+	                            await _sceneSession.DisconnectAsync(shutdownToken).ConfigureAwait(false);
 	                        }
 	                        catch (OperationCanceledException)
 	                        {
@@ -459,16 +449,16 @@ namespace ThreeDTilesLink.Core.Pipeline
                     LogWriterCompletion(completion, writerState);
                     if (completion is SendTileCompleted sent)
                     {
-                        foreach (string slotId in sent.SlotIds)
+                        foreach (string nodeId in sent.NodeIds)
                         {
-                            interactiveContext?.TrackNewSlotId(slotId);
+                            interactiveContext?.TrackNewNodeId(nodeId);
                         }
                     }
 
                     int processedTiles = counters.ProcessedTiles;
                     int streamedMeshes = counters.StreamedMeshes;
                     int failedTiles = counters.FailedTiles;
-                    ResoniteReconcilerCore.ApplyWriterCompletion(
+                    SceneReconcilerCore.ApplyWriterCompletion(
                         facts,
                         writerState,
                         completion,
@@ -569,11 +559,11 @@ namespace ThreeDTilesLink.Core.Pipeline
             switch (completion)
             {
                 case SendTileCompleted sent when sent.Succeeded:
-                    s_writerTileStreamed(_logger, sent.Content.Tile.TileId, sent.StreamedMeshCount, sent.SlotIds.Count, null);
+                    s_writerTileStreamed(_logger, sent.Content.Tile.TileId, sent.StreamedMeshCount, sent.NodeIds.Count, null);
                     break;
 
                 case SendTileCompleted sent:
-                    s_writerTileFailed(_logger, sent.Content.Tile.TileId, sent.StreamedMeshCount, sent.SlotIds.Count, sent.Error);
+                    s_writerTileFailed(_logger, sent.Content.Tile.TileId, sent.StreamedMeshCount, sent.NodeIds.Count, sent.Error);
                     break;
 
                 case RemoveTileCompleted removed when removed.Succeeded:
@@ -590,7 +580,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     break;
 
                 case RemoveTileCompleted removed:
-                    s_writerTileRemovalFailed(_logger, removed.TileId, removed.RemainingSlotIds.Count, removed.Error);
+                    s_writerTileRemovalFailed(_logger, removed.TileId, removed.RemainingNodeIds.Count, removed.Error);
                     break;
 
                 case CleanupTileCompleted cleanup when cleanup.Succeeded:
@@ -598,7 +588,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     break;
 
                 case CleanupTileCompleted cleanup:
-                    s_writerTileRemovalFailed(_logger, cleanup.TileId, cleanup.RemainingSlotIds.Count, cleanup.Error);
+                    s_writerTileRemovalFailed(_logger, cleanup.TileId, cleanup.RemainingNodeIds.Count, cleanup.Error);
                     break;
 
                 case SyncSessionMetadataCompleted metadata when metadata.Succeeded:
@@ -641,7 +631,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 fact.NestedStatus = ContentDiscoveryStatus.Unrequested;
             }
-            else if (fact.Tile.ContentKind == TileContentKind.Glb &&
+            else if (fact.Tile.ContentKind.IsRenderable() &&
                      fact.PrepareStatus == ContentDiscoveryStatus.InFlight)
             {
                 fact.PrepareStatus = ContentDiscoveryStatus.Unrequested;
@@ -740,28 +730,34 @@ namespace ThreeDTilesLink.Core.Pipeline
         private async Task<DiscoveryCompletion> ExecuteDiscoveryAsync(
             DiscoveryWorkItem work,
             TileRunRequest request,
-            GoogleTilesAuth auth,
             CancellationToken cancellationToken)
         {
             try
             {
-                ContentProcessResult content = await _contentProcessor.ProcessAsync(work.Tile, auth, cancellationToken).ConfigureAwait(false);
-                return content switch
+                FetchedNodeContent fetchedContent = await _tilesSource
+                    .FetchNodeContentAsync(work.Tile.ContentUri, request.Source, cancellationToken)
+                    .ConfigureAwait(false);
+                switch (fetchedContent)
                 {
-                    NestedTilesetContentProcessResult nested => new NestedTilesetDiscovered(work.Tile, nested.Tileset),
-                    RenderableContentProcessResult renderable => new TilePrepared(
-                        work.Tile,
-                        new PreparedTileContent(
+                    case NestedTilesetFetchedContent nested:
+                        return new NestedTilesetDiscovered(work.Tile, nested.Tileset);
+                    case GlbFetchedContent glb:
+                        GlbExtractResult extracted = ExtractGlb(glb.GlbBytes);
+                        return new TilePrepared(
                             work.Tile,
-                            MeasurePlacement(() => _meshPlacementService.Place(
+                            new PreparedTileContent(
                                 work.Tile,
-                                renderable.Meshes,
-                                request.PlacementReference,
-                                request.Output.MeshParentSlotId)),
-                            renderable.AssetCopyright)),
-                    SkippedContentProcessResult skipped => new DiscoverySkipped(work.Tile, skipped.Reason),
-                    _ => throw new InvalidOperationException("Unsupported content process result: " + content.GetType().Name)
-                };
+                                MeasurePlacement(() => _meshPlacementService.Place(
+                                    work.Tile,
+                                    extracted.Meshes,
+                                    request.PlacementReference,
+                                    request.Output.ParentNodeId)),
+                                extracted.AssetCopyright));
+                    case UnsupportedFetchedContent unsupported:
+                        return new DiscoverySkipped(work.Tile, unsupported.Reason);
+                    default:
+                        throw new InvalidOperationException("Unsupported fetched content type: " + fetchedContent.GetType().Name);
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -775,6 +771,19 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 return new DiscoveryFailed(work.Tile, ex);
             }
+        }
+
+        private GlbExtractResult ExtractGlb(byte[] glbBytes)
+        {
+            RunPerformanceSummary? performanceSummary = _performanceSummary;
+            DateTimeOffset startedAt = performanceSummary is null ? default : DateTimeOffset.UtcNow;
+            GlbExtractResult extracted = _glbMeshExtractor.Extract(glbBytes);
+            if (performanceSummary is not null)
+            {
+                performanceSummary.AddExtract(DateTimeOffset.UtcNow - startedAt);
+            }
+
+            return extracted;
         }
 
         private async Task<WriterCompletion> ExecuteWriterCommandAsync(
@@ -821,9 +830,9 @@ namespace ThreeDTilesLink.Core.Pipeline
             try
             {
                 TileSelectionSendMeshResult[] results = await Task.WhenAll(sendTasks).ConfigureAwait(false);
-                var streamedSlotIds = results
-                    .Select(static result => result.SlotId)
-                    .Where(static slotId => !string.IsNullOrWhiteSpace(slotId))
+                var streamedNodeIds = results
+                    .Select(static result => result.NodeId)
+                    .Where(static nodeId => !string.IsNullOrWhiteSpace(nodeId))
                     .Cast<string>()
                     .ToList();
                 int streamedMeshCount = results.Count(static result => result.Error is null);
@@ -831,42 +840,42 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 if (firstError is null)
                 {
-                    return new SendTileCompleted(command.Content, true, streamedMeshCount, streamedSlotIds);
+                    return new SendTileCompleted(command.Content, true, streamedMeshCount, streamedNodeIds);
                 }
 
-                if (streamedSlotIds.Count > 0)
+                if (streamedNodeIds.Count > 0)
                 {
-                    IReadOnlyList<string> remainingSlotIds = await TryRollbackPartialSendAsync(
+                    IReadOnlyList<string> remainingNodeIds = await TryRollbackPartialSendAsync(
                         command.Content.Tile.TileId,
-                        streamedSlotIds,
+                        streamedNodeIds,
                         cancellationToken).ConfigureAwait(false);
-                    if (remainingSlotIds.Count == 0)
+                    if (remainingNodeIds.Count == 0)
                     {
-                        streamedSlotIds.Clear();
+                        streamedNodeIds.Clear();
                         streamedMeshCount = 0;
                     }
                     else
                     {
-                        streamedSlotIds = [.. remainingSlotIds];
-                        streamedMeshCount = streamedSlotIds.Count;
+                        streamedNodeIds = [.. remainingNodeIds];
+                        streamedMeshCount = streamedNodeIds.Count;
                     }
                 }
 
-                return new SendTileCompleted(command.Content, false, streamedMeshCount, streamedSlotIds, firstError);
+                return new SendTileCompleted(command.Content, false, streamedMeshCount, streamedNodeIds, firstError);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                List<string> streamedSlotIds = sendTasks
+                List<string> streamedNodeIds = sendTasks
                     .Where(static task => task.Status == TaskStatus.RanToCompletion)
-                    .Select(static task => task.Result.SlotId)
-                    .Where(static slotId => !string.IsNullOrWhiteSpace(slotId))
+                    .Select(static task => task.Result.NodeId)
+                    .Where(static nodeId => !string.IsNullOrWhiteSpace(nodeId))
                     .Cast<string>()
                     .ToList();
-                if (streamedSlotIds.Count > 0)
+                if (streamedNodeIds.Count > 0)
                 {
                     _ = await TryRollbackPartialSendAsync(
                         command.Content.Tile.TileId,
-                        streamedSlotIds,
+                        streamedNodeIds,
                         CancellationToken.None).ConfigureAwait(false);
                 }
 
@@ -884,10 +893,10 @@ namespace ThreeDTilesLink.Core.Pipeline
             {
                 try
                 {
-                    string? slotId = request.Output.DryRun
+                    string? nodeId = request.Output.DryRun
                         ? null
-                        : await _resoniteSession.StreamPlacedMeshAsync(payload, cancellationToken).ConfigureAwait(false);
-                    return new TileSelectionSendMeshResult(slotId, null);
+                        : await _sceneSession.StreamMeshAsync(payload, cancellationToken).ConfigureAwait(false);
+                    return new TileSelectionSendMeshResult(nodeId, null);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -917,19 +926,19 @@ namespace ThreeDTilesLink.Core.Pipeline
         [SuppressMessage(
             "Reliability",
             "CA1031:DoNotCatchGeneralExceptionTypes",
-            Justification = "Slot rollback is best-effort; failures are captured as failed state.")]
+            Justification = "Node rollback is best-effort; failures are captured as failed state.")]
         private async Task<IReadOnlyList<string>> TryRollbackPartialSendAsync(
             string tileId,
-            IReadOnlyList<string> streamedSlotIds,
+            IReadOnlyList<string> streamedNodeIds,
             CancellationToken cancellationToken)
         {
-            var remainingSlotIds = new List<string>();
+            var remainingNodeIds = new List<string>();
 
-            foreach (string slotId in streamedSlotIds)
+            foreach (string nodeId in streamedNodeIds)
             {
                 try
                 {
-                    await _resoniteSession.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
+                    await _sceneSession.RemoveNodeAsync(nodeId, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -937,27 +946,27 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
                 catch (Exception rollbackEx)
                 {
-                    remainingSlotIds.Add(slotId);
-                    s_rollBackPartialSendFailed(_logger, slotId, tileId, rollbackEx);
+                    remainingNodeIds.Add(nodeId);
+                    s_rollBackPartialSendFailed(_logger, nodeId, tileId, rollbackEx);
                 }
             }
 
-            return remainingSlotIds;
+            return remainingNodeIds;
         }
 
         [SuppressMessage(
             "Reliability",
             "CA1031:DoNotCatchGeneralExceptionTypes",
-            Justification = "Tile removal captures slot failures to return retry-aware completion state.")]
+            Justification = "Tile removal captures node failures to return retry-aware completion state.")]
         private async Task<WriterCompletion> ExecuteRemoveAsync(
             RemoveTileWriterCommand command,
             TileSelectionInteractiveExecutionContext? interactiveContext,
             CancellationToken cancellationToken)
         {
-            return await ExecuteSlotRemovalAsync(
+            return await ExecuteNodeRemovalAsync(
                 command.StableId,
                 command.TileId,
-                command.SlotIds,
+                command.NodeIds,
                 interactiveContext,
                 isCleanupDebt: false,
                 cancellationToken).ConfigureAwait(false);
@@ -966,16 +975,16 @@ namespace ThreeDTilesLink.Core.Pipeline
         [SuppressMessage(
             "Reliability",
             "CA1031:DoNotCatchGeneralExceptionTypes",
-            Justification = "Cleanup debt removal captures slot failures to return retry-aware completion state.")]
+            Justification = "Cleanup debt removal captures node failures to return retry-aware completion state.")]
         private async Task<WriterCompletion> ExecuteCleanupAsync(
             CleanupTileWriterCommand command,
             TileSelectionInteractiveExecutionContext? interactiveContext,
             CancellationToken cancellationToken)
         {
-            return await ExecuteSlotRemovalAsync(
+            return await ExecuteNodeRemovalAsync(
                 command.StableId,
                 command.TileId,
-                command.SlotIds,
+                command.NodeIds,
                 interactiveContext,
                 isCleanupDebt: true,
                 cancellationToken).ConfigureAwait(false);
@@ -984,11 +993,11 @@ namespace ThreeDTilesLink.Core.Pipeline
         [SuppressMessage(
             "Reliability",
             "CA1031:DoNotCatchGeneralExceptionTypes",
-            Justification = "Slot removal captures failures to return retry-aware completion state.")]
-        private async Task<WriterCompletion> ExecuteSlotRemovalAsync(
+            Justification = "Node removal captures failures to return retry-aware completion state.")]
+        private async Task<WriterCompletion> ExecuteNodeRemovalAsync(
             string stableId,
             string tileId,
-            IReadOnlyList<string> slotIds,
+            IReadOnlyList<string> nodeIds,
             TileSelectionInteractiveExecutionContext? interactiveContext,
             bool isCleanupDebt,
             CancellationToken cancellationToken)
@@ -997,16 +1006,16 @@ namespace ThreeDTilesLink.Core.Pipeline
             long startedAt = performanceSummary is null ? 0L : Stopwatch.GetTimestamp();
             try
             {
-                int failedSlotCount = 0;
+                int failedNodeCount = 0;
                 Exception? firstError = null;
-                var remainingSlotIds = new List<string>();
+                var remainingNodeIds = new List<string>();
 
-                foreach (string slotId in slotIds)
+                foreach (string nodeId in nodeIds)
                 {
                     try
                     {
-                        await _resoniteSession.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
-                        interactiveContext?.ForgetNewSlotId(slotId);
+                        await _sceneSession.RemoveNodeAsync(nodeId, cancellationToken).ConfigureAwait(false);
+                        interactiveContext?.ForgetNewNodeId(nodeId);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
@@ -1014,15 +1023,15 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
                     catch (Exception ex)
                     {
-                        failedSlotCount++;
+                        failedNodeCount++;
                         firstError ??= ex;
-                        remainingSlotIds.Add(slotId);
+                        remainingNodeIds.Add(nodeId);
                     }
                 }
 
                 return isCleanupDebt
-                    ? new CleanupTileCompleted(stableId, tileId, failedSlotCount == 0, failedSlotCount, remainingSlotIds, firstError)
-                    : new RemoveTileCompleted(stableId, tileId, failedSlotCount == 0, failedSlotCount, remainingSlotIds, firstError);
+                    ? new CleanupTileCompleted(stableId, tileId, failedNodeCount == 0, failedNodeCount, remainingNodeIds, firstError)
+                    : new RemoveTileCompleted(stableId, tileId, failedNodeCount == 0, failedNodeCount, remainingNodeIds, firstError);
             }
             finally
             {
@@ -1049,7 +1058,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                 if (command.UpdateLicense)
                 {
                     long licenseStartedAt = performanceSummary is null ? 0L : Stopwatch.GetTimestamp();
-                    await _sessionMetadataPort.SetSessionLicenseCreditAsync(command.LicenseCredit, cancellationToken).ConfigureAwait(false);
+                    await _metadataSink.SetSessionLicenseCreditAsync(command.LicenseCredit, cancellationToken).ConfigureAwait(false);
                     if (performanceSummary is not null)
                     {
                         performanceSummary.AddMetadataLicense(Stopwatch.GetElapsedTime(licenseStartedAt));
@@ -1057,14 +1066,14 @@ namespace ThreeDTilesLink.Core.Pipeline
                 }
 
                 long progressStartedAt = performanceSummary is null ? 0L : Stopwatch.GetTimestamp();
-                await _sessionMetadataPort.SetProgressValueAsync(
-                    request.Output.MeshParentSlotId,
+                await _metadataSink.SetProgressValueAsync(
+                    request.Output.ParentNodeId,
                     command.ProgressValue,
                     cancellationToken).ConfigureAwait(false);
                 if (command.UpdateProgressText)
                 {
-                    await _sessionMetadataPort.SetProgressTextAsync(
-                        request.Output.MeshParentSlotId,
+                    await _metadataSink.SetProgressTextAsync(
+                        request.Output.ParentNodeId,
                         command.ProgressText,
                         cancellationToken).ConfigureAwait(false);
                 }
@@ -1093,16 +1102,6 @@ namespace ThreeDTilesLink.Core.Pipeline
             }
         }
 
-        private static Task<GoogleTilesAuth> BuildAuthAsync(TileRunRequest request)
-        {
-            if (!string.IsNullOrWhiteSpace(request.ApiKey))
-            {
-                return Task.FromResult(new GoogleTilesAuth(request.ApiKey, null));
-            }
-
-            throw new InvalidOperationException("GOOGLE_MAPS_API_KEY is required for Google Map Tiles API requests.");
-        }
-
         [SuppressMessage(
             "Reliability",
             "CA1031:DoNotCatchGeneralExceptionTypes",
@@ -1116,8 +1115,8 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                await _sessionMetadataPort.SetProgressAsync(
-                    request.Output.MeshParentSlotId,
+                await _metadataSink.SetProgressAsync(
+                    request.Output.ParentNodeId,
                     0f,
                     $"Failed: {FormatFailureMessage(exception)}",
                     CancellationToken.None).ConfigureAwait(false);

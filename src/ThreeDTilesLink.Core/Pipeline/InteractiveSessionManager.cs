@@ -7,22 +7,22 @@ namespace ThreeDTilesLink.Core.Pipeline
 {
     internal sealed class InteractiveSessionManager(
         ITileSelectionService tileRunCoordinator,
-        IResoniteSession resoniteSession,
+        ISceneSession sceneSession,
         ILogger<InteractiveSessionManager> logger)
     {
-        private static readonly Action<ILogger, string, string, Exception?> s_retainedSlotClearFailed =
+        private static readonly Action<ILogger, string, string, Exception?> s_retainedNodeClearFailed =
             LoggerMessage.Define<string, string>(
                 LogLevel.Warning,
-                new EventId(18, "RetainedSlotClearFailed"),
-                "Failed to clear retained slot {SlotId} for tile {TileId} before non-overlap interactive rerun.");
+                new EventId(18, "RetainedNodeClearFailed"),
+                "Failed to clear retained node {NodeId} for tile {TileId} before non-overlap interactive rerun.");
 
         private readonly ITileSelectionService _tileRunCoordinator = tileRunCoordinator;
-        private readonly IResoniteSession _resoniteSession = resoniteSession;
+        private readonly ISceneSession _sceneSession = sceneSession;
         private readonly ILogger<InteractiveSessionManager> _logger = logger;
 
         internal Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
-            return _resoniteSession.ConnectAsync(host, port, cancellationToken);
+            return _sceneSession.ConnectAsync(host, port, cancellationToken);
         }
 
         internal async Task<InteractiveLoopState> FinalizeCompletedRunAsync(
@@ -101,7 +101,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             if (state.Connected)
             {
-                Task disconnectTask = _resoniteSession.DisconnectAsync(cancellationToken);
+                Task disconnectTask = _sceneSession.DisconnectAsync(cancellationToken);
                 await ObserveCompletionAsync(disconnectTask).ConfigureAwait(false);
 
                 if (TryGetNonCancellationFailure(disconnectTask) is { } disconnectFailure)
@@ -177,7 +177,7 @@ namespace ThreeDTilesLink.Core.Pipeline
         [SuppressMessage(
             "Reliability",
             "CA1031:DoNotCatchGeneralExceptionTypes",
-            Justification = "Non-overlap interactive reruns should continue even if some retained slots fail to clear.")]
+            Justification = "Non-overlap interactive reruns should continue even if some retained nodes fail to clear.")]
         private async Task ClearRetainedTilesAsync(
             IReadOnlyDictionary<string, RetainedTileState> retainedTiles,
             IReadOnlyDictionary<string, RetainedTileState> cleanupDebtTiles,
@@ -185,11 +185,11 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             foreach (RetainedTileState retainedTile in retainedTiles.Values.Concat(cleanupDebtTiles.Values))
             {
-                foreach (string slotId in retainedTile.SlotIds)
+                foreach (string nodeId in retainedTile.NodeIds)
                 {
                     try
                     {
-                        await _resoniteSession.RemoveSlotAsync(slotId, cancellationToken).ConfigureAwait(false);
+                        await _sceneSession.RemoveNodeAsync(nodeId, cancellationToken).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
@@ -197,7 +197,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
                     catch (Exception ex)
                     {
-                        s_retainedSlotClearFailed(_logger, slotId, retainedTile.TileId, ex);
+                        s_retainedNodeClearFailed(_logger, nodeId, retainedTile.TileId, ex);
                     }
                 }
             }
@@ -216,12 +216,12 @@ namespace ThreeDTilesLink.Core.Pipeline
                     rangeM,
                     options.Traversal.DetailTargetM,
                     options.Traversal.BootstrapRangeMultiplier),
-                new ResoniteOutputOptions(
-                    options.ResoniteHost,
-                    options.ResonitePort,
+                new SceneOutputOptions(
+                    options.EndpointHost,
+                    options.EndpointPort,
                     false,
                     ManageConnection: false),
-                options.ApiKey);
+                options.TileSource);
         }
 
         private static Exception? TryGetNonCancellationFailure(Task task)

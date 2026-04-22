@@ -5,6 +5,6 @@ namespace ThreeDTilesLink.Core.Models
         string TileId,
         string? ParentStableId,
         IReadOnlyList<string> AncestorStableIds,
-        IReadOnlyList<string> SlotIds,
+        IReadOnlyList<string> NodeIds,
         string? AssetCopyright);
 }

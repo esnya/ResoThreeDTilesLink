@@ -2,19 +2,17 @@ using System.Diagnostics.CodeAnalysis;
 using System.Net.WebSockets;
 using Microsoft.Extensions.Logging;
 using ThreeDTilesLink.Core.Contracts;
-using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Models;
-using ThreeDTilesLink.Core.Resonite;
 
 namespace ThreeDTilesLink.Core.Pipeline
 {
     internal sealed class InteractiveSearchCoordinator(
-        IInteractiveInputStore interactiveInputStore,
+        IInteractiveUiStore interactiveUiStore,
         ISearchResolver searchResolver,
         IClock clock,
         ILogger<InteractiveSearchCoordinator> logger)
     {
-        private readonly IInteractiveInputStore _interactiveInputStore = interactiveInputStore;
+        private readonly IInteractiveUiStore _interactiveUiStore = interactiveUiStore;
         private readonly ISearchResolver _searchResolver = searchResolver;
         private readonly IClock _clock = clock;
         private readonly ILogger<InteractiveSearchCoordinator> _logger = logger;
@@ -29,7 +27,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             ResolveSearchAction action,
             CancellationToken cancellationToken)
         {
-            if (string.IsNullOrWhiteSpace(options.ApiKey))
+            if (string.IsNullOrWhiteSpace(options.Search.ApiKey))
             {
                 InteractiveRunSupervisor.Log.SearchIgnored(_logger, action.SearchText);
                 return MarkSearchHandled(state, action.SearchText);
@@ -37,7 +35,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             try
             {
-                LocationSearchResult? result = await _searchResolver.SearchAsync(options.ApiKey, action.SearchText, cancellationToken).ConfigureAwait(false);
+                LocationSearchResult? result = await _searchResolver.SearchAsync(options.Search.ApiKey, action.SearchText, cancellationToken).ConfigureAwait(false);
                 if (result is null)
                 {
                     InteractiveRunSupervisor.Log.SearchNoResult(_logger, action.SearchText);
@@ -46,7 +44,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 try
                 {
-                    await _interactiveInputStore.UpdateInteractiveInputCoordinatesAsync(state.InputBinding!, result.Latitude, result.Longitude, cancellationToken).ConfigureAwait(false);
+                    await _interactiveUiStore.UpdateInteractiveUiCoordinatesAsync(state.InputBinding!, result.Latitude, result.Longitude, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -107,12 +105,13 @@ namespace ThreeDTilesLink.Core.Pipeline
         private static bool IsRetryableSearchFailure(Exception exception)
         {
             return exception is ArgumentException
-                or ResoniteLinkNoResponseException
-                or ResoniteLinkDisconnectedException
+                or InteractiveUiNoResponseException
+                or InteractiveUiDisconnectedException
                 or HttpRequestException
                 or TimeoutException
                 or ObjectDisposedException
-                or WebSocketException;
+                or WebSocketException
+                or InvalidOperationException;
         }
     }
 }

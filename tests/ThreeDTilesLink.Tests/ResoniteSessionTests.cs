@@ -9,6 +9,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using ResoniteLink;
 using ThreeDTilesLink.Core.Contracts;
+using ThreeDTilesLink.Core.Google;
 using ThreeDTilesLink.Core.Models;
 using ThreeDTilesLink.Core.Resonite;
 
@@ -392,7 +393,57 @@ namespace ThreeDTilesLink.Tests
         }
 
         [Fact]
-        public async Task CreateInteractiveInputBindingAsync_UsesSingleBatchWithExplicitFieldReferences()
+        public async Task StreamPlacedMeshAsync_HonorsDestinationPolicy_WhenTileProtectionIsDisabled()
+        {
+            await using var session = new ResoniteSession(
+                new LinkInterface(),
+                new GoogleTileLicenseCreditPolicy(),
+                ResoniteDestinationPolicyOptions.CreateGoogleDefaults() with
+                {
+                    ApplyAvatarProtectionToTileSlots = false,
+                    ApplyPackageExportProtectionToTileSlots = false
+                },
+                NullLogger<ResoniteSession>.Instance);
+            List<DataModelOperation>? capturedOperations = null;
+
+            SetPrivateField(session, "_sessionRootSlotId", "slot_session_root");
+            SetPrivateField(session, "_packageExportWarningSlotId", "slot_warning");
+            SetPrivateField(session, "_avatarProtectionUnavailable", true);
+            SetPrivateField(session, "_materialMemberDefinitions", new Dictionary<string, MemberDefinition>(StringComparer.Ordinal));
+            SetPrivateField(session, "_materialTextureFieldResolved", true);
+            SetPrivateField(session, "_materialTextureFieldName", null);
+
+            session.Hooks = new ResoniteSession.TestHooks
+            {
+                ImportMeshAssetAsync = static (_, _) => Task.FromResult(new AssetData
+                {
+                    Success = true,
+                    AssetURL = new Uri("resdb:///mesh")
+                }),
+                RunDataModelOperationBatchAsync = (operations, _) =>
+                {
+                    capturedOperations = [.. operations];
+                    return Task.FromResult(new BatchResponse
+                    {
+                        Success = true,
+                        Responses = operations.Select(static _ => new Response { Success = true }).ToList()
+                    });
+                }
+            };
+
+            _ = await session.StreamPlacedMeshAsync(CreatePlacedMeshPayload(), CancellationToken.None);
+
+            _ = capturedOperations.Should().NotBeNull();
+            _ = capturedOperations.Should().HaveCount(5);
+            _ = capturedOperations!
+                .OfType<AddComponent>()
+                .Select(static operation => operation.Data.ComponentType)
+                .Should()
+                .NotContain("[FrooxEngine]FrooxEngine.PackageExportable");
+        }
+
+        [Fact]
+        public async Task CreateInteractiveUiBindingAsync_UsesSingleBatchWithExplicitFieldReferences()
         {
             await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
             SetPrivateField(session, "_sessionRootSlotId", "slot_session_root");
@@ -411,7 +462,7 @@ namespace ThreeDTilesLink.Tests
                 }
             };
 
-            InteractiveInputBinding binding = await session.CreateInteractiveInputBindingAsync(CancellationToken.None);
+            ResoniteDynamicValueInteractiveUiBinding binding = await session.CreateResoniteDynamicValueInteractiveUiBindingAsync(CancellationToken.None);
 
             _ = capturedOperations.Should().NotBeNull();
             _ = capturedOperations.Should().HaveCount(12);
@@ -434,14 +485,14 @@ namespace ThreeDTilesLink.Tests
             _ = searchCopy.Data.Members["Source"].Should().BeOfType<Reference>().Which.TargetID.Should().Be(searchFieldId);
             _ = searchCopy.Data.Members["Target"].Should().BeOfType<Reference>().Which.TargetID.Should().Be(searchAliasFieldId);
 
-            _ = binding.LatitudeComponentId.Should().Be(latitudeVariable.Data.ID);
-            _ = binding.LatitudeAliasComponentId.Should().Be(latitudeAliasVariable.Data.ID);
-            _ = binding.SearchComponentId.Should().Be(searchVariable.Data.ID);
-            _ = binding.SearchAliasComponentId.Should().Be(searchAliasVariable.Data.ID);
+            _ = binding.LatitudeReadHandle.Should().Be(latitudeVariable.Data.ID);
+            _ = binding.LatitudeWriteHandle.Should().Be(latitudeAliasVariable.Data.ID);
+            _ = binding.SearchReadHandle.Should().Be(searchVariable.Data.ID);
+            _ = binding.SearchWriteHandle.Should().Be(searchAliasVariable.Data.ID);
         }
 
         [Fact]
-        public async Task CreateInteractiveInputBindingAsync_UsesBatchResponseEntityIds_WhenTheyDifferFromRequestedIds()
+        public async Task CreateInteractiveUiBindingAsync_UsesBatchResponseEntityIds_WhenTheyDifferFromRequestedIds()
         {
             await using var session = new ResoniteSession(new LinkInterface(), NullLogger<ResoniteSession>.Instance);
             SetPrivateField(session, "_sessionRootSlotId", "slot_session_root");
@@ -472,16 +523,16 @@ namespace ThreeDTilesLink.Tests
                 }
             };
 
-            InteractiveInputBinding binding = await session.CreateInteractiveInputBindingAsync(CancellationToken.None);
+            ResoniteDynamicValueInteractiveUiBinding binding = await session.CreateResoniteDynamicValueInteractiveUiBindingAsync(CancellationToken.None);
 
-            _ = binding.LatitudeComponentId.Should().Be("lat_actual");
-            _ = binding.LongitudeComponentId.Should().Be("lon_actual");
-            _ = binding.RangeComponentId.Should().Be("range_actual");
-            _ = binding.SearchComponentId.Should().Be("search_actual");
-            _ = binding.LatitudeAliasComponentId.Should().Be("lat_alias_actual");
-            _ = binding.LongitudeAliasComponentId.Should().Be("lon_alias_actual");
-            _ = binding.RangeAliasComponentId.Should().Be("range_alias_actual");
-            _ = binding.SearchAliasComponentId.Should().Be("search_alias_actual");
+            _ = binding.LatitudeReadHandle.Should().Be("lat_actual");
+            _ = binding.LongitudeReadHandle.Should().Be("lon_actual");
+            _ = binding.RangeReadHandle.Should().Be("range_actual");
+            _ = binding.SearchReadHandle.Should().Be("search_actual");
+            _ = binding.LatitudeWriteHandle.Should().Be("lat_alias_actual");
+            _ = binding.LongitudeWriteHandle.Should().Be("lon_alias_actual");
+            _ = binding.RangeWriteHandle.Should().Be("range_alias_actual");
+            _ = binding.SearchWriteHandle.Should().Be("search_alias_actual");
         }
 
         [Fact]

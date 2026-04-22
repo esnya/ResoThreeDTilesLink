@@ -1,11 +1,13 @@
+using ThreeDTilesLink.Core.Contracts;
 using ThreeDTilesLink.Core.Models;
 
 #pragma warning disable CA1822
 
 namespace ThreeDTilesLink.Core.Pipeline
 {
-    internal sealed class ResoniteReconcilerCore
+    internal sealed class SceneReconcilerCore(ILicenseCreditPolicy licenseCreditPolicy)
     {
+        private readonly ILicenseCreditPolicy _licenseCreditPolicy = licenseCreditPolicy;
         private static readonly TimeSpan MetadataCadence = TimeSpan.FromMilliseconds(250);
         private const int MetadataProcessedDeltaThreshold = 8;
         private const float MetadataProgressDeltaThreshold = 0.02f;
@@ -130,8 +132,8 @@ namespace ThreeDTilesLink.Core.Pipeline
                     _ = writerState.InFlightSendStableIds.Remove(stableId);
                     processedTiles++;
                     streamedMeshes += sent.StreamedMeshCount;
-                    bool hasRetainedPartialSlots = !sent.Succeeded && sent.SlotIds.Count > 0;
-                    bool shouldRetainVisibleSlots = sent.Succeeded || dryRun;
+                    bool hasRetainedPartialNodes = !sent.Succeeded && sent.NodeIds.Count > 0;
+                    bool shouldRetainVisibleNodes = sent.Succeeded || dryRun;
                     bool canRetrySendFailure = false;
 
                     if (!facts.Branches.TryGetValue(stableId, out TileBranchFact? fact))
@@ -150,13 +152,13 @@ namespace ThreeDTilesLink.Core.Pipeline
                         fact.CompleteSendFailureCount++;
                         canRetrySendFailure = fact.CanRetryCompleteSendFailure;
                         fact.SendFailed = !string.IsNullOrWhiteSpace(fact.Tile.ParentStableId) &&
-                            (!hasRetainedPartialSlots || !canRetrySendFailure);
+                            (!hasRetainedPartialNodes || !canRetrySendFailure);
                         if (!canRetrySendFailure)
                         {
                             fact.PrepareStatus = ContentDiscoveryStatus.Failed;
                             fact.PreparedContent = null;
                         }
-                        else if (!hasRetainedPartialSlots)
+                        else if (!hasRetainedPartialNodes)
                         {
                             fact.PrepareStatus = ContentDiscoveryStatus.Ready;
                         }
@@ -166,14 +168,14 @@ namespace ThreeDTilesLink.Core.Pipeline
                         fact.SendFailed = false;
                     }
 
-                    if (shouldRetainVisibleSlots)
+                    if (shouldRetainVisibleNodes)
                     {
                         writerState.VisibleTiles[stableId] = new RetainedTileState(
                             stableId,
                             sent.Content.Tile.TileId,
                             sent.Content.Tile.ParentStableId,
                             GetAncestorStableIds(facts, sent.Content.Tile.ParentStableId),
-                            sent.SlotIds,
+                            sent.NodeIds,
                             sent.Content.AssetCopyright);
                         if (!writerState.VisibleSinceByStableId.ContainsKey(stableId))
                         {
@@ -181,7 +183,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                         }
                     }
 
-                    if (hasRetainedPartialSlots)
+                    if (hasRetainedPartialNodes)
                     {
                         writerState.CleanupDebtTiles[stableId] = MergeRetainedTileState(
                             writerState.CleanupDebtTiles,
@@ -191,7 +193,7 @@ namespace ThreeDTilesLink.Core.Pipeline
                                 sent.Content.Tile.TileId,
                                 sent.Content.Tile.ParentStableId,
                                 GetAncestorStableIds(facts, sent.Content.Tile.ParentStableId),
-                                sent.SlotIds,
+                                sent.NodeIds,
                                 sent.Content.AssetCopyright));
                     }
 
@@ -215,14 +217,14 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
                     else
                     {
-                        failedTiles += System.Math.Max(1, removed.FailedSlotCount);
+                        failedTiles += System.Math.Max(1, removed.FailedNodeCount);
                         _ = writerState.FailedRemovalStableIds.Add(removed.StableId);
-                        if (removed.RemainingSlotIds.Count > 0 &&
+                        if (removed.RemainingNodeIds.Count > 0 &&
                             writerState.VisibleTiles.TryGetValue(removed.StableId, out RetainedTileState? visibleTile))
                         {
                             writerState.VisibleTiles[removed.StableId] = visibleTile with
                             {
-                                SlotIds = removed.RemainingSlotIds
+                                NodeIds = removed.RemainingNodeIds
                             };
                         }
                     }
@@ -238,14 +240,14 @@ namespace ThreeDTilesLink.Core.Pipeline
                     }
                     else
                     {
-                        failedTiles += System.Math.Max(1, cleanup.FailedSlotCount);
+                        failedTiles += System.Math.Max(1, cleanup.FailedNodeCount);
                         _ = writerState.FailedCleanupStableIds.Add(cleanup.StableId);
-                        if (cleanup.RemainingSlotIds.Count > 0 &&
+                        if (cleanup.RemainingNodeIds.Count > 0 &&
                             writerState.CleanupDebtTiles.TryGetValue(cleanup.StableId, out RetainedTileState? cleanupTile))
                         {
                             writerState.CleanupDebtTiles[cleanup.StableId] = cleanupTile with
                             {
-                                SlotIds = cleanup.RemainingSlotIds
+                                NodeIds = cleanup.RemainingNodeIds
                             };
                         }
                     }
@@ -273,7 +275,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
             return newTile with
             {
-                SlotIds = [.. existing.SlotIds.Concat(newTile.SlotIds).Distinct(StringComparer.Ordinal)]
+                NodeIds = [.. existing.NodeIds.Concat(newTile.NodeIds).Distinct(StringComparer.Ordinal)]
             };
         }
 
@@ -359,7 +361,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 if (cleanup is not null)
                 {
-                    return new CleanupTileWriterCommand(cleanup.StableId, cleanup.TileId, cleanup.SlotIds);
+                    return new CleanupTileWriterCommand(cleanup.StableId, cleanup.TileId, cleanup.NodeIds);
                 }
 
                 RetainedTileState? removal = writerState.VisibleTiles.Values
@@ -376,7 +378,7 @@ namespace ThreeDTilesLink.Core.Pipeline
 
                 if (removal is not null)
                 {
-                    return new RemoveTileWriterCommand(removal.StableId, removal.TileId, removal.SlotIds);
+                    return new RemoveTileWriterCommand(removal.StableId, removal.TileId, removal.NodeIds);
                 }
             }
 
@@ -502,7 +504,7 @@ namespace ThreeDTilesLink.Core.Pipeline
             return ancestors;
         }
 
-        private static DesiredMetadataState BuildDesiredMetadataState(
+        private DesiredMetadataState BuildDesiredMetadataState(
             DiscoveryFacts facts,
             WriterState writerState,
             DesiredView desiredView,
@@ -556,10 +558,10 @@ namespace ThreeDTilesLink.Core.Pipeline
         {
             int pendingDiscovery = facts.Branches.Values.Count(fact =>
                 (fact.Tile.ContentKind == TileContentKind.Json && fact.NestedStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight) ||
-                (fact.Tile.ContentKind == TileContentKind.Glb && desiredView.CandidateStableIds.Contains(fact.Tile.StableId!) &&
+                (fact.Tile.ContentKind.IsRenderable() && desiredView.CandidateStableIds.Contains(fact.Tile.StableId!) &&
                  fact.PrepareStatus is ContentDiscoveryStatus.Unrequested or ContentDiscoveryStatus.InFlight));
             int pendingPrepared = facts.Branches.Values.Count(fact =>
-                fact.Tile.ContentKind == TileContentKind.Glb &&
+                fact.Tile.ContentKind.IsRenderable() &&
                 desiredView.CandidateStableIds.Contains(fact.Tile.StableId!) &&
                 fact.PreparedContent is not null &&
                 fact.PrepareStatus == ContentDiscoveryStatus.Ready &&
@@ -603,19 +605,24 @@ namespace ThreeDTilesLink.Core.Pipeline
         private static bool IsCompletedMetadata(float progressValue, string progressText)
             => progressValue >= 0.9999f || progressText.StartsWith("Completed:", StringComparison.Ordinal);
 
-        private static string BuildDesiredLicense(IEnumerable<RetainedTileState> visibleTiles)
+        private string BuildDesiredLicense(IEnumerable<RetainedTileState> visibleTiles)
         {
-            var aggregator = new LicenseCreditAggregator();
+            var aggregator = new LicenseCreditAggregator(_licenseCreditPolicy);
             foreach (RetainedTileState retainedTile in visibleTiles)
             {
-                IReadOnlyList<string> owners = LicenseCreditAggregator.ParseOwners(
+                IReadOnlyList<string> owners = aggregator.ParseOwners(
                     string.IsNullOrWhiteSpace(retainedTile.AssetCopyright) ? [] : [retainedTile.AssetCopyright]);
                 aggregator.RegisterOrder(owners);
                 _ = aggregator.Activate(owners);
             }
 
             string built = aggregator.BuildCreditString();
-            return string.IsNullOrWhiteSpace(built) ? "Google Maps" : built;
+            return string.IsNullOrWhiteSpace(built) ? _licenseCreditPolicy.DefaultCredit : built;
+        }
+
+        public SceneReconcilerCore()
+            : this(new Google.GoogleTileLicenseCreditPolicy())
+        {
         }
     }
 }
